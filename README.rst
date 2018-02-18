@@ -1,5 +1,8 @@
 Python2.7/3.x Driver for SQream DB
 ----------
+This is a Python implementation of the SQream API. 
+
+A backward compatible wrapper for v. 1.5 will be added.
 
 Usage example:
 
