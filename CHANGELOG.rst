@@ -7,3 +7,9 @@ Ver. 2.0
 * Netwrok insert (Part of the API)
 * Preparation for SSL support
 * Other improvements and fixes coming from 1.5
+
+Ver. 2.0.1
+----------
+*25/04/2018*
+
+* 2 function renames to match the official API
