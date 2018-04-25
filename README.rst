@@ -25,19 +25,19 @@ Usage example:
     #  -------------------------     
     # Create a table
     statement = 'create or replace table table_name (int_column int)'
-    con.prepare_statement(statement)
+    con.prepare_(statement)
     con.execute()
-    con.close_statement()
+    con.close()
 
     # Insert sample data
     statement = 'insert into table_name(int_column) values (5), (6)'
-    con.prepare_statement(statement)
+    con.prepare(statement)
     con.execute()
-    con.close_statement()
+    con.close()
 
     # Retreive data
     statement = 'select int_column from table_name'
-    con.prepare_statement(statement)
+    con.prepare(statement)
     con.execute()
     con.next_row()
 
@@ -47,9 +47,9 @@ Usage example:
     second_row_int = con.get_int(1)
     con.next_row()
     print (first_row_int, second_row_int)
-    con.close_statement()
+    con.close()
 
 
     ## After running all statements
     #  ----------------------------
-    con.close()
+    con.close_connection()
