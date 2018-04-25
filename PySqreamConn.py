@@ -25,19 +25,19 @@ Usage example:
     
     # Create a table
     statement = 'create or replace table table_name (int_column int)'
-    con.prepare_statement(statement)
+    con.prepare(statement)
     con.execute()
-    con.close_statement()
+    con.close()
 
     # Insert sample data
     statement = 'insert into table_name(int_column) values (5), (6)'
-    con.prepare_statement(statement)
+    con.prepare(statement)
     con.execute()
-    con.close_statement()
+    con.close()
 
     # Retreive data
     statement = 'select int_column from table_name'
-    con.prepare_statement(statement)
+    con.prepare(statement)
     con.execute()
     con.next_row()
 
@@ -47,17 +47,16 @@ Usage example:
     second_row_int = con.get_int(1)
     con.next_row()
     print (first_row_int, second_row_int)
-    con.close_statement()
+    con.close()
 
 
     ## After running all statements
     #  ----------------------------
 
-    con.close()
+    con.close_connection()
 
 
 """
-
 
 
 import sys, socket, json, atexit, select, ssl, logging   
@@ -442,7 +441,7 @@ class SqreamConn(object):
         # API related
         self._query_str = None  # The SQL string entered via statement_handle()
         self._query_data = []   # Keeps a reference of query results, in addition to what's returned to the Connector object
-        self._batch = []   # Keeps columns of binarized data to be sent to sqream upon flush() / close_statement()
+        self._batch = []   # Keeps columns of binarized data to be sent to sqream upon flush() / close()
         # self._meta = meta
         self._ordered_col_names = []   # Set at _prepare_statement() (move to _query_type_in()) or _query_type_out()
         self._col_indices = {}
@@ -707,7 +706,7 @@ class SqreamConn(object):
 
     def _prepare_statement(self, query_str, meta = None, ordered_col_names = None, auto = True):
         ''' 
-        Called by Connector.prepare_statement(). If contains 'insert into' and '?', comes complementary
+        Called by Connector.prepare(). If contains 'insert into' and '?', comes complementary
         with table metadata and the ordered column names  '''            
 
         # Protocol check
@@ -1156,7 +1155,7 @@ class Connector(object):
     #  ------------------
 
     # execute = lambda: self._sc.exchange('{"execute" : "execute"}')
-    # close_statement = lambda: self._sc.exchange('{"closeStatement":"closeStatement"}') 
+    # close = lambda: self._sc.exchange('{"closeStatement":"closeStatement"}') 
     
     def execute(self):
       self._sc._execute()
@@ -1167,7 +1166,9 @@ class Connector(object):
     def fetch_discard(self):
         self._sc._fetch_all(True)
 
-    def close_statement(self):
+    def close(self):
+        '''close statement'''
+
         self._sc._close_statement()
     '''
     def close_connection(self):
@@ -1183,7 +1184,8 @@ class Connector(object):
         self._sc._query_str = query_str
     
 
-    def prepare_statement(self, query_str = None):
+    def prepare(self, query_str = None):
+        ''' Prepare statement'''
 
         query_str = query_str if query_str else self._sc._query_str
 
@@ -1434,3 +1436,8 @@ class Connector(object):
             announce(BadTypeForSetFunction, 'Expecting datetime value but got {}'.format(val))
 
         return self._sc._set_item(col_index_or_name, val, 'ftDateTime')
+
+
+if __name__ == '__main__':
+    print ("This file is to be used as a module\nSee example usage at the top of the file\n")
+    print ("SQream Python driver version", PYSQREAM_VERSION, '\n')
