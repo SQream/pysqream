@@ -1,3 +1,10 @@
+
+Ver. 2.0.1
+----------
+*25/04/2018*
+
+* 2 function renames to match the official API
+
 Ver. 2.0
 ----------
 *18/02/2018*
@@ -8,8 +15,3 @@ Ver. 2.0
 * Preparation for SSL support
 * Other improvements and fixes coming from 1.5
 
-Ver. 2.0.1
-----------
-*25/04/2018*
-
-* 2 function renames to match the official API
