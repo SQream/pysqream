@@ -81,7 +81,7 @@ Example of classic Set data loop, using network streaming (also called Network I
 .. code-block:: python
 
     # here we create the according table by executing a 
-    #  "create or replace table table_name (int_column int, varchar_column varchar(10))" statement
+    # "create or replace table table_name (int_column int, varchar_column varchar(10))" statement
     
     row1 = [1,2,3]
     row2 = ["s1","s2","s3"]
