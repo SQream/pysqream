@@ -1136,12 +1136,11 @@ class Connector(object):
                 'Connection already exists. You must close the current connection before creating a new one')
 
 
-    def close(self):
+    def close_connection(self):
         # Close existing connection, if it exists
         if self._sc is None:
             return
         else:
-            # self._sc.close_socket()
             self._sc.close_connection()
             self._sc = None
 
