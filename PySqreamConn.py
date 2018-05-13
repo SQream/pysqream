@@ -65,7 +65,7 @@ import struct, array
 from datetime import date, datetime
 from time import time, gmtime, sleep
 from struct import pack, unpack
-from itertools import groupby
+from itertools import groupby, izip
 from multiprocessing import Process, Pipe #, Queue
 from decimal import Decimal
 from operator import add
@@ -78,12 +78,6 @@ DEFAULT_BUFFER_SIZE = 4096    #65536
 DEFAULT_NETWORK_CHUNKSIZE = 10000  
 FLUSH_SIZE = 65536     # Default flush size for set() operations
 
-# Setting the fast version of range() for Py 2
-try: 
-    range = xrange
-except:
-    pass
-
 VER = sys.version_info
 MAJOR = VER[0]
 
@@ -94,26 +88,19 @@ def version_info():
 
 ## API exception types
 #  ------------------------
-class BadTypeForSetFunction(Exception):
-    pass
+class BadTypeForSetFunction(Exception): pass
 
-class RowFillException(Exception):
-    pass
+class RowFillException(Exception):      pass
 
-class ValueRangeException(Exception):
-    pass  # not in use
+class ValueRangeException(Exception):   pass  # not in use
 
-class FaultyDateTuple(Exception):
-    pass
+class FaultyDateTuple(Exception):       pass
 
-class FaultyDateTimeTuple(Exception):
-    pass
+class FaultyDateTimeTuple(Exception):   pass
 
-class WrongGetStatement(Exception):
-    pass
+class WrongGetStatement(Exception):     pass
 
-class WrongSetStatement(Exception):
-    pass
+class WrongSetStatement(Exception):     pass
 
 exceptions = BadTypeForSetFunction, RowFillException, ValueRangeException, FaultyDateTuple, FaultyDateTimeTuple, WrongGetStatement, WrongSetStatement
 
@@ -146,19 +133,6 @@ packing_column_codes =   {'ftBool':   'B',
                         'ftBlob':      None
                         }
 
-sqream_typenames_to_codes = {'BOOLEAN':  'ftBool', 
-                            'TINYINT':  'ftUByte',
-                            'SMALLINT': 'ftShort',
-                            'INT':      'ftInt', 
-                            'BIGINT':   'ftLong', 
-                            'FLOAT':    'ftDouble',
-                            'REAL':     'ftFloat',
-                            'DATE':     'ftDate',
-                            'DATETIME': 'ftDateTime',
-                            'TIMESTAMP':'ftDateTime',
-                            'VARCHAR':  'ftVarchar',
-                            'NVARCHAR': 'ftBlob'
-                            }    
 
 
 # Datetime conversions from SQream to Python
@@ -255,24 +229,25 @@ class SqreamColumn(object):
         self._column_size = None
         self._isTrueVarChar = False
         self._nullable = False
-        self._column_data = []
+        self.data = []
 
 
 ## Batch class for per-record aggregation
 #  ---------------------------------------
 
-class BinaryColumn:
+class Column:
     ''' Generates a binary to be network inserted to SQream.
         Also holds complementary null and length columns. '''
     
     def __init__(self, col_type, nullable = True, varchar_size = 0):
+
         self.col_type = col_type
         self.nullable = nullable
         self.varchar_size = varchar_size
         self.add_val, self.add_null = self.set_add_val_null()
-        self._index = -1      # Number of values inserted, serves as the insertion slot location
-        self._data = b''
-        # self._data = self.setup_column(col_type)
+        
+        self.data = []
+        self.encoded_data = b''
         self._nulls = bytearray()                        # If nullable
         self._nvarchar_lengths = array.array(str('i'))        # length column for nVarchar
 
@@ -280,9 +255,8 @@ class BinaryColumn:
     def reset_data(self):
         ''' Empty all data related content after a sucessful flush'''
         
-        self._index = -1      # Number of values inserted, serves as the insertion slot location
-        self._data = b''
-        # self._data = self.setup_column(col_type)
+        self.encoded_data = b''
+        # self.encoded_data = self.setup_column(col_type)
         self._nulls = bytearray()                           # If nullable
         self._nvarchar_lengths = array.array(str('i'))        # length column for nVarchar
 
@@ -302,14 +276,14 @@ class BinaryColumn:
                 # add_val = lambda val: val.encode('utf-8')[:length].ljust(length, b' ')      
                 def add_val(val):
                     self._nulls.append(0)
-                    self._data += val.encode('utf-8')[:length].ljust(length, b' ')
+                    self.encoded_data += val.encode('utf-8')[:length].ljust(length, b' ')
 
                 def add_null():
                     self._nulls.append(1)
-                    self._data += b''.ljust(length, b' ')
+                    self.encoded_data += b''.ljust(length, b' ')
             else:
                 def add_val(val):
-                    self._data += val.encode('utf-8')[:length].ljust(length, b' ')
+                    self.encoded_data += val.encode('utf-8')[:length].ljust(length, b' ')
 
         elif self.col_type == 'ftBlob':   
             
@@ -323,20 +297,20 @@ class BinaryColumn:
                     self._nvarchar_lengths.append(len(encoded_val))
                     # print  (len(encoded_val))   #dbg
                     self._nulls.append(0)
-                    self._data += encoded_val
-                    # self._data += val.encode('utf-8')[:length].ljust(length, b' ')  #Py3
+                    self.encoded_data += encoded_val
+                    # self.encoded_data += val.encode('utf-8')[:length].ljust(length, b' ')  #Py3
 
                 def add_null():
                     self._nvarchar_lengths.append(len(''))
                     self._nulls.append(1)
-                    self._data += b''.encode('utf-8')[:length]   #.ljust(length, b' ')
-                    # self._data += val.encode('utf-8')[:length].ljust(length, b' ')   #Py3
+                    self.encoded_data += b''.encode('utf-8')[:length]   #.ljust(length, b' ')
+                    # self.encoded_data += val.encode('utf-8')[:length].ljust(length, b' ')   #Py3
             else:
                 def add_val(val):
                     encoded_val = unicode(val, 'utf-8').encode('utf-8')[:length]  #.ljust(length, b' ')
                     self._nvarchar_lengths.append(len(val.encode('utf-8'))) 
-                    self._data += encoded_val
-                    # self._data += val.encode('utf-8')[:length].ljust(length, b' ')   #Py3
+                    self.encoded_data += encoded_val
+                    # self.encoded_data += val.encode('utf-8')[:length].ljust(length, b' ')   #Py3
 
         elif self.col_type == 'ftDate':
            
@@ -347,17 +321,17 @@ class BinaryColumn:
                         announce(FaultyDateTuple, 'Not a valid Date tuple')
 
                     self._nulls.append(0)
-                    self._data += pack(str(type_code), dateparts_to_int(*val))
+                    self.encoded_data += pack(str(type_code), dateparts_to_int(*val))
 
                 def add_null():
                     self._nulls.append(1)
-                    self._data += pack(str(type_code), dateparts_to_int(0, 0, 0))
+                    self.encoded_data += pack(str(type_code), dateparts_to_int(0, 0, 0))
             else:
                 def add_val(val):
                     if not validate_datetime_tuple(val):
                         announce(FaultyDateTuple, 'Not a valid Date tuple')
 
-                    self._data += pack(str(type_code), dateparts_to_int(*val))
+                    self.encoded_data += pack(str(type_code), dateparts_to_int(*val))
 
         elif self.col_type == 'ftDateTime': 
             
@@ -368,17 +342,17 @@ class BinaryColumn:
                         announce(FaultyDateTimeTuple, 'Not a valid Datetime tuple')
 
                     self._nulls.append(0)
-                    self._data += pack(str(type_code), dtparts_to_long(*val))
+                    self.encoded_data += pack(str(type_code), dtparts_to_long(*val))
 
                 def add_null():
                     self._nulls.append(1)
-                    self._data += pack(str(type_code), dtparts_to_long(0, 0, 0, 0, 0, 0))
+                    self.encoded_data += pack(str(type_code), dtparts_to_long(0, 0, 0, 0, 0, 0))
             else:
                 def add_val(val):
                     if not validate_datetime_tuple(val):
                         announce(FaultyDateTimeTuple, 'Not a valid Datetime tuple')
 
-                    self._data += pack(str(type_code), dtparts_to_long(*val))
+                    self.encoded_data += pack(str(type_code), dtparts_to_long(*val))
 
         elif self.col_type == 'ftLong':
            
@@ -386,14 +360,14 @@ class BinaryColumn:
                 # add_val = lambda val: val.encode('utf-8')[:length].ljust(length, b' ')      
                 def add_val(val):
                     self._nulls.append(0)
-                    self._data += pack(str(type_code), val)               
+                    self.encoded_data += pack(str(type_code), val)               
 
                 def add_null():
                     self._nulls.append(1)
-                    self._data += pack(str(type_code), 0)  
+                    self.encoded_data += pack(str(type_code), 0)  
             else:
                 def add_val(val):
-                    self._data += pack(str(type_code), val)  
+                    self.encoded_data += pack(str(type_code), val)  
         
         elif self.col_type in ('ftBool', 'ftUByte', 'ftShort', 'ftInt', 'ftFloat', 'ftDouble'):
             # Non bigint numerical types
@@ -401,18 +375,18 @@ class BinaryColumn:
                 # add_val = lambda val: val.encode('utf-8')[:length].ljust(length, b' ')      
                 def add_val(val):
                     self._nulls.append(0)
-                    # self._data += array.array(str(type_code), [val]).tostring()
-                    self._data += pack(str(type_code), val)
+                    # self.encoded_data += array.array(str(type_code), [val]).tostring()
+                    self.encoded_data += pack(str(type_code), val)
 
                 def add_null():
                     self._nulls.append(1)
-                    # self._data += array.array(str(type_code), [0]).tostring()
-                    self._data += pack(str(type_code), 0)
+                    # self.encoded_data += array.array(str(type_code), [0]).tostring()
+                    self.encoded_data += pack(str(type_code), 0)
 
             else:
                 def add_val(val):
-                    # self._data += array.array(str(type_code), [val]).tostring()
-                    self._data += pack(str(type_code), val)
+                    # self.encoded_data += array.array(str(type_code), [val]).tostring()
+                    self.encoded_data += pack(str(type_code), val)
       
         else:
             # Oh pew
@@ -422,13 +396,43 @@ class BinaryColumn:
         return (add_val, add_null) if self.nullable else (add_val, lambda: print("Can't add nulls to a non-nullable column"))
 
 
+## Socketses
+#  ---------
+
+def _recieve(byte_num, sock):
+    ''' Read a specific amount of bytes from socket'''
+
+    data = bytearray(byte_num)
+    idx = 0
+    
+    while byte_num >0:
+        # Get whatever the socket gives and put it inside the bytearray
+        recieved = sock.recv(byte_num)
+        size = len(recieved)      
+        data[idx: idx + size] = recieved
+
+        # Update bytearray index and remaining amount to be fetched from socket
+        byte_num -= size
+        idx += size
+
+    return data
+
+
+## SQream related interaction
+#  --------------------------
+
+def _get_message_header(data_length, is_text_msg = True, protocol_version = PROTOCOL_VERSION):
+    ''' Generate SQream's 10 byte header prepended to any message '''
+    
+    return pack('bb', protocol_version, 1 if is_text_msg else 2) + pack('q', data_length) 
+
+
 ## Internal handler object
 #  -----------------------
 
 class SqreamConn(object):
     def __init__(self, username=None, password=None, database=None, host=None, port=None, clustered=False, timeout=15):
         self.get_nulls = self.get_nulls_py2 if MAJOR==2 else self.get_nulls_py3
-        self._socket = None
         self._user = username
         self._password = password
         self._database = database
@@ -439,27 +443,41 @@ class SqreamConn(object):
         self._use_ssl = True
 
         # API related
-        self._query_str = None  # The SQL string entered via statement_handle()
-        self._query_data = []   # Keeps a reference of query results, in addition to what's returned to the Connector object
-        self._batch = []   # Keeps columns of binarized data to be sent to sqream upon flush() / close()
-        # self._meta = meta
-        self._ordered_col_names = []   # Set at _prepare_statement() (move to _query_type_in()) or _query_type_out()
-        self._col_indices = {}
-        self._index = -1        # Index holder for get() / set() functions
-        self._num_of_rows = -1
         self._row_size = 0
 
         # Number of rows after which a flush is performed
         self._row_threshold = 100            # Decided dynamically based on row size
-        self._accumulated_threshold = 0      # The row at which the next flush will occur 
-        self._rows_inserted = 0
         self._set_flags = [0]
 
     HEADER_LEN = 10
 
+    
+    def _get_response(self, sock = None):
+        ''' Get answer from SQream after sending a relevant message '''
+
+        sock = sock or self.s
+        # Getting 10-byte response header back
+        header = _recieve(10, sock)
+        server_protocol, bytes_or_text, message_len = header[0], header[1], unpack('q', header[2:10])[0]
+        # server_protocol, bytes_or_text, message_len = _recieve(1, self.s), _recieve(1, self.s), _recieve(8, self.s)
+         
+        return _recieve(message_len, sock).decode('utf8')
+
+
+    def _send_string(self, json_cmd, get_response = True, is_text_msg = True, sock = None):
+
+    
+        sock = sock or self.s
+        # Generating the message header, and sending both over the socket
+        sock.send( _get_message_header(len(json_cmd)) + json_cmd.encode('utf8'))
+        
+        if get_response:
+            return self._get_response(sock)
+
+
     def set_socket(self, sock):
         assert isinstance(sock, (object, socket))
-        self._socket = sock
+        self.s = sock
 
     def set_host(self, host):
         self._host = host
@@ -473,7 +491,7 @@ class SqreamConn(object):
     def open_socket(self):
         try:
             self.set_socket(socket.socket(socket.AF_INET, socket.SOCK_STREAM))
-            self._socket.settimeout(self._timeout)
+            self.s.settimeout(self._timeout)
         except socket.error as err:
             self.set_socket(None)
             raise RuntimeError("Error from SQream: " + str(err))
@@ -491,15 +509,15 @@ class SqreamConn(object):
         ''' Wrap a socket to make it an SSL socket'''
 
         try:
-            self._socket = ssl.wrap_socket(sock or self._socket, ssl_version=ssl.PROTOCOL_TLSv1, ciphers="ADH-AES256-SHA")
+            self.s = ssl.wrap_socket(sock or self.s, ssl_version=ssl.PROTOCOL_TLSv1, ciphers="ADH-AES256-SHA")
         except:
             print ("Error wrapping socket")  # check what exception goes here
 
     
     def close_socket(self):
-        if self._socket:
+        if self.s:
             try:
-                self._socket.close()
+                self.s.close()
                 self.set_socket(None)
             except(socket.error, AttributeError):
                 pass
@@ -511,9 +529,9 @@ class SqreamConn(object):
         self.set_port(port)
 
         try:
-            self._socket.connect((ip, port))
+            self.s.connect((ip, port))
         except socket.error as err:
-            if self._socket:
+            if self.s:
                 self.close_connection()
             raise RuntimeError("Couldn't connect to SQream server - " + str(err))
         except:
@@ -525,6 +543,7 @@ class SqreamConn(object):
         self.close_socket()
 
     
+
     def create_connection(self, ip, port):
         self.open_socket()
         
@@ -580,11 +599,11 @@ class SqreamConn(object):
 
     def socket_recv(self, param):
         try:
-            data_recv = self._socket.recv(param)
+            data_recv = self.s.recv(param)
             # TCP says recv will only read 'up to' param bytes, so keep filling buffer
             remainder = param - len(data_recv)
             while remainder > 0:
-                data_recv += self._socket.recv(remainder)
+                data_recv += self.s.recv(remainder)
                 remainder = param - len(data_recv)
             if b'{"error"' in data_recv:
                 raise RuntimeError("Error from SQream: " + repr(data_recv))
@@ -600,6 +619,7 @@ class SqreamConn(object):
 
     def _get_msg(self):
         data_recv = self.socket_recv(self.HEADER_LEN)
+        # print ("data recieved: ", repr(data_recv))   # dbg
         ver_num = unpack('b', bytearray([data_recv[0]]))[0]
         if ver_num not in (4,5):        # Expecting 4 or 5        
             raise RuntimeError(
@@ -613,16 +633,20 @@ class SqreamConn(object):
         # If close=True, then do not expect to read anything back
         cmd_bytes = self.cmd2bytes(cmd_str, binary)
         try:
-            self._socket.settimeout(None)
-            self._socket.send(cmd_bytes)
+            self.s.settimeout(None)
+            self.s.send(cmd_bytes)
         except socket.error as err:
             self.close_connection()
             self.set_socket(None)
             raise RuntimeError("Error from SQream: " + str(err))
         if close is False:
+            # print ("message sent: ", cmd_str)  #dbg
             return self._get_msg()
         else:
             return
+
+    # exchange = _send_string
+
 
     def connect(self, database, username, password):
         if self._clustered is False:
@@ -666,190 +690,110 @@ class SqreamConn(object):
     def get_nulls_py3(self,column_data):
         return [c for c in column_data]
 
-    
-    def _get_table_metadata(self, table_name):
-        # An internal version for getting table metadata, using execute_query() directly  
-
-        # Get it back
-        self._prepare_statement("select * from sqream_catalog.columns where table_name = '{}'".format(table_name))
-        self._execute()
-        self._fetch_all()
-        self._close_statement()    # needed?
-        meta = self._cols_to_rows()
-        ordered_col_names = [val for val, gr in groupby([item[5].split('@')[0] for item in meta])]
-        column_meta = dict.fromkeys(ordered_col_names)
-        nool = False
-        row_size = 0
-        for item in meta:
-            name, null_or_val = item[5].split('@')[0:2]
-            # Skipping separate references to null columns, which precede the real columns
-            if null_or_val == 'null':
-                nool = True
-                continue
-
-            # Actual columns get here. If previous one was a null column, nool will remember
-            coltype, nullable, length = sqream_typenames_to_codes[item[6]], nool, item[7]
-            column_meta[name] = [coltype, nullable, length]
-            row_size+= length
-            nool = False  # '''
-        
-        return column_meta, ordered_col_names    # , row_size
-
-        # return list(map(lambda c: (c.get_column_name(), c.get_type_name(), c._nullable, c.get_type_size()), columns))
-        # list(map(lambda c: c.get_type_name(), cols))
-        # column_meta = dict(zip(self.cols_names(), zip(self.cols_types(), self.cols_nullable(), self.cols_type_sizes())))
-
     def _get_error(self):
         res = self._get_msg()
         if "error" in res: 
             return res
 
-    def _prepare_statement(self, query_str, meta = None, ordered_col_names = None, auto = True):
+    
+    def _prepare_statement(self, query_str):
         ''' 
         Called by Connector.prepare(). If contains 'insert into' and '?', comes complementary
         with table metadata and the ordered column names  '''            
 
-        # Protocol check
-        if PROTOCOL_VERSION == 5:    # remove if/once everyone's on 5
-            # getStatementId is new for SQream protocol version 5
-            cmd_str = '{"getStatementId" : "getStatementId"}'
-            res_id = self.exchange(cmd_str)
+        # Get statement id if necessary
+        res_id = self.exchange('{"getStatementId" : "getStatementId"}') if (PROTOCOL_VERSION >= 5) else None
 
         # Send command and validate response from SQream
-        cmd_str = """{{"prepareStatement":"{0}","chunkSize":{1}}}""".format(query_str.replace('"', '\\"'),
-                                                                            str(DEFAULT_NETWORK_CHUNKSIZE))        
-        res = self.exchange(cmd_str)
+        res = self.exchange("""{{"prepareStatement":"{0}","chunkSize":{1}}}""".format(query_str.replace('"', '\\"'),
+                                                                            str(DEFAULT_NETWORK_CHUNKSIZE)))        
         if "statementPrepared" in res: 
             
             # Remove previous meta/data
-            self._query_data = []
-            self._batch = [] 
-            self._meta = [] 
             self._set_flags = [0]              # flags columns that were set. gets cleaned by next_row and possibly                 
             self._ordered_col_names = []
             self._col_indices = {}
-            self._index = -1
-            self._num_of_rows = -1  
             self._row_size = 0
             self._row_threshold = 0
-            self._accumulated_threshold = 0 
-            self._set_or_get = None    
-            # self._row_threshold = 100       # add dynamic calculation 
 
-            # If an insert statement, we would've recieved metadata
-            if meta:
-                # Getting column names off our query string
-                query_words = query_str.split()
-                table_name = query_words[2]   # self?
-                if query_words[3] == '(':
-                    cols_foshow = query_str.replace(')', '(').split('(')[1].split(',')
-                    try:
-                        # Cols can given as names or indices
-                        int(cols_foshow[0])
-                    except:
-                        # Cols given as names
-                        cols_foshow = [col.strip() for col in cols_foshow]
-
-                    else:
-                        # Cols given as indices
-                        cols_foshow = [ordered_col_names[index] for index in cols_foshow]
-                else:
-                    # No specific column ids given, take all columns
-                    cols_foshow = ordered_col_names
-                
-                self._ordered_col_names = cols_foshow  # When we jump to _query_type_in(), this will have the column names for insertion
-                self._meta = meta
-                self._set_flags = [0]*len(self._ordered_col_names)
-
-                # Auto mode - queryTypeIn/Out are not part of the API, called automatically by PrepareStatement
-                query_type_in = self._query_type_in() if auto else None
-
-            else:
-                query_type_out = self._query_type_out() if auto else None
+            self.total_fetched = 0    # total amount of rows fetched so far
+            self.current_row = 0      # number of rows that have been dispatched by next_row() = number of calls to next_row()
+         
+            type_data = self._query_type('in')
+            if not type_data:
+                # Select statement
+                type_data = self._query_type('out')
+                self.is_select = True  
+            else: 
+                self.is_select = False
+                            
         return res
 
     
-    # Used by _prepare_statement()
-    def _query_type_in(self):
-        ''' Retrun value example: 
-        {"queryType":[{"nullable":false,"type":["ftVarchar",50,0]},{"nullable":false,"type":["ftVarchar",50,0]},
-        {"nullable":false,"type":["ftDateTime",8,0]},{"nullable":false,"type":["ftVarchar",112,0]},'''
-        
+    def _query_type(self, mode):
+        ''' Query SQream for metadata, called automatically after prepare_statement '''
 
-        out = self.exchange('{"queryTypeIn":"queryTypeIn"}')
-        query_type_in = json.loads(out.decode('utf-8'))
+        # At some point in the future, query types will / should be merged
+        cmd_str = '{"queryTypeIn": "queryTypeIn"}' if mode == 'in' else '{"queryTypeOut" : "queryTypeOut"}'
+        json_key = 'queryType' if mode == 'in' else 'queryTypeNamed'
 
-        # Calaculate row size and flush threshold if applicable
-        # print ([val['type'][1] for val in query_type_in['queryType']])
-        self._row_size = sum(val['type'][1] for val in query_type_in['queryType'])
-        self._row_threshold = FLUSH_SIZE // self._row_size if self._row_size else 0
+        res = self.exchange(cmd_str)
+        self.column_json = json.loads(res.decode('utf8'))[json_key]   
         
-        '''
-        # Setup _batch columns for insert statement if applicable
-        for idx, name in enumerate(self._ordered_col_names):
-            # coltype, nullable, varchar_length = self._meta[name]
-            # col = BinaryColumn(self._meta[name])
-            # print (self._meta[name])
-            print (self._meta[name])
-            self._batch.append(BinaryColumn(*self._meta[name]))
-            self._col_indices[name] = idx 
+        # Preallocate the columns list and an empty column name to index dictionary
+        self.cols = [None] * len(self.column_json)
+        self._col_indices = {}
 
-        return query_type_in'''
-    
-        for col in query_type_in['queryType']:
-            self._batch.append(BinaryColumn(col['type'][0], col['nullable'], col['type'][1]))
+        if mode == 'in':
+            # Insert statement, update variables for auto-flush and column set tracker
+            self._row_size = sum(col['type'][1] for col in self.column_json)
+            self._row_threshold = FLUSH_SIZE / self._row_size if self._row_size else 0  # calculate inside the network stuff
+            self._set_flags = [0] * len(self.column_json)
+            
+            for idx, col in enumerate(self.column_json):
+                self.cols[idx] = Column(col['type'][0], col['nullable'], col['type'][1])
         
-        
-        return query_type_in
-    
-
-    # Used by _prepare_statement()
-    def _query_type_out(self):
-        exch = self.exchange('{"queryTypeOut" : "queryTypeOut"}')
-        query_type_out = json.loads(exch.decode('utf-8'))
-        
-
-        if query_type_out["queryTypeNamed"]: 
-            # Setting up column metadata  
-            for idx, col_type in enumerate(query_type_out['queryTypeNamed']):
+        elif mode =='out':
+            for idx, col in enumerate(self.column_json):
                 # Column sizes (row number) is updated at fetch() time
-                sq_col = SqreamColumn()
-                sq_col._type_name = query_type_out['queryTypeNamed'][idx]['type'][0]
-                sq_col._type_size = query_type_out['queryTypeNamed'][idx]['type'][1]
-                sq_col._column_name = query_type_out['queryTypeNamed'][idx]['name']
+                sq_col = Column(col['type'][0], col['nullable'], col['type'][1])
+                sq_col._type_name = col['type'][0]
+                sq_col._type_size = col['type'][1]
+                sq_col._column_name = col['name']
                 #def _column_name = (self, column_name): self._column_name = column_name
                 self._ordered_col_names.append(sq_col._column_name) 
                 # To allow quick switching between column names and locations in the table 
                 self._col_indices[sq_col._column_name] = idx   
-                sq_col._isTrueVarChar = query_type_out['queryTypeNamed'][idx]['isTrueVarChar']
-                sq_col._nullable = query_type_out['queryTypeNamed'][idx]['nullable']
-                self._query_data.append(sq_col)
+                sq_col._isTrueVarChar = col['isTrueVarChar']
+                sq_col._nullable = col['nullable']
+                self.cols[idx] = sq_col
 
-        return query_type_out
+      
+        return self.cols
 
     
+
     def _fetch_all(self, discard = False):
         ''' Perform fetching untill all available date is retrieved'''
         res = True
         if discard:
             while res:
-                res=self._fetch_data()
+                res=self._fetch()
                 # flush retrieved data
-                col._column_data = []
+                col.data = []
         else:
             while res:
-                res=self._fetch_data()
+                res=self._fetch()
 
            
-    def _fetch_data(self):
+    def _fetch(self):
         exch = self.exchange('{"fetch" : "fetch"}')
         res = json.loads(exch.decode('utf-8'))        
-
-        if res["rows"] == 0:
+        num_rows_fetched, column_sizes = res['rows'], res['colSzs']
+        
+        if num_rows_fetched == 0:
             # No content to read - All data has been assigned to our column objects
-            # self._index = self._query_data[0]
-            self._num_of_rows = self._num_of_rows if self._num_of_rows else 0
-            return False
+            return num_rows_fetched
         
         # Reading and parsing data     
         ignored_header = self.socket_recv(self.HEADER_LEN) # Read to ignore header, which is irrelevant here 
@@ -857,7 +801,7 @@ class SqreamConn(object):
         idx_first = 0
         idx_last = 1
         # Metadata store + how many columns to read ([val], [len,blob], [null,val], [null,len,blob])
-        for col in self._query_data:   # self._query_data updated by self.query_type_out()
+        for col in self.cols:   # self._query_data updated by self.self.column_json()
             if col._isTrueVarChar:
                 idx_last += 1
             if col._nullable:
@@ -902,25 +846,12 @@ class SqreamConn(object):
             else:
                 raise RuntimeError("Column data encountered malformed column during fetch")
 
-            col._column_data += column_data
+            col.data += column_data
 
         # Update boundary parameter for _next_row() 
-        self._num_of_rows = self._query_data[0]._column_size[0]  # 1 is fetched column size
+        # self._num_of_rows = self._query_data[0]._column_size[0]  # 1 is fetched column size
         # print (self._num_of_rows)  #dbg
-        return True  # No. of rows recieved was not 0
-
-
-    def _execute(self):
-          self.exchange('{"execute" : "execute"}')
-
-
-    def _close_statement(self):
-        # '''
-        if 'add flush condition':  # flush() doesn't fire blanks so it's keewl
-            # self._index-=1
-            self._flush()  #'''
-        
-        self.exchange('{"closeStatement":"closeStatement"}')  #'''
+        return res['rows']  # No. of rows recieved 
 
 
     def _get_item(self, col_index_or_name, col_type, null_check = False):
@@ -943,10 +874,10 @@ class SqreamConn(object):
 
         # Trying to get the column
         try:
-            col = self._query_data[col_index]
+            col = self.cols[col_index]
         except IndexError: 
-            print("Inexistent column index. Number of columns is " + str(len(self._query_data)))
-            return "Inexistent column index. Number of columns is " + str(len(self._query_data))
+            print("Inexistent column index. Number of columns is " + str(len(self.cols)))
+            return "Inexistent column index. Number of columns is " + str(len(self.cols))
         except:
             print("No select statement executed")
           
@@ -959,10 +890,11 @@ class SqreamConn(object):
 
         # Acquired and verified. Here cometh thy money
         try:
-            # print( col._column_data)   #dbg
-            res = col._column_data[self._index]
+            # print( col.data, self.current_row)   #dbg
+            res = col.data[self.current_row-1]
         except IndexError:
-            print ("No more rows. Last value was: ", col._column_data[self._index -1])
+            res = None
+            print ("No more rows. Last value was: ", col.data[self.current_row -2 ])
 
         return res if not null_check else True if res is None else False
 
@@ -995,9 +927,9 @@ class SqreamConn(object):
 
         # Trying to get the column from the batch           
         try:
-            col = self._batch[col_index]
+            col = self.cols[col_index]
         except IndexError: 
-            announce(IndexError, ("Inexistent column index. Number of columns is " + str(len(self._batch))))
+            announce(IndexError, ("Inexistent column index. Number of columns is " + str(len(self.cols))))
             return   
         except:
             print("No insert statement executed")
@@ -1023,7 +955,8 @@ class SqreamConn(object):
     def _flush(self):   # <== check if works on fumes
         ''' Gather a binary chunk from get() statements and send to SQream'''
         # print (self._row_threshold)   #dbg
-        chunk =  b''.join((str(col._nulls) + col._nvarchar_lengths.tostring() + str(col._data) for col in self._batch))
+
+        chunk =  b''.join((str(col._nulls) + col._nvarchar_lengths.tostring() + str(col.encoded_data) for col in self.cols))
 
         # print ([(str(col._nulls),  col._nvarchar_lengths.tostring(),  str(col._data)) for col in self._batch])  #dbg
         # print ([(col._nvarchar_lengths.tostring()) for col in self._batch])  #dbg
@@ -1031,20 +964,20 @@ class SqreamConn(object):
         # print (repr(chunk))
         if chunk:
             # Insert sequence - put command, binary chunk
-            put_cmd = '{{"put":{}}}'.format(self._index + 1)
+            put_cmd = '{{"put":{}}}'.format(self.current_row)
             self.exchange(put_cmd, True)
             batch_insert_res = self.exchange(chunk, False, True)   # This one is a binary piece, execute and cmd2bytes were modified 
             
             # Truncate binary column upon success
             if batch_insert_res == '{"putted":"putted"}':
-                map(lambda col: col.reset_data(), self._batch)
+                map(lambda col: col.reset_data(), self.cols)
 
     
     def _cols_to_rows(self, cols = None):
         ''' Transpose dem columns'''
 
-        cols = cols or self._query_data
-        return zip(*(col._column_data for col in cols))      
+        cols = cols or self.cols
+        return zip(*(col.data for col in cols))      
 
     
     '''
@@ -1091,7 +1024,7 @@ class Connector(object):
         # Store the connection
         self._sc = None
         # Store the columns from the result
-        self._cols = None
+        self.cols = None
         self._query = None
         
         # For get() API statements
@@ -1141,6 +1074,7 @@ class Connector(object):
         if self._sc is None:
             return
         else:
+            # self._sc.close_socket()
             self._sc.close_connection()
             self._sc = None
 
@@ -1152,15 +1086,12 @@ class Connector(object):
 
     ## General statements
     #  ------------------
-
-    # execute = lambda: self._sc.exchange('{"execute" : "execute"}')
-    # close = lambda: self._sc.exchange('{"closeStatement":"closeStatement"}') 
     
     def execute(self):
-      self._sc._execute()
+      self._sc.exchange('{"execute" : "execute"}')
  
     def fetch_data(self):
-        self._sc._fetch_data()
+        self._sc._fetch()
 
     def fetch_discard(self):
         self._sc._fetch_all(True)
@@ -1168,44 +1099,26 @@ class Connector(object):
     def close(self):
         '''close statement'''
 
-        self._sc._close_statement()
+        if not self._sc.is_select:  # flush() doesn't fire blanks so it's keewl
+            self._sc._flush()  #'''
+        
+        self._sc.exchange('{"closeStatement":"closeStatement"}')  #'''
+
+
     '''
     def close_connection(self):
         # Same name as the inside function
         self._sc.close_connection() # '''
 
-    def statement_handle(query_str):
-        
-        if query_str not in (str, unicode):
-            print ('SQL statement should be a string')
-            return
 
-        self._sc._query_str = query_str
-    
-
-    def prepare(self, query_str = None):
+    def prepare(self, query_str):
         ''' Prepare statement'''
 
-        query_str = query_str if query_str else self._sc._query_str
-
-        if  query_str is None:
-            print ('No statement passed')   # raise # fixes
-            return
-        else:
-            query_str = query_str.replace('\n', ' ').replace('\r', '') 
+        query_str = query_str.replace('\n', ' ').replace('\r', '') 
         
-        # Prepping metadata in case this is a network insert statement
-        if query_str.lower().startswith('insert into') and '?' in query_str:
-            # This might not be a valid statement, but getting metadata just in case
-            query_words = query_str.split()
-            table_name = query_str.split()[2]  #query_words[2]
+        self._sc._prepare_statement(query_str)
 
-            # _get_table_metadata() uses _prepare_statement() itself. buster buster
-            meta, ordered_col_names = self._sc._get_table_metadata(table_name)
-            self._sc._prepare_statement(query_str, meta, ordered_col_names)
-        else:
-            self._sc._prepare_statement(query_str)
-
+    
     def get_error(self):
         return self._sc._get_error();
 
@@ -1219,50 +1132,35 @@ class Connector(object):
             return self._sc
 
 
-    def next_row(self, _more_to_fetch=[True]):  # more_to_fetch keeps track of fetches, shouldn't be passed #hackyhorace
+    def next_row(self):  
 
-        # retval = False
-        # Select scenario, bring another chunk of data if relevant
-        if self._sc._query_data and _more_to_fetch[0]:
-            # Optimize to fetch when needed and/or a separate thread
-            _more_to_fetch[0] = self._sc._fetch_data()     # Would get called an extra time
+        if self._sc.is_select:      # Select query
+            if self._sc.current_row  == self._sc.total_fetched: 
+                # fetch more data from SQream
+                num_rows_fetched = self._sc._fetch()
+                if num_rows_fetched == 0:
+                    return False 
+                
+                self._sc.total_fetched += num_rows_fetched
+            
+            self._sc.current_row += 1 
 
-        # Select scenario, index advancement if valid
-        if self._sc._num_of_rows > 0 and self._sc._index +1 <= self._sc._num_of_rows:   #_num_of_rows decided after a fetch() 
-            self._sc._index += 1
-            # print(self._sc._index, self._sc._num_of_rows)
-            # retval = True
-            return True
+        else:  # Insert query
+            if sum(self._sc._set_flags) < len(self._sc.cols):
+                raise RowFillException('Not all columns have been set')
 
-        # Insert scenario
-        if self._sc._num_of_rows < 0:
+            self._sc._set_flags = [0] * len(self._sc.column_json)
 
-            # Have all columns been set
-            # print (self._sc._set_flags, self._sc._ordered_col_names, sum(self._sc._set_flags), len(self._sc._ordered_col_names))    # dbg
-            if sum(self._sc._set_flags) < len(self._sc._ordered_col_names) and len(self._sc._ordered_col_names):
-                # print ('debug': self._sc._set_flags, self._sc._ordered_col_names)  #dbg 
-                announce(RowFillException, "Not all columns have been set")
-                return False
-            else:
-                # This gets nullified every row
-                self._sc._set_flags = [0]*len(self._sc._ordered_col_names)
+            if self._sc.current_row >= self._sc._row_threshold:
+                self._sc._flush()
+                # [col.reset_data() for col in self.cols]    # done inside flush()
 
-            # Check flush condition
-            # '''
-            if self._sc._index > self._sc._row_threshold:
-                # print ("row_threshold:", self._sc._row_threshold, "index:", self._sc._index)   #dbg
-                self._sc._index += 1
-                self._sc._flush()           
-                self._sc._index = -1  # Nullifying index count 
-                return True
-                # self._sc._flush_threshold += self._sc._row_threshold     #'''
+                self._sc.current_row = 0  
+            else:  
+                self._sc.current_row += 1  
 
-            self._sc._index += 1    
-            return True
+        return True
 
-        # check some length indicator for get(), else check buffer stuff 
-      
-        return False
 
 
     def flush(self):
