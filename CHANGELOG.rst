@@ -1,4 +1,11 @@
 
+Ver. 2.0.2
+----------
+*13/05/2018*
+
+* Connector refactored to parse metadata without using external queries. A few internal workflows simplified
+
+
 Ver. 2.0.1
 ----------
 *25/04/2018*
