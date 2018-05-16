@@ -1,4 +1,4 @@
-Python2.7/3.x Driver for SQream DB
+Python2.7/3.x Driver for SQream DB, version 2.0.2
 ----------
 This is a Python implementation of the SQream API. 
 
