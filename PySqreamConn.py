@@ -1,6 +1,6 @@
 from __future__ import absolute_import, division, print_function, unicode_literals
 
-PYSQREAM_VERSION = "2.0"
+PYSQREAM_VERSION = "2.0.2"
 """
 Python2.7/3.x connector for SQream DB
 
