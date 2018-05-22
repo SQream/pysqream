@@ -1,8 +1,8 @@
-Python2.7/3.x Driver for SQream DB
+Python connector for SQream DB
 ----------
-This is a Python implementation of the SQream API, version 2.0.2. Supports SQream versions 2.0 onward.
+**Version:**  2.0.2
 
-A backward compatible wrapper for v. 1.5 will be added.
+**Supported SQreamDB versions:** 2.0 onward
 
 Usage example:
 
