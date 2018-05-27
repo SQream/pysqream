@@ -1150,15 +1150,14 @@ class Connector(object):
                 raise RowFillException('Not all columns have been set')
 
             self._sc._set_flags = [0] * len(self._sc.column_json)
-
+            self._sc.current_row += 1  
+            
             if self._sc.current_row >= self._sc._row_threshold:
                 self._sc._flush()
                 # [col.reset_data() for col in self.cols]    # done inside flush()
 
                 self._sc.current_row = 0  
-            else:  
-                self._sc.current_row += 1  
-
+                
         return True
 
 
