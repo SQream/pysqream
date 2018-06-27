@@ -10,12 +10,12 @@ Usage example:
 
     ## Import and establish a connection  
     #  ---------------------------------   
-    import PySqreamConn
+    import SQream_python_connector
 
     # version information
-    print PySqreamConn.version_info()
+    print SQream_python_connector.version_info()
 
-    con = PySqreamConn.Connector()
+    con = SQream_python_connector.Connector()
     # Connection parameters: IP, Port, Database, Username, Password, Clustered, Timeout(sec)
     sqream_connection_params = '127.0.0.1', 5000, 'master', 'sqream', 'sqream', False, 30
     con.connect(*sqream_connection_params)
@@ -108,8 +108,8 @@ All functions are accessed through the Connector class imported from PySqreamCon
 
 .. code-block:: python
     
-    import PySqreamConn
-    con = PySqreamConn.Connector()
+    import SQream_python_connector
+    con = SQream_python_connector.Connector()
     
     # arg types are: string, integer, string, string, string, boolean, integer
     con.connect(ip, port, database, username, password, clustered, timeout) 
