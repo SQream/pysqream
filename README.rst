@@ -1,6 +1,6 @@
 Python connector for SQream DB
 ----------
-**Version:**  2.0.2
+**Version:**  2.1.0
 
 **Supported SQreamDB versions:** 2.0 onward
 
