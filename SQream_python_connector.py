@@ -1,6 +1,6 @@
 from __future__ import absolute_import, division, print_function, unicode_literals
 
-PYSQREAM_VERSION = "2.0.2"
+PYSQREAM_VERSION = "2.1.0"
 """
 Python2.7/3.x connector for SQream DB
 
@@ -70,10 +70,11 @@ from multiprocessing import Process, Pipe #, Queue
 from decimal import Decimal
 from operator import add
 from threading import Event
+from collections import namedtuple
 
 
 # Default constants
-PROTOCOL_VERSION = 5
+PROTOCOL_VERSION = 6
 DEFAULT_BUFFER_SIZE = 4096    #65536 
 DEFAULT_NETWORK_CHUNKSIZE = 10000  
 FLUSH_SIZE = 65536     # Default flush size for set() operations
@@ -218,18 +219,35 @@ def conv_data_type(type, data):
         return unpack(unpack_type, data)[0]
 
 
-## SQream column class
-#  -------------------
+statement_type = {'DML', 'INSERT', 'SELECT'}
 
-class SqreamColumn(object):
-    def __init__(self):
-        self._type_name = None
-        self._type_size = None
-        self._column_name = None
-        self._column_size = None
-        self._isTrueVarChar = False
-        self._nullable = False
-        self.data = []
+## Metadata related
+#  ----------------
+sqream_type_id =   {'ftBool':     'Bool',   
+                    'ftUByte':    'Tinyint',
+                    'ftShort':    'Smallint',
+                    'ftInt':      'Int',  
+                    'ftLong':     'Bigint',
+                    'ftFloat':    'Real',                 
+                    'ftDouble':   'Float',
+                    'ftDate':     'Date',
+                    'ftDateTime': 'DateTime',
+                    'ftVarchar':  'Varchar',
+                    'ftBlob':     'NVarchar'
+                    }
+
+
+SqreamType = namedtuple('SqreamType', ['tid', 'size'], verbose=False)
+# tid is of type sqream_type_id, size is size of one item of this type
+
+class ColumnMetadata(object):
+
+    def __init__(self, name, type_name, type_size, is_nullable, is_tvc):
+        self.name = name
+        self.type = SqreamType(sqream_type_id[type_name], type_size)
+        self.is_nullable = is_nullable
+        self.is_tvc = is_tvc
+
 
 
 ## Batch class for per-record aggregation
@@ -441,7 +459,6 @@ class SqreamConn(object):
         self._clustered = clustered
         self._timeout = timeout
         self._use_ssl = True
-
         # API related
         self._row_size = 0
 
@@ -586,8 +603,8 @@ class SqreamConn(object):
 
         if not binary:
             cmd_bytes_2 = bytearray([1])           # Vote 1 for text
-            # cmd_bytes_4 = cmd_str.expandtabs(1).encode('ascii')
-            cmd_bytes_4 = cmd_str.encode('ascii')
+            # cmd_bytes_4 = cmd_str.expandtabs(1).encode('utf8')
+            cmd_bytes_4 = cmd_str.encode('utf8')
         else:    
             cmd_bytes_2 = bytearray([2])           # 2 for binary
             cmd_bytes_4 = cmd_str
@@ -621,7 +638,7 @@ class SqreamConn(object):
         data_recv = self.socket_recv(self.HEADER_LEN)
         # print ("data recieved: ", repr(data_recv))   # dbg
         ver_num = unpack('b', bytearray([data_recv[0]]))[0]
-        if ver_num not in (4,5):        # Expecting 4 or 5        
+        if ver_num not in (4, 5, 6):        # Expecting 4 or 5        
             raise RuntimeError(
                 "SQream protocol version mismatch. Expecting " + str(PROTOCOL_VERSION) + ", but got " + str(
                     ver_num) + ". Is this a newer/older SQream server?")
@@ -645,17 +662,15 @@ class SqreamConn(object):
         else:
             return
 
-    # exchange = _send_string
-
-
-    def connect(self, database, username, password):
+    def connect(self, database, username, password, service):
+        self.service = service
         if self._clustered is False:
-            self.connect_unclustered(database, username, password)
+            self.connect_unclustered(database, username, password, service)
         else:
-            self.connect_clustered(database, username, password)
+            self.connect_clustered(database, username, password, service)
 
     # Voodoo, check what this does
-    def connect_clustered(self, database, username, password):
+    def connect_clustered(self, database, username, password, service):
         read_len_raw = self.socket_recv(4)  # Read 4 bytes to find length of how much to read
         read_len = unpack('i', read_len_raw)[0]
         if read_len > 15 or read_len < 7:
@@ -673,14 +688,23 @@ class SqreamConn(object):
         self.set_port(port)
         self.set_clustered(False)
         self.create_connection(ip_addr, port)
-        self.connect_unclustered(database, username, password)
+        self.connect_unclustered(database, username, password, service)
 
-    def connect_unclustered(self, database, username, password):
-        cmd_str = """{{"connectDatabase":"{0}","password":"{1}","username":"{2}"}}""".format(
-            database.replace('"', '\\"')
-            , password.replace('"', '\\"')
-            , username.replace('"', '\\"'))
-        self.exchange(cmd_str)
+    def connect_unclustered(self, database, username, password, service):
+        if service is None:
+            cmd_str = """{{"connectDatabase":"{0}","password":"{1}","username":"{2}"}}""".format(
+                database.replace('"', '\\"')
+                , password.replace('"', '\\"')
+                , username.replace('"', '\\"'))
+        else:
+             cmd_str = """{{"connectDatabase":"{0}","password":"{1}","username":"{2}", "service":"{3}"}}""".format(
+                database.replace('"', '\\"')
+                , password.replace('"', '\\"')
+                , username.replace('"', '\\"')
+                , service.replace('"', '\\"'))   
+        
+        #self.exchange(cmd_str)
+        self._connection_id = json.loads(self.exchange(cmd_str).decode('utf-8'))['connectionId']
     
     # Reading bytes in Python 2 and 3
     def get_nulls_py2(self,column_data):
@@ -701,13 +725,21 @@ class SqreamConn(object):
         Called by Connector.prepare(). If contains 'insert into' and '?', comes complementary
         with table metadata and the ordered column names  '''            
 
-        # Get statement id if necessary
-        res_id = self.exchange('{"getStatementId" : "getStatementId"}') if (PROTOCOL_VERSION >= 5) else None
+        # Protocol check
+        if PROTOCOL_VERSION in (5,6):    # remove if/once everyone's on 5
+            # getStatementId is new for SQream protocol version 5
+            cmd_str = '{"getStatementId" : "getStatementId"}'
+            self._statement_id = json.loads(self.exchange(cmd_str).decode('utf-8'))['statementId']
 
         # Send command and validate response from SQream
-        res = self.exchange("""{{"prepareStatement":"{0}","chunkSize":{1}}}""".format(query_str.replace('"', '\\"'),
-                                                                            str(DEFAULT_NETWORK_CHUNKSIZE)))        
-        if "statementPrepared" in res: 
+        cmd_str = """{{"prepareStatement":"{0}","chunkSize":{1}}}""".format(query_str.replace('"', '\\"'),
+                                                                            str(DEFAULT_NETWORK_CHUNKSIZE))        
+        res = self.exchange(cmd_str)
+        #{"ip":"192.168.0.176","listener_id":0,"port":5000,"port_ssl":5001,"reconnect":true,"statementPrepared":true}
+        self._balancer_params = json.loads(res.decode('utf-8'))
+
+        # if b'statementPrepared' in res: 
+        if self._balancer_params['statementPrepared']: 
             
             # Remove previous meta/data
             self._set_flags = [0]              # flags columns that were set. gets cleaned by next_row and possibly                 
@@ -715,18 +747,10 @@ class SqreamConn(object):
             self._col_indices = {}
             self._row_size = 0
             self._row_threshold = 0
-
+            self.meta = []
             self.total_fetched = 0    # total amount of rows fetched so far
             self.current_row = 0      # number of rows that have been dispatched by next_row() = number of calls to next_row()
-         
-            type_data = self._query_type('in')
-            if not type_data:
-                # Select statement
-                type_data = self._query_type('out')
-                self.is_select = True  
-            else: 
-                self.is_select = False
-                            
+                           
         return res
 
     
@@ -742,6 +766,7 @@ class SqreamConn(object):
         
         # Preallocate the columns list and an empty column name to index dictionary
         self.cols = [None] * len(self.column_json)
+        self.meta = [None] * len(self.column_json)
         self._col_indices = {}
 
         if mode == 'in':
@@ -751,11 +776,16 @@ class SqreamConn(object):
             self._set_flags = [0] * len(self.column_json)
             
             for idx, col in enumerate(self.column_json):
+                # col['name'] =  col.get('name', '')
+                self.meta[idx] = ColumnMetadata('', col['type'][0], col['type'][1], col['nullable'], col['isTrueVarChar'])
                 self.cols[idx] = Column(col['type'][0], col['nullable'], col['type'][1])
         
         elif mode =='out':
             for idx, col in enumerate(self.column_json):
                 # Column sizes (row number) is updated at fetch() time
+                # col['name'] =  col.get('name', '')
+                self.meta[idx] = ColumnMetadata(col['name'], col['type'][0], col['type'][1], col['nullable'], col['isTrueVarChar'])
+
                 sq_col = Column(col['type'][0], col['nullable'], col['type'][1])
                 sq_col._type_name = col['type'][0]
                 sq_col._type_size = col['type'][1]
@@ -854,6 +884,44 @@ class SqreamConn(object):
         return res['rows']  # No. of rows recieved 
 
 
+    def _execute(self):
+        if self._balancer_params['reconnect']:
+                print('reconnecting via _execute')
+                self.close_socket() # no closeStatement / closeConnection statements on reconnection, dump and go
+                port = self._balancer_params['port_ssl'] if self._use_ssl else self._balancer_params['port']
+                print('params for reconnection:', self._balancer_params['ip'], port) 
+                self.create_connection(self._balancer_params['ip'], port)
+        
+                cmd_str =  '{{"service": "{}", "reconnectDatabase":"{}", "connectionId":{}, "listenerId":{},"username":"{}", "password":"{}"}}'.format(
+                    self.service, self._database, self._connection_id, self._balancer_params['listener_id'], self._user, self._password)
+                self.exchange(cmd_str)
+        
+                cmd_str =  '{{"reconstructStatement": {}}}'.format(self._statement_id)
+                self.exchange(cmd_str)
+                self.exchange('{"execute":"execute"}')
+    
+        else:
+            self.exchange('{"execute":"execute"}')
+
+        type_data = self._query_type('in')
+        if not type_data:
+            # Query_type_in returned empty
+            type_data = self._query_type('out')
+            self.statement_type = 'SELECT' if type_data else 'DML'
+        else: 
+            # query_type_in returned non-empty - insert statement
+            self.statement_type = 'INSERT' 
+
+
+
+    def _close_statement(self):
+        # '''
+        if 'add flush condition':  # flush() doesn't fire blanks so it's keewl
+            # self._index-=1
+            self._flush()  #'''fconnect
+        
+        self.exchange('{"closeStatement":"closeStatement"}')  #'''
+
     def _get_item(self, col_index_or_name, col_type, null_check = False):
         ''' Retrieves an item from the respective column using the set index. 
             index is modified by next_row() (increase only for a given query) '''
@@ -864,7 +932,7 @@ class SqreamConn(object):
                 col_index = self._col_indices[col_index_or_name]
             except:
                 if self._col_indices:
-                    print ("Bad column name")
+                    print ("Bad column name on get function")
                 else:
                     # if _col_indices is an empty list
                     print ("No select statement issued")
@@ -917,7 +985,7 @@ class SqreamConn(object):
                 col_index = self._col_indices[col_index_or_name]
             except:
                 if self._col_indices:
-                    print ("Bad column name")
+                    print ("Bad column name on set function")
                 else:
                     # if _col_indices is an empty list
                     print ("No insert statement issued")
@@ -1046,17 +1114,18 @@ class Connector(object):
 
         self.connect_database = self.connect
     
+         
 
-    def connect(self, host, port, database, user, password, clustered, timeout):
-
+    def connect(self, host, port, database, user, password, clustered, timeout, service = 'sqream'):
         sqream_ssl_port = 5100
         # No connection yet, create a new one
         if self._sc is None:
             try:
-                nsc = SqreamConn(clustered=clustered, timeout=timeout)
+                #   (self, username, password, database, host, port, clustered=False, timeout=15)
+                nsc = SqreamConn(database=database, username=user, password=password, clustered=clustered, timeout=timeout)
                 nsc._use_ssl = True if port == sqream_ssl_port else False
                 nsc.create_connection(host, port)
-                nsc.connect(database, user, password)
+                nsc.connect(database, user, password, service)
                 self._sc = nsc
             except RuntimeError as e:
                 raise RuntimeError(e)
@@ -1088,18 +1157,20 @@ class Connector(object):
     #  ------------------
     
     def execute(self):
-      self._sc.exchange('{"execute" : "execute"}')
- 
-    def fetch_data(self):
-        self._sc._fetch()
+      self._sc._execute()
+   
+    def get_statement_type(self):
+        return self._sc.statement_type
 
-    def fetch_discard(self):
-        self._sc._fetch_all(True)
+
+    def get_metadata(self):
+        return self._sc.meta
+
 
     def close(self):
         '''close statement'''
 
-        if not self._sc.is_select:  # flush() doesn't fire blanks so it's keewl
+        if self._sc.statement_type == 'INSERT':  # flush() doesn't fire blanks so it's keewl
             self._sc._flush()  #'''
         
         self._sc.exchange('{"closeStatement":"closeStatement"}')  #'''
@@ -1119,23 +1190,14 @@ class Connector(object):
         self._sc._prepare_statement(query_str)
 
     
-    def get_error(self):
-        return self._sc._get_error();
-
-    
-    def get_connection(self):
-        ''' This returns the internal connection object  #itsintheAPI '''
-            
-        if not self._sc:
-            print ("No open connection")
-        else:
-            return self._sc
-
 
     def next_row(self):  
 
-        if self._sc.is_select:      # Select query
-            if self._sc.current_row  == self._sc.total_fetched: 
+        if self._sc.statement_type == 'DML':
+             raise Exception('Called next_row on a non Insert/Select query')
+
+        elif self._sc.statement_type == 'SELECT':      # Select query
+            if (self._sc.current_row  == self._sc.total_fetched): 
                 # fetch more data from SQream
                 num_rows_fetched = self._sc._fetch()
                 if num_rows_fetched == 0:
@@ -1145,25 +1207,20 @@ class Connector(object):
             
             self._sc.current_row += 1 
 
-        else:  # Insert query
+        elif self._sc.statement_type == 'INSERT':  # Insert query
             if sum(self._sc._set_flags) < len(self._sc.cols):
                 raise RowFillException('Not all columns have been set')
 
+            # Reset row flags and raise counter
             self._sc._set_flags = [0] * len(self._sc.column_json)
             self._sc.current_row += 1  
-            
+
+            # Flush and reset row counter if needed
             if self._sc.current_row >= self._sc._row_threshold:
                 self._sc._flush()
-                # [col.reset_data() for col in self.cols]    # done inside flush()
-
                 self._sc.current_row = 0  
-                
+
         return True
-
-
-
-    def flush(self):
-        self._sc._flush()
 
  
     ## Get() API statements
