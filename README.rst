@@ -102,7 +102,7 @@ Example of classic Set data loop, using network streaming (also called Network I
 API Reference
 -------------
 
-All functions are accessed through the Connector class imported from PySqreamConn.py:
+All functions are accessed through the Connector class imported from SQream_Python_Connector.py:
 
 **Initialization - Termination**
 
