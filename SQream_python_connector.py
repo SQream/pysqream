@@ -65,7 +65,12 @@ import struct, array
 from datetime import date, datetime
 from time import time, gmtime, sleep
 from struct import pack, unpack
-from itertools import groupby, izip
+from itertools import groupby
+try:
+    from itertools import izip
+except:
+    izip = zip
+
 from multiprocessing import Process, Pipe #, Queue
 from decimal import Decimal
 from operator import add
@@ -80,7 +85,8 @@ FLUSH_SIZE = 65536     # Default flush size for set() operations
 
 VER = sys.version_info
 MAJOR = VER[0]
-
+if MAJOR == 3:
+    unicode  = str    # to allow dual compatibility
 
 def version_info():
     info = "PySqreamConn version: {}\nSQream Protocol version: {}".format(PYSQREAM_VERSION, PROTOCOL_VERSION)
@@ -707,7 +713,7 @@ class SqreamConn(object):
         # Send command and validate response from SQream
         res = self.exchange("""{{"prepareStatement":"{0}","chunkSize":{1}}}""".format(query_str.replace('"', '\\"'),
                                                                             str(DEFAULT_NETWORK_CHUNKSIZE)))        
-        if "statementPrepared" in res: 
+        if "statementPrepared" in res.decode('utf8'): 
             
             # Remove previous meta/data
             self._set_flags = [0]              # flags columns that were set. gets cleaned by next_row and possibly                 
@@ -956,7 +962,7 @@ class SqreamConn(object):
         ''' Gather a binary chunk from get() statements and send to SQream'''
         # print (self._row_threshold)   #dbg
 
-        chunk =  b''.join((str(col._nulls) + col._nvarchar_lengths.tostring() + str(col.encoded_data) for col in self.cols))
+        chunk =  b''.join((col._nulls.decode().encode('utf8') + col._nvarchar_lengths.tostring() + col.encoded_data for col in self.cols))
 
         # print ([(str(col._nulls),  col._nvarchar_lengths.tostring(),  str(col._data)) for col in self._batch])  #dbg
         # print ([(col._nvarchar_lengths.tostring()) for col in self._batch])  #dbg
