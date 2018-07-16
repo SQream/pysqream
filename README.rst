@@ -4,7 +4,7 @@ Python connector for SQream DB
 
 **Supported SQreamDB versions:** 2.11 onward
 
-- For SQream versions 2.10 and below, please use version 2.0.2 of the connector, under "releases" tab.
+- For SQream versions 2.10 and below, please use the 2.0.2 branch of the connector.
 
 
 Usage example:
