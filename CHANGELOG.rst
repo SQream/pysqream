@@ -1,3 +1,8 @@
+Ver. 2.1.1
+----------
+*07/08/2018*
+
+* Backward protocol support - Connector now works with all SQream versions with protocols 4-6
 
 Ver. 2.1.0
 ----------
