@@ -1,6 +1,6 @@
 from __future__ import absolute_import, division, print_function, unicode_literals
 
-PYSQREAM_VERSION = "2.1.0"
+PYSQREAM_VERSION = "2.1.1"
 """
 Python2.7/3.x connector for SQream DB
 
@@ -65,7 +65,12 @@ import struct, array
 from datetime import date, datetime
 from time import time, gmtime, sleep
 from struct import pack, unpack
-from itertools import groupby, izip
+from itertools import groupby
+try:
+    from itertools import izip   # python 2
+except:
+    izip = zip                   # python 3
+
 from multiprocessing import Process, Pipe #, Queue
 from decimal import Decimal
 from operator import add
@@ -74,7 +79,10 @@ from collections import namedtuple
 
 
 # Default constants
-PROTOCOL_VERSION = 6
+PROTOCOL_VERSION = 6         
+SERVER_PROTOCOL_VERSION = 6       # Update to server's version when BACK_COMPAT is turned on
+BACK_COMPAT = True
+SUPPORTED_VERSIONS = (4, 5, 6) if BACK_COMPAT else (6,)
 DEFAULT_BUFFER_SIZE = 4096    #65536 
 DEFAULT_NETWORK_CHUNKSIZE = 10000  
 FLUSH_SIZE = 65536     # Default flush size for set() operations
@@ -82,7 +90,10 @@ FLUSH_SIZE = 65536     # Default flush size for set() operations
 VER = sys.version_info
 MAJOR = VER[0]
 
+if MAJOR == 3:
+    unicode  = str    # to allow dual compatibility
 
+    
 def version_info():
     info = "PySqreamConn version: {}\nSQream Protocol version: {}".format(PYSQREAM_VERSION, PROTOCOL_VERSION)
     return info
@@ -439,7 +450,7 @@ def _recieve(byte_num, sock):
 ## SQream related interaction
 #  --------------------------
 
-def _get_message_header(data_length, is_text_msg = True, protocol_version = PROTOCOL_VERSION):
+def _get_message_header(data_length, is_text_msg = True, protocol_version = SERVER_PROTOCOL_VERSION):
     ''' Generate SQream's 10 byte header prepended to any message '''
     
     return pack('bb', protocol_version, 1 if is_text_msg else 2) + pack('q', data_length) 
@@ -512,8 +523,8 @@ class SqreamConn(object):
         except socket.error as err:
             self.set_socket(None)
             raise RuntimeError("Error from SQream: " + str(err))
-        except:
-            raise RuntimeError("Other error")
+        except  Exception as e:
+            raise RuntimeError("Other error: " + str(e))
         else:
             if self._use_ssl:
                 self.cloak_socket()
@@ -551,8 +562,8 @@ class SqreamConn(object):
             if self.s:
                 self.close_connection()
             raise RuntimeError("Couldn't connect to SQream server - " + str(err))
-        except:
-            print("Other error upon open connection")
+        except Exception as e:
+            print("Other error upon open connection: " + str(e))
 
     
     def close_connection(self):
@@ -630,18 +641,19 @@ class SqreamConn(object):
             raise RuntimeError("Error from SQream: " + str(err))
         except RuntimeError as e:
             raise RuntimeError(e)
-        except:
-            raise RuntimeError("Other error while receiving from socket")
+        except Exception as e:
+            raise RuntimeError("Other error while receiving from socket: " + str(e))
         return data_recv
 
     def _get_msg(self):
+        global SERVER_PROTOCOL_VERSION
         data_recv = self.socket_recv(self.HEADER_LEN)
         # print ("data recieved: ", repr(data_recv))   # dbg
-        ver_num = unpack('b', bytearray([data_recv[0]]))[0]
-        if ver_num not in (4, 5, 6):        # Expecting 4 or 5        
+        SERVER_PROTOCOL_VERSION = unpack('b', bytearray([data_recv[0]]))[0]
+        if SERVER_PROTOCOL_VERSION not in SUPPORTED_VERSIONS:               
             raise RuntimeError(
                 "SQream protocol version mismatch. Expecting " + str(PROTOCOL_VERSION) + ", but got " + str(
-                    ver_num) + ". Is this a newer/older SQream server?")
+                    SERVER_PROTOCOL_VERSION) + ". Is this a newer/older SQream server?")
         val_len = unpack('q', data_recv[2:])[0]
         data_recv = self.socket_recv(val_len)
         return data_recv
@@ -751,9 +763,50 @@ class SqreamConn(object):
             self.total_fetched = 0    # total amount of rows fetched so far
             self.current_row = 0      # number of rows that have been dispatched by next_row() = number of calls to next_row()
                            
+        # Protocol versions 5 and below, queryType is called after prepareStatement
+        if SERVER_PROTOCOL_VERSION < 6:
+            self._get_query_type()
+
         return res
 
     
+    def _execute(self):
+        
+        # If 'reconnect' paramater in the json response to prepareStatement is presenet and set to True
+        if self._balancer_params.get('reconnect'):
+            # print('reconnecting via _execute')
+            self.close_socket() # no closeStatement / closeConnection statements on reconnection, dump and go
+            port = self._balancer_params['port_ssl'] if self._use_ssl else self._balancer_params['port']
+            # print('params for reconnection:', self._balancer_params['ip'], port) 
+            self.create_connection(self._balancer_params['ip'], port)
+    
+            cmd_str =  '{{"service": "{}", "reconnectDatabase":"{}", "connectionId":{}, "listenerId":{},"username":"{}", "password":"{}"}}'.format(
+                self.service, self._database, self._connection_id, self._balancer_params['listener_id'], self._user, self._password)
+            self.exchange(cmd_str)
+    
+            cmd_str =  '{{"reconstructStatement": {}}}'.format(self._statement_id)
+            self.exchange(cmd_str)
+    
+        self.exchange('{"execute":"execute"}')
+
+        if SERVER_PROTOCOL_VERSION == 6:
+            self._get_query_type()
+
+
+    def _get_query_type(self):
+        ''' Send one or two queryType requests to SQream to determine the type of the query and get metadata'''
+
+        type_data = self._query_type('in')
+        if not type_data:
+            # Query_type_in returned empty
+            type_data = self._query_type('out')
+            self.statement_type = 'SELECT' if type_data else 'DML'
+        else: 
+            # query_type_in returned non-empty - insert statement
+            self.statement_type = 'INSERT' 
+
+
+
     def _query_type(self, mode):
         ''' Query SQream for metadata, called automatically after prepare_statement '''
 
@@ -764,7 +817,7 @@ class SqreamConn(object):
         res = self.exchange(cmd_str)
         self.column_json = json.loads(res.decode('utf8'))[json_key]   
         
-        # Preallocate the columns list and an empty column name to index dictionary
+        # Preallocate the list and an empty column name to index dictionary
         self.cols = [None] * len(self.column_json)
         self.meta = [None] * len(self.column_json)
         self._col_indices = {}
@@ -884,36 +937,6 @@ class SqreamConn(object):
         return res['rows']  # No. of rows recieved 
 
 
-    def _execute(self):
-        if self._balancer_params['reconnect']:
-                print('reconnecting via _execute')
-                self.close_socket() # no closeStatement / closeConnection statements on reconnection, dump and go
-                port = self._balancer_params['port_ssl'] if self._use_ssl else self._balancer_params['port']
-                print('params for reconnection:', self._balancer_params['ip'], port) 
-                self.create_connection(self._balancer_params['ip'], port)
-        
-                cmd_str =  '{{"service": "{}", "reconnectDatabase":"{}", "connectionId":{}, "listenerId":{},"username":"{}", "password":"{}"}}'.format(
-                    self.service, self._database, self._connection_id, self._balancer_params['listener_id'], self._user, self._password)
-                self.exchange(cmd_str)
-        
-                cmd_str =  '{{"reconstructStatement": {}}}'.format(self._statement_id)
-                self.exchange(cmd_str)
-                self.exchange('{"execute":"execute"}')
-    
-        else:
-            self.exchange('{"execute":"execute"}')
-
-        type_data = self._query_type('in')
-        if not type_data:
-            # Query_type_in returned empty
-            type_data = self._query_type('out')
-            self.statement_type = 'SELECT' if type_data else 'DML'
-        else: 
-            # query_type_in returned non-empty - insert statement
-            self.statement_type = 'INSERT' 
-
-
-
     def _close_statement(self):
         # '''
         if 'add flush condition':  # flush() doesn't fire blanks so it's keewl
@@ -1024,8 +1047,8 @@ class SqreamConn(object):
         ''' Gather a binary chunk from get() statements and send to SQream'''
         # print (self._row_threshold)   #dbg
 
-        chunk =  b''.join((str(col._nulls) + col._nvarchar_lengths.tostring() + str(col.encoded_data) for col in self.cols))
-
+        # chunk =  b''.join((str(col._nulls) + col._nvarchar_lengths.tostring() + str(col.encoded_data) for col in self.cols))
+        chunk =  b''.join((col._nulls.decode().encode('utf8') + col._nvarchar_lengths.tostring() + col.encoded_data for col in self.cols))
         # print ([(str(col._nulls),  col._nvarchar_lengths.tostring(),  str(col._data)) for col in self._batch])  #dbg
         # print ([(col._nvarchar_lengths.tostring()) for col in self._batch])  #dbg
         # print(len(chunk))
@@ -1162,6 +1185,8 @@ class Connector(object):
     def get_statement_type(self):
         return self._sc.statement_type
 
+    def get_statement_id(self):
+        return self._sc._statement_id
 
     def get_metadata(self):
         return self._sc.meta
