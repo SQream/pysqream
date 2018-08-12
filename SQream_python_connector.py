@@ -1,6 +1,6 @@
 from __future__ import absolute_import, division, print_function, unicode_literals
 
-PYSQREAM_VERSION = "2.1.1"
+PYSQREAM_VERSION = "2.1.0"
 """
 Python2.7/3.x connector for SQream DB
 
@@ -553,8 +553,12 @@ class SqreamConn(object):
     
     def open_connection(self, ip, port):
         
-        self.set_host(ip)
-        self.set_port(port)
+        self._host = ip
+        self._port = port 
+
+        self.s = socket.socket()
+        if self._use_ssl:
+                self.cloak_socket()
 
         try:
             self.s.connect((ip, port))
@@ -573,7 +577,7 @@ class SqreamConn(object):
     
 
     def create_connection(self, ip, port):
-        self.open_socket()
+        #self.open_socket()
         
         self.open_connection(ip, port)
 
@@ -674,8 +678,7 @@ class SqreamConn(object):
         else:
             return
 
-    def connect(self, database, username, password, service):
-        self.service = service
+    def connect_database(self, database, username, password, service):
         if self._clustered is False:
             self.connect_unclustered(database, username, password, service)
         else:
@@ -716,7 +719,8 @@ class SqreamConn(object):
                 , service.replace('"', '\\"'))   
         
         #self.exchange(cmd_str)
-        self._connection_id = json.loads(self.exchange(cmd_str).decode('utf-8'))['connectionId']
+        self._connection_id = json.loads(self.exchange(cmd_str).decode('utf-8')).get('connectionId', '')
+        
     
     # Reading bytes in Python 2 and 3
     def get_nulls_py2(self,column_data):
@@ -738,7 +742,7 @@ class SqreamConn(object):
         with table metadata and the ordered column names  '''            
 
         # Protocol check
-        if PROTOCOL_VERSION in (5,6):    # remove if/once everyone's on 5
+        if SERVER_PROTOCOL_VERSION in (5,6):    # remove if/once everyone's on 5
             # getStatementId is new for SQream protocol version 5
             cmd_str = '{"getStatementId" : "getStatementId"}'
             self._statement_id = json.loads(self.exchange(cmd_str).decode('utf-8'))['statementId']
@@ -1143,13 +1147,18 @@ class Connector(object):
         sqream_ssl_port = 5100
         # No connection yet, create a new one
         if self._sc is None:
+            # (self, username, password, database, host, port, clustered=False, timeout=15)
+            self._sc = SqreamConn(database=database, username=user, password=password, clustered=clustered, timeout=timeout)
+            self._sc._use_ssl = True if port == sqream_ssl_port else False
+            self._sc.service = service
+            self._sc._host = host
+            self._sc._port = port 
             try:
-                #   (self, username, password, database, host, port, clustered=False, timeout=15)
-                nsc = SqreamConn(database=database, username=user, password=password, clustered=clustered, timeout=timeout)
-                nsc._use_ssl = True if port == sqream_ssl_port else False
-                nsc.create_connection(host, port)
-                nsc.connect(database, user, password, service)
-                self._sc = nsc
+                self._sc.s = socket.socket()
+                if self._sc._use_ssl:
+                    self.cloak_socket()     
+                self._sc.s.connect((host, port))
+                self._sc.connect_database(database, user, password, service)
             except RuntimeError as e:
                 raise RuntimeError(e)
             except:
