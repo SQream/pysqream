@@ -1,6 +1,7 @@
+
 from __future__ import absolute_import, division, print_function, unicode_literals
 
-PYSQREAM_VERSION = "2.1.0"
+PYSQREAM_VERSION = "2.1.2"
 """
 Python2.7/3.x connector for SQream DB
 
@@ -634,9 +635,22 @@ class SqreamConn(object):
             data_recv = self.s.recv(param)
             # TCP says recv will only read 'up to' param bytes, so keep filling buffer
             remainder = param - len(data_recv)
+            retry_counter = 3     # In case data doesn't come in
             while remainder > 0:
-                data_recv += self.s.recv(remainder)
+                new_data = self.s.recv(remainder)
+                
+                # Handling no data coming in on socket
+                if not new_data:
+                    sleep(1)
+                    retry_counter-= 1
+                    if not retry_counter:
+                        raise Exception('Connection to SQream interrupted')
+                    continue
+
+                # Data received    
+                data_recv += new_data                
                 remainder = param - len(data_recv)
+            
             if b'{"error"' in data_recv:
                 raise RuntimeError("Error from SQream: " + repr(data_recv))
         except socket.error as err:
@@ -686,6 +700,13 @@ class SqreamConn(object):
 
     # Voodoo, check what this does
     def connect_clustered(self, database, username, password, service):
+
+        cmd_str = '{{"connectDatabase":"{0}","password":"{1}","username":"{2}"}}'.format(
+                database.replace('"', '\\"'), password.replace('"', '\\"'), username.replace('"', '\\"'))
+
+        self.exchange(cmd_str, True)  # Send connection string to picker, don't recieve/parsr standard response
+
+        ## Parse picker response to get ip and port
         read_len_raw = self.socket_recv(4)  # Read 4 bytes to find length of how much to read
         read_len = unpack('i', read_len_raw)[0]
         if read_len > 15 or read_len < 7:
@@ -698,12 +719,15 @@ class SqreamConn(object):
         port = unpack('i', port_raw)[0]
         if port < 1000 or port > 65535:
             raise RuntimeError("Port out of bounds (1000 - 65535): " + str(port) + ".")
-        self.close_connection()
-        self.set_host(ip_addr)
-        self.set_port(port)
-        self.set_clustered(False)
-        self.create_connection(ip_addr, port)
+        
+        ## Reconnect with the given ip and port
+        self.s.close()
+        self.s = socket.socket()
+        if self._use_ssl:
+            self.cloak_socket()     
+        self.s.connect((ip_addr, port))
         self.connect_unclustered(database, username, password, service)
+
 
     def connect_unclustered(self, database, username, password, service):
         if service is None:
@@ -1209,11 +1233,6 @@ class Connector(object):
         
         self._sc.exchange('{"closeStatement":"closeStatement"}')  #'''
 
-
-    '''
-    def close_connection(self):
-        # Same name as the inside function
-        self._sc.close_connection() # '''
 
 
     def prepare(self, query_str):
