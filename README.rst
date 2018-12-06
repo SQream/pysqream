@@ -26,7 +26,7 @@ Usage example:
     #  -------------------------     
     # Create a table
     statement = 'create or replace table table_name (int_column int)'
-    con.prepare_(statement)
+    con.prepare(statement)
     con.execute()
     con.close()
 
