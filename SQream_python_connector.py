@@ -93,7 +93,7 @@ MAJOR = VER[0]
 
 if MAJOR == 3:
     unicode  = str    # to allow dual compatibility
-
+    long = int
     
 def version_info():
     info = "PySqreamConn version: {}\nSQream Protocol version: {}".format(PYSQREAM_VERSION, PROTOCOL_VERSION)
