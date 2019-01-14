@@ -96,7 +96,8 @@ Example of classic Set data loop, using network streaming (also called Network I
     for idx in range(length_of_arrays):
         con.set_int(1, row1[idx])      # we put a value at column 1 of the table
         con.set_varchar(2, row2[idx])  # we put a value at column 2 of the table
-
+        con.next_row()
+        
     con.close()
     con.close_connection()
     
