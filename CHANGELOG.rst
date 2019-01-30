@@ -1,8 +1,16 @@
 Ver. 2.1.1
 ----------
+*30/01/2019*
+
+* Python 3 fixes - tested on Python 3.6
+* Bad message and clustered connection fixes
+
+Ver. 2.1.1
+----------
 *07/08/2018*
 
 * Backward protocol support - Connector now works with all SQream versions with protocols 4-6
+
 
 Ver. 2.1.0
 ----------
