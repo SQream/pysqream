@@ -1,21 +1,20 @@
-
 from __future__ import absolute_import, division, print_function, unicode_literals
 
 PYSQREAM_VERSION = "2.1.2"
 """
-Python2.7/3.x connector for SQream DB
+Python2.7/3.6 connector for SQream DB
 
 Usage example:
 
     ## Import and establish a connection  
     #  --------------------------------- 
     
-    import PySqreamConn
+    import SQream_python_connector
 
     # version information
-    print PySqreamConn.version_info()
+    print SQream_python_connector.version_info()
 
-    con = PySqreamConn.Connector()
+    con = SQream_python_connector.Connector()
     # Connection parameters: IP, Port, Database, Username, Password, Clustered, Timeout(sec)
     sqream_connection_params = '127.0.0.1', 5000, 'master', 'sqream', 'sqream', False, 30
     con.connect(*sqream_connection_params)
@@ -86,7 +85,7 @@ BACK_COMPAT = True
 SUPPORTED_VERSIONS = (4, 5, 6) if BACK_COMPAT else (6,)
 DEFAULT_BUFFER_SIZE = 4096    #65536 
 DEFAULT_NETWORK_CHUNKSIZE = 10000  
-FLUSH_SIZE = 65536     # Default flush size for set() operations
+FLUSH_SIZE = 100000     # Default flush size for set() operations
 
 VER = sys.version_info
 MAJOR = VER[0]
@@ -333,7 +332,7 @@ class Column:
                 def add_null():
                     self._nvarchar_lengths.append(len(''))
                     self._nulls.append(1)
-                    self.encoded_data += b''.encode('utf-8')[:length]   #.ljust(length, b' ')
+                    self.encoded_data += b''[:length]   #.ljust(length, b' ')
                     # self.encoded_data += val.encode('utf-8')[:length].ljust(length, b' ')   #Py3
             else:
                 def add_val(val):
@@ -494,8 +493,7 @@ class SqreamConn(object):
 
 
     def _send_string(self, json_cmd, get_response = True, is_text_msg = True, sock = None):
-
-    
+ 
         sock = sock or self.s
         # Generating the message header, and sending both over the socket
         sock.send( _get_message_header(len(json_cmd)) + json_cmd.encode('utf8'))
@@ -663,6 +661,7 @@ class SqreamConn(object):
             raise RuntimeError("Other error while receiving from socket: " + str(e))
         return data_recv
 
+    
     def _get_msg(self):
         global SERVER_PROTOCOL_VERSION
         data_recv = self.socket_recv(self.HEADER_LEN)
@@ -676,6 +675,7 @@ class SqreamConn(object):
         data_recv = self.socket_recv(val_len)
         return data_recv
 
+    
     def exchange(self, cmd_str, close=False, binary = False):
         # If close=True, then do not expect to read anything back
         cmd_bytes = self.cmd2bytes(cmd_str, binary)
@@ -692,44 +692,40 @@ class SqreamConn(object):
         else:
             return
 
+
     def connect_database(self, database, username, password, service):
-        if self._clustered is False:
-            self.connect_unclustered(database, username, password, service)
-        else:
-            self.connect_clustered(database, username, password, service)
+        ''' Connect to server picker and establish the correct ip/port if needed,
+            then connect to the database '''
 
-    # Voodoo, check what this does
-    def connect_clustered(self, database, username, password, service):
+        if self._clustered is True:
+            
+            cmd_str = '{{"connectDatabase":"{0}","password":"{1}","username":"{2}"}}'.format(
+            database.replace('"', '\\"'), password.replace('"', '\\"'), username.replace('"', '\\"'))
 
-        cmd_str = '{{"connectDatabase":"{0}","password":"{1}","username":"{2}"}}'.format(
-                database.replace('"', '\\"'), password.replace('"', '\\"'), username.replace('"', '\\"'))
+            self.exchange(cmd_str, True)  # Send connection string to picker, don't recieve/parsr standard response
 
-        self.exchange(cmd_str, True)  # Send connection string to picker, don't recieve/parsr standard response
-
-        ## Parse picker response to get ip and port
-        read_len_raw = self.socket_recv(4)  # Read 4 bytes to find length of how much to read
-        read_len = unpack('i', read_len_raw)[0]
-        if read_len > 15 or read_len < 7:
-            raise RuntimeError("Clustered connection requires a length of between 7 and 15, but I got " + str(
-                read_len) + ". Perhaps this connection should be unclustered?")
-        # Read the number of bytes, which is the IP in string format
-        ip_addr = self.socket_recv(read_len)
-        # Now read port
-        port_raw = self.socket_recv(4)
-        port = unpack('i', port_raw)[0]
-        if port < 1000 or port > 65535:
-            raise RuntimeError("Port out of bounds (1000 - 65535): " + str(port) + ".")
+            # Parse picker response to get ip and port
+            read_len_raw = self.socket_recv(4)  # Read 4 bytes to find length of how much to read
+            read_len = unpack('i', read_len_raw)[0]
+            if read_len > 15 or read_len < 7:
+                raise RuntimeError("Clustered connection requires a length of between 7 and 15, but I got " + str(
+                    read_len) + ". Perhaps this connection should be unclustered?")
+            # Read the number of bytes, which is the IP in string format
+            ip_addr = self.socket_recv(read_len)
+            # Now read port
+            port_raw = self.socket_recv(4)
+            port = unpack('i', port_raw)[0]
+            if port < 1000 or port > 65535:
+                raise RuntimeError("Port out of bounds (1000 - 65535): " + str(port) + ".")
+            
+            # Reestablish socket with the given ip and port
+            self.s.close()
+            self.s = socket.socket()
+            if self._use_ssl:
+                self.cloak_socket()     
+            self.s.connect((ip_addr, port))
         
-        ## Reconnect with the given ip and port
-        self.s.close()
-        self.s = socket.socket()
-        if self._use_ssl:
-            self.cloak_socket()     
-        self.s.connect((ip_addr, port))
-        self.connect_unclustered(database, username, password, service)
-
-
-    def connect_unclustered(self, database, username, password, service):
+        # At this point we are in contact with the proper ip/port, establish coms
         if service is None:
             cmd_str = """{{"connectDatabase":"{0}","password":"{1}","username":"{2}"}}""".format(
                 database.replace('"', '\\"')
@@ -742,10 +738,9 @@ class SqreamConn(object):
                 , username.replace('"', '\\"')
                 , service.replace('"', '\\"'))   
         
-        #self.exchange(cmd_str)
         self._connection_id = json.loads(self.exchange(cmd_str).decode('utf-8')).get('connectionId', '')
-        
-    
+
+
     # Reading bytes in Python 2 and 3
     def get_nulls_py2(self,column_data):
         return map(lambda c: unpack('b', bytes(c))[0], column_data)
@@ -965,13 +960,13 @@ class SqreamConn(object):
         return res['rows']  # No. of rows recieved 
 
 
+
     def _close_statement(self):
-        # '''
         if 'add flush condition':  # flush() doesn't fire blanks so it's keewl
-            # self._index-=1
-            self._flush()  #'''fconnect
+            self._flush()  
         
-        self.exchange('{"closeStatement":"closeStatement"}')  #'''
+        self.exchange('{"closeStatement":"closeStatement"}')  
+
 
     def _get_item(self, col_index_or_name, col_type, null_check = False):
         ''' Retrieves an item from the respective column using the set index. 
@@ -1088,8 +1083,8 @@ class SqreamConn(object):
             batch_insert_res = self.exchange(chunk, False, True)   # This one is a binary piece, execute and cmd2bytes were modified 
             
             # Truncate binary column upon success
-            if batch_insert_res == '{"putted":"putted"}':
-                map(lambda col: col.reset_data(), self.cols)
+            if batch_insert_res == b'{"putted":"putted"}':
+                [col.reset_data() for col in self.cols]
 
     
     def _cols_to_rows(self, cols = None):
@@ -1445,5 +1440,6 @@ class Connector(object):
 
 
 if __name__ == '__main__':
+
     print ("This file is to be used as a module\nSee example usage at the top of the file\n")
     print ("SQream Python driver version", PYSQREAM_VERSION, '\n')
