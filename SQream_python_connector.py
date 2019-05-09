@@ -1,6 +1,6 @@
 from __future__ import absolute_import, division, print_function, unicode_literals
 
-PYSQREAM_VERSION = "2.1.2"
+PYSQREAM_VERSION = "2.1.4"
 """
 Python2.7/3.6 connector for SQream DB
 
@@ -248,7 +248,7 @@ sqream_type_id =   {'ftBool':     'Bool',
                     }
 
 
-SqreamType = namedtuple('SqreamType', ['tid', 'size'], verbose=False)
+SqreamType = namedtuple('SqreamType', ['tid', 'size'])
 # tid is of type sqream_type_id, size is size of one item of this type
 
 class ColumnMetadata(object):
@@ -1115,16 +1115,16 @@ class SqreamConn(object):
 ## This class should be used to create a connection
 #  ------------------------------------------------
 
-api_to_sqream = {'bool':    'ftBool',   
+api_to_sqream = {'bool':     'ftBool',   
                 'ubyte' :    'ftUByte',
-                'short' :   'ftShort',
-                'int' :     'ftInt',
-                'long' :    'ftLong',
-                'float' :   'ftFloat',             
-                'double' :  'ftDouble',
-                'date' :    'ftDate',
-                'datetime' :'ftDateTime',
-                'string' :  'ftVarchar',
+                'short' :    'ftShort',
+                'int' :      'ftInt',
+                'long' :     'ftLong',
+                'float' :    'ftFloat',             
+                'double' :   'ftDouble',
+                'date' :     'ftDate',
+                'datetime' : 'ftDateTime',
+                'string' :   'ftVarchar',
                 'nvarchar' : 'ftBlob',
                 }
 
@@ -1219,7 +1219,35 @@ class Connector(object):
     def get_metadata(self):
         return self._sc.meta
 
-
+    def get_column_types(self):
+        return [ i.type for i in self._sc.meta ]
+    
+    def get_column_names(self):
+        return [ i.name for i in self._sc.meta ]
+    
+    def fetch_all_as_dict(self):
+        buf = []
+        types = self.get_column_types()
+        names = self.get_column_names()
+        lu = {'Bool' :      lambda i: self.get_bool(i)
+              ,'Varchar' :  lambda i: self.get_string(i)
+              ,'NVarchar' : lambda i: self.get_nvarchar(i)
+              ,'Tinyint' :  lambda i: self.get_ubyte(i)
+              ,'Int' :      lambda i: self.get_int(i)
+              ,'Smallint' : lambda i: self.get_short(i)
+              ,'Float' :    lambda i: self.get_float(i)
+              ,'Double' :   lambda i: self.get_double(i)
+              ,'Bigint' :   lambda i: self.get_long(i)
+              ,'Date' :     lambda i: self.get_date(i)
+              ,'DateTime' : lambda i: self.get_datetime(i)}
+        
+        while self.next_row():
+            k = {}
+            for i in range(1,len(types)):
+                k[names[i-1]] = lu[types[i-1].tid](i)
+            buf.append(k)
+        return buf
+    
     def close(self):
         '''close statement'''
 
