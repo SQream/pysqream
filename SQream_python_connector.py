@@ -248,7 +248,7 @@ sqream_type_id =   {'ftBool':     'Bool',
                     }
 
 
-SqreamType = namedtuple('SqreamType', ['tid', 'size'], verbose=False)
+SqreamType = namedtuple('SqreamType', ['tid', 'size'])
 # tid is of type sqream_type_id, size is size of one item of this type
 
 class ColumnMetadata(object):
