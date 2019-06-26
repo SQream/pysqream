@@ -1243,8 +1243,8 @@ class Connector(object):
         
         while self.next_row():
             k = {}
-            for i in range(1,len(types)):
-                k[names[i-1]] = lu[types[i-1].tid](i)
+            for i in range(0,len(types)):
+                k[names[i]] = lu[types[i].tid](i+1)
             buf.append(k)
         return buf
     
