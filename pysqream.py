@@ -1397,9 +1397,8 @@ class Connector(object):
 
     
     def set_ubyte(self, col_index_or_name, val):
-        
-        if type(val) != int or (type(val) == int and not tinyint_range[0] <= val <= tinyint_range[1]):  
-            announce(BadTypeForSetFunction, 'Expecting tinyint value but got {}'.format(val))
+        if type(val) != int or (type(val) == int and not tinyint_range[0] <= val <= tinyint_range[1]):
+            announce(BadTypeForSetFunction, 'Expecting tinyint value but got {}, which is of type {}'.format(val, str(type(val))))
             
         return self._sc._set_item(col_index_or_name, val, 'ftUByte')
 
