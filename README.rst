@@ -1,22 +1,33 @@
+.. role:: bash(code)
+   :language: bash
+   
+===== 
 Python connector for SQream DB
+===== 
+
+**Version:**  2.1.4
+
+**Supported SQream DB versions:** 1.13 onward
+
+Installing
 ----------
-**Version:**  2.1.2
 
-**Supported SQreamDB versions:** 1.13 onward
-
+Install with `pip`, by running
+:bash:`pip install pysqream`.
 
 Usage example:
+----------
 
 .. code-block:: python
 
     ## Import and establish a connection  
     #  ---------------------------------   
-    import SQream_python_connector
+    import pysqream
 
     # version information
-    print SQream_python_connector.version_info()
+    print pysqream.version_info()
 
-    con = SQream_python_connector.Connector()
+    con = pysqream.Connector()
     # Connection parameters: IP, Port, Database, Username, Password, Clustered, Timeout(sec)
     sqream_connection_params = '127.0.0.1', 5000, 'master', 'sqream', 'sqream', False, 30
     con.connect(*sqream_connection_params)
@@ -56,7 +67,8 @@ Usage example:
     con.close_connection()
     
 
-Example of classic Get data loop:
+Example of GET data loop:
+----------
 
 .. code-block:: python
 
@@ -77,8 +89,8 @@ Example of classic Get data loop:
     con.close()
     con.close_connection()
 
-Example of classic Set data loop, using network streaming (also called Network Insert):
-
+Example of a SET data loop for data loading:
+----------
 .. code-block:: python
 
     # here we create the according table by executing a 
@@ -101,6 +113,7 @@ Example of classic Set data loop, using network streaming (also called Network I
     con.close()
     con.close_connection()
     
+
 API Reference
 -------------
 
@@ -110,8 +123,8 @@ All functions are accessed through the Connector class imported from SQream_Pyth
 
 .. code-block:: python
     
-    import SQream_python_connector
-    con = SQream_python_connector.Connector()
+    import pysqream
+    con = pysqream.Connector()
     
     # arg types are: string, integer, string, string, string, boolean, integer
     con.connect(ip, port, database, username, password, clustered, timeout) 
