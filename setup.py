@@ -6,7 +6,7 @@ with open("README.rst", "r") as fh:
 
 setuptools.setup(
     name="pysqream",
-    version="2.1.3a1",
+    version="2.1.4a1",
     author="SQream Technologies",
     author_email="info@sqream.com",
     description="Python Native API for communicating with SQream DB",
@@ -16,7 +16,7 @@ setuptools.setup(
     packages=setuptools.find_packages(),
     classifiers=[
         "Programming Language :: Python :: 3",
-        "License :: OSI Approved :: BSD3 License",
+        "License :: OSI Approved :: BSD License",
         "Operating System :: OS Independent",
     ],
     keywords='database sqream sqreamdb',
