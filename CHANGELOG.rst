@@ -1,3 +1,18 @@
+Ver. 2.1.4
+----------
+*17/07/2019*
+
+* SQream DB Protocol 7 support
+* Varchar encoding support for Thai (windows-874)
+
+Ver. 2.1.3
+----------
+*28/06/2019*
+
+* Fetch all as dictionary
+* Bring repo up to PyPi standards
+
+
 Ver. 2.1.1
 ----------
 *30/01/2019*
