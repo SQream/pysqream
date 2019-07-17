@@ -1,8 +1,8 @@
 from __future__ import absolute_import, division, print_function, unicode_literals
 
-PYSQREAM_VERSION = "2.1.3a1"
+PYSQREAM_VERSION = "2.1.4"
 """
-Python2.7/3.6 connector for SQream DB
+Python2.7/3.x connector for SQream DB
 
 Usage example:
 
@@ -79,13 +79,15 @@ from collections import namedtuple
 
 
 # Default constants
-PROTOCOL_VERSION = 6         
+PROTOCOL_VERSION = 7        
 SERVER_PROTOCOL_VERSION = 6       # Update to server's version when BACK_COMPAT is turned on
 BACK_COMPAT = True
-SUPPORTED_VERSIONS = (4, 5, 6) if BACK_COMPAT else (6,)
+SUPPORTED_VERSIONS = (4, 5, 6, 7) if BACK_COMPAT else (7,)
 DEFAULT_BUFFER_SIZE = 4096    #65536 
 DEFAULT_NETWORK_CHUNKSIZE = 10000  
 FLUSH_SIZE = 100000     # Default flush size for set() operations
+
+VARCHAR_ENC = 'ascii'
 
 VER = sys.version_info
 MAJOR = VER[0]
@@ -305,14 +307,14 @@ class Column:
                 # add_val = lambda val: val.encode('utf-8')[:length].ljust(length, b' ')      
                 def add_val(val):
                     self._nulls.append(0)
-                    self.encoded_data += val.encode('utf-8')[:length].ljust(length, b' ')
+                    self.encoded_data += val.encode(VARCHAR_ENC)[:length].ljust(length, b' ')
 
                 def add_null():
                     self._nulls.append(1)
                     self.encoded_data += b''.ljust(length, b' ')
             else:
                 def add_val(val):
-                    self.encoded_data += val.encode('utf-8')[:length].ljust(length, b' ')
+                    self.encoded_data += val.encode(VARCHAR_ENC)[:length].ljust(length, b' ')
 
         elif self.col_type == 'ftBlob':   
             
@@ -592,9 +594,10 @@ class SqreamConn(object):
     def bytes2val(self, col_type, column_data_row):
         if col_type != "ftVarchar":
             column_data_row = conv_data_type(col_type, column_data_row)
-        else:
+        else:  # ftVarchar
             column_data_row = column_data_row.replace(b'\x00', b'')
-            column_data_row = column_data_row.rstrip()
+            column_data_row = column_data_row.rstrip().decode(VARCHAR_ENC)
+        
         return column_data_row
 
     def readcolumnbytes(self, column_bytes):
@@ -724,7 +727,7 @@ class SqreamConn(object):
             if self._use_ssl:
                 self.cloak_socket()     
             self.s.connect((ip_addr, port))
-        
+        # print ("reconnecting from connect_database")
         # At this point we are in contact with the proper ip/port, establish coms
         if service is None:
             cmd_str = """{{"connectDatabase":"{0}","password":"{1}","username":"{2}"}}""".format(
@@ -738,8 +741,11 @@ class SqreamConn(object):
                 , username.replace('"', '\\"')
                 , service.replace('"', '\\"'))   
         
-        self._connection_id = json.loads(self.exchange(cmd_str).decode('utf-8')).get('connectionId', '')
-
+        res = json.loads(self.exchange(cmd_str).decode('utf-8'))
+        self._connection_id = res.get('connectionId', '')
+        self.varchar_enc =   res.get('varcharEncoding', 'ascii')
+        global VARCHAR_ENC
+        VARCHAR_ENC = "cp874" if "874" in self.varchar_enc else "ascii" 
 
     # Reading bytes in Python 2 and 3
     def get_nulls_py2(self,column_data):
@@ -761,7 +767,7 @@ class SqreamConn(object):
         with table metadata and the ordered column names  '''            
 
         # Protocol check
-        if SERVER_PROTOCOL_VERSION in (5,6):    # remove if/once everyone's on 5
+        if SERVER_PROTOCOL_VERSION in (5,6,7):    # remove if/once everyone's on 5
             # getStatementId is new for SQream protocol version 5
             cmd_str = '{"getStatementId" : "getStatementId"}'
             self._statement_id = json.loads(self.exchange(cmd_str).decode('utf-8'))['statementId']
@@ -812,7 +818,7 @@ class SqreamConn(object):
     
         self.exchange('{"execute":"execute"}')
 
-        if SERVER_PROTOCOL_VERSION == 6:
+        if SERVER_PROTOCOL_VERSION in (6, 7):
             self._get_query_type()
 
 
@@ -827,7 +833,6 @@ class SqreamConn(object):
         else: 
             # query_type_in returned non-empty - insert statement
             self.statement_type = 'INSERT' 
-
 
 
     def _query_type(self, mode):
@@ -1220,11 +1225,11 @@ class Connector(object):
         return self._sc.meta
 
     def get_column_types(self):
-        return [ i.type for i in self._sc.meta ]
-    
+        return [i.type for i in self._sc.meta]
+
     def get_column_names(self):
-        return [ i.name for i in self._sc.meta ]
-    
+        return [i.name for i in self._sc.meta]
+
     def fetch_all_as_dict(self):
         buf = []
         types = self.get_column_types()
@@ -1240,14 +1245,15 @@ class Connector(object):
               ,'Bigint' :   lambda i: self.get_long(i)
               ,'Date' :     lambda i: self.get_date(i)
               ,'DateTime' : lambda i: self.get_datetime(i)}
-        
+
         while self.next_row():
             k = {}
             for i in range(0,len(types)):
                 k[names[i]] = lu[types[i].tid](i+1)
             buf.append(k)
+        
         return buf
-    
+
     def close(self):
         '''close statement'''
 
@@ -1375,7 +1381,7 @@ class Connector(object):
     def set_bool(self, col_index_or_name, val): 
         # '''
         if val not in (0,1):  # supports True and False as well for pyarrow  # if val is not 0 and val is not 1: 
-            announce(BadTypeForSetFunction, 'Expecting Boolean value but got {}'.format(val))
+            announce(BadTypeForSetFunction, 'Expecting Boolean value but got {} of type {}'.format(val, str(type(val))))
         
         return self._sc._set_item(col_index_or_name, val, 'ftBool')       # api_to_sqream('bool')
 
@@ -1383,7 +1389,7 @@ class Connector(object):
     def set_string(self, col_index_or_name, val):
              
         if type(val) not in (str, unicode):
-            announce(BadTypeForSetFunction, 'Expecting varchar value but got {}'.format(val))
+            announce(BadTypeForSetFunction, 'Expecting varchar value but got {} of type {}'.format(val, str(type(val))))
 
         return self._sc._set_item(col_index_or_name, val, 'ftVarchar')      # api_to_sqream('string')
 
@@ -1391,14 +1397,15 @@ class Connector(object):
     def set_nvarchar(self, col_index_or_name, val):     
 
         if type(val) not in (str, unicode):
-            announce(BadTypeForSetFunction, 'Expecting nvarchar value but got {}'.format(val))
+            announce(BadTypeForSetFunction, 'Expecting nvarchar value but got {} of type {}'.format(val, str(type(val))))
             
         return self._sc._set_item(col_index_or_name, val, 'ftBlob')         # api_to_sqream('nvarchar')
 
     
     def set_ubyte(self, col_index_or_name, val):
-        if type(val) != int or (type(val) == int and not tinyint_range[0] <= val <= tinyint_range[1]):
-            announce(BadTypeForSetFunction, 'Expecting tinyint value but got {}, which is of type {}'.format(val, str(type(val))))
+        
+        if type(val) != int or (type(val) == int and not tinyint_range[0] <= val <= tinyint_range[1]):  
+            announce(BadTypeForSetFunction, 'Expecting tinyint value but got {} of type {}'.format(val, str(type(val))))
             
         return self._sc._set_item(col_index_or_name, val, 'ftUByte')
 
@@ -1406,7 +1413,7 @@ class Connector(object):
     def set_short(self, col_index_or_name, val):
         
         if type(val) != int or (type(val) == int and not smallint_range[0] <= val <= smallint_range[1]):  
-           announce(BadTypeForSetFunction, 'Expecting smallint value but got {}'.format(val))
+           announce(BadTypeForSetFunction, 'Expecting smallint value but got {} of type {}'.format(val, str(type(val))))
             
         return self._sc._set_item(col_index_or_name, val, 'ftShort')
 
@@ -1414,7 +1421,7 @@ class Connector(object):
     def set_int(self, col_index_or_name, val):
         
         if type(val) != int or (type(val) == int and not int_range[0] <= val <= int_range[1]):  
-            announce(BadTypeForSetFunction, 'Expecting int value but got {}'.format(val))
+            announce(BadTypeForSetFunction, 'Expecting int value but got {} of type {}'.format(val, str(type(val))))
 
         return self._sc._set_item(col_index_or_name, val, 'ftInt')
 
@@ -1423,7 +1430,7 @@ class Connector(object):
        
         if type(val) != long: # or (type(val) == long and not bigint_range[0] <= val <= bigint_range[1]):  
             if type(val) != int:
-                announce(BadTypeForSetFunction, 'Expecting long value but got {}'.format(val))
+                announce(BadTypeForSetFunction, 'Expecting long value but got {} of type {}'.format(val, str(type(val))))
             else: 
                 val = long(val)
         
@@ -1437,7 +1444,7 @@ class Connector(object):
         if type(val) != float or (type(val) == float and not float_range[0] <= abs(val) <= float_range[1]):  
             if val not in (float('-0'), float('+0'), float('inf'), float('-inf'), float('nan')) or val is True or val is False:
                 # print (val, type (val))  #dbg   
-                announce(BadTypeForSetFunction, 'Expecting real(=float) value but got {}'.format(val))
+                announce(BadTypeForSetFunction, 'Expecting real(=float) value but got {} of type {}'.format(val, str(type(val))))
           
         return self._sc._set_item(col_index_or_name, val, 'ftFloat')
 
@@ -1445,7 +1452,7 @@ class Connector(object):
     def set_double(self, col_index_or_name, val):
 
         if type(val) != float:
-            announce(BadTypeForSetFunction, 'Expecting double value but got {}'.format(val))
+            announce(BadTypeForSetFunction, 'Expecting double value but got {} of type {}'.format(val, str(type(val))))
           
         return self._sc._set_item(col_index_or_name, val, 'ftDouble')
 
@@ -1453,7 +1460,7 @@ class Connector(object):
     def set_date(self, col_index_or_name, val):
         
         if type(val) != tuple:
-            announce(BadTypeForSetFunction, 'Expecting date value but got {}'.format(val))
+            announce(BadTypeForSetFunction, 'Expecting date value but got {} of type {}'.format(val, str(type(val))))
 
         return self._sc._set_item(col_index_or_name, val, 'ftDate')
         
@@ -1461,7 +1468,7 @@ class Connector(object):
     def set_datetime(self, col_index_or_name, val):
         
         if type(val) != tuple:
-            announce(BadTypeForSetFunction, 'Expecting datetime value but got {}'.format(val))
+            announce(BadTypeForSetFunction, 'Expecting datetime value but got {} of type {}'.format(val, str(type(val))))
 
         return self._sc._set_item(col_index_or_name, val, 'ftDateTime')
 
