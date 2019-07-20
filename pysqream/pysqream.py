@@ -1,20 +1,22 @@
 from __future__ import absolute_import, division, print_function, unicode_literals
 
-PYSQREAM_VERSION = "2.1.4a1"
+version_inf = (2, 1, 4,'a1')
+__version__ = '.'.join(map(str, version_inf))
+
 """
-Python2.7/3.x connector for SQream DB
+Python 2.7/3.x connector for SQream DB
 
 Usage example:
 
-    ## Import and establish a connection  
+    ## Import the package and establish a connection
     #  --------------------------------- 
     
-    import SQream_python_connector
+    import pysqream
 
     # version information
-    print SQream_python_connector.version_info()
+    print(pysqream.version_info())
 
-    con = SQream_python_connector.Connector()
+    con = pysqream.Connector()
     # Connection parameters: IP, Port, Database, Username, Password, Clustered, Timeout(sec)
     sqream_connection_params = '127.0.0.1', 5000, 'master', 'sqream', 'sqream', False, 30
     con.connect(*sqream_connection_params)
@@ -79,25 +81,24 @@ from collections import namedtuple
 
 
 # Default constants
-PROTOCOL_VERSION = 7        
-SERVER_PROTOCOL_VERSION = 6       # Update to server's version when BACK_COMPAT is turned on
+PROTOCOL_VERSION = 7
+SERVER_PROTOCOL_VERSION = 6 # Update to server's version when BACK_COMPAT is turned on
 BACK_COMPAT = True
 SUPPORTED_VERSIONS = (4, 5, 6, 7) if BACK_COMPAT else (7,)
-DEFAULT_BUFFER_SIZE = 4096    #65536 
-DEFAULT_NETWORK_CHUNKSIZE = 10000  
-FLUSH_SIZE = 100000     # Default flush size for set() operations
+DEFAULT_BUFFER_SIZE = 4096
+DEFAULT_NETWORK_CHUNKSIZE = 10000
+DEFAULT_FLUSH_SIZE = 100000 # Default flush size for set() operations
 
 VARCHAR_ENC = 'ascii'
 
-VER = sys.version_info
-MAJOR = VER[0]
+MAJOR = sys.version_info[0]
 
 if MAJOR == 3:
-    unicode  = str    # to allow dual compatibility
+    unicode = str # For compatibility between Python 2 and 3
     long = int
     
 def version_info():
-    info = "PySqreamConn version: {}\nSQream Protocol version: {}".format(PYSQREAM_VERSION, PROTOCOL_VERSION)
+    info = "PySqream version: {}\nSQream DB Protocol version: {}".format(__version__, PROTOCOL_VERSION)
     return info
 
 ## API exception types
@@ -134,12 +135,12 @@ int_range = -2147483648, 2147483647
 # bigint_range = -9223372036854775808, 9223372036854775807
 float_range = 1.18e-38, 3.4e38
 
-packing_column_codes =   {'ftBool':   'B',   
+packing_column_codes =   {'ftBool':   'B',
                         'ftUByte':    'B',
                         'ftShort':    'h',
-                        'ftInt':      'i',  
+                        'ftInt':      'i',
                         'ftLong':     'q',
-                        'ftFloat':    'f',                 
+                        'ftFloat':    'f',
                         'ftDouble':   'd',
                         'ftDate':     'i',
                         'ftDateTime': 'q',
@@ -189,7 +190,6 @@ def dateparts_to_int (year, month, day):
     month = (month + 9) % 12;
     year = year - month//10;
     
-    # print (365*year + year//4 - year//100 + year//400 + (month*306 + 5)//10 + (day - 1))
     return 365*year + year//4 - year//100 + year//400 + (month*306 + 5)//10 + (day - 1)
 
 
@@ -207,7 +207,6 @@ def dtparts_to_long  (year, month, day, hour, minute, second, msecond=0):
     return (date_as_int << 32) + time_as_int
 
 def validate_datetime_tuple(tup):
-
     try:
         datetime(*tup)
     except:
@@ -230,7 +229,6 @@ def conv_data_type(type, data):
     else:
         unpack_type = packing_column_codes[type]
         return unpack(unpack_type, data)[0]
-
 
 statement_type = {'DML', 'INSERT', 'SELECT'}
 
@@ -293,9 +291,9 @@ class Column:
 
 
     def set_add_val_null(self):
-        ''' Set the appropriate binarization and addition function at initiation time'''     
+        ''' Set the appropriate binarization and addition function at initiation time'''
         
-        length = self.varchar_size  
+        length = self.varchar_size
         type_code = packing_column_codes[self.col_type]  # [u'ftInt', True, 4]
         varchar_typecode = '{}s'.format(length)
 
@@ -304,7 +302,7 @@ class Column:
         if self.col_type == 'ftVarchar':
 
             if self.nullable:
-                # add_val = lambda val: val.encode('utf-8')[:length].ljust(length, b' ')      
+                # add_val = lambda val: val.encode('utf-8')[:length].ljust(length, b' ')
                 def add_val(val):
                     self._nulls.append(0)
                     self.encoded_data += val.encode(VARCHAR_ENC)[:length].ljust(length, b' ')
@@ -319,14 +317,13 @@ class Column:
         elif self.col_type == 'ftBlob':   
             
             if self.nullable:
-                # add_val = lambda val: val.encode('utf-8')[:length].ljust(length, b' ')      
+                # add_val = lambda val: val.encode('utf-8')[:length].ljust(length, b' ')
                 def add_val(val):
                     try:
                         encoded_val = val.encode('utf-8')[:length] #.ljust(length, b' ')
                     except:
                         encoded_val = unicode(val, 'utf-8').encode('utf-8')[:length] #.ljust(length, b' ')
                     self._nvarchar_lengths.append(len(encoded_val))
-                    # print  (len(encoded_val))   #dbg
                     self._nulls.append(0)
                     self.encoded_data += encoded_val
                     # self.encoded_data += val.encode('utf-8')[:length].ljust(length, b' ')  #Py3
@@ -408,22 +405,20 @@ class Column:
                     self._nulls.append(0)
                     # self.encoded_data += array.array(str(type_code), [val]).tostring()
                     self.encoded_data += pack(str(type_code), val)
-
+            
                 def add_null():
                     self._nulls.append(1)
                     # self.encoded_data += array.array(str(type_code), [0]).tostring()
                     self.encoded_data += pack(str(type_code), 0)
-
+            
             else:
                 def add_val(val):
                     # self.encoded_data += array.array(str(type_code), [val]).tostring()
                     self.encoded_data += pack(str(type_code), val)
-      
+        
         else:
-            # Oh pew
-            print ("That's some Douglas Adams shit")
-
-
+            raise RuntimeError("Could not encode value for column type {}, with value '{}'".format(str(self.col_type),str(val)))
+        
         return (add_val, add_null) if self.nullable else (add_val, lambda: print("Can't add nulls to a non-nullable column"))
 
 
@@ -476,9 +471,9 @@ class SqreamConn(object):
         self._row_size = 0
 
         # Number of rows after which a flush is performed
-        self._row_threshold = 100            # Decided dynamically based on row size
+        self._row_threshold = 100 # Decided dynamically based on row size
         self._set_flags = [0]
-
+    
     HEADER_LEN = 10
 
     
@@ -489,17 +484,13 @@ class SqreamConn(object):
         # Getting 10-byte response header back
         header = _recieve(10, sock)
         server_protocol, bytes_or_text, message_len = header[0], header[1], unpack('q', header[2:10])[0]
-        # server_protocol, bytes_or_text, message_len = _recieve(1, self.s), _recieve(1, self.s), _recieve(8, self.s)
-         
         return _recieve(message_len, sock).decode('utf8')
 
 
     def _send_string(self, json_cmd, get_response = True, is_text_msg = True, sock = None):
- 
         sock = sock or self.s
-        # Generating the message header, and sending both over the socket
+        # Generate message header, sending both
         sock.send( _get_message_header(len(json_cmd)) + json_cmd.encode('utf8'))
-        
         if get_response:
             return self._get_response(sock)
 
@@ -540,7 +531,7 @@ class SqreamConn(object):
         try:
             self.s = ssl.wrap_socket(sock or self.s, ssl_version=ssl.PROTOCOL_TLSv1, ciphers="ADH-AES256-SHA")
         except:
-            print ("Error wrapping socket")  # check what exception goes here
+            raise RuntimeError("Error wrapping SSL socket")
 
     
     def close_socket(self):
@@ -568,7 +559,7 @@ class SqreamConn(object):
                 self.close_connection()
             raise RuntimeError("Couldn't connect to SQream server - " + str(err))
         except Exception as e:
-            print("Other error upon open connection: " + str(e))
+            raise RuntimeError("Uncaught error upon open connection: " + str(e))
 
     
     def close_connection(self):
@@ -668,7 +659,6 @@ class SqreamConn(object):
     def _get_msg(self):
         global SERVER_PROTOCOL_VERSION
         data_recv = self.socket_recv(self.HEADER_LEN)
-        # print ("data recieved: ", repr(data_recv))   # dbg
         SERVER_PROTOCOL_VERSION = unpack('b', bytearray([data_recv[0]]))[0]
         if SERVER_PROTOCOL_VERSION not in SUPPORTED_VERSIONS:               
             raise RuntimeError(
@@ -690,7 +680,6 @@ class SqreamConn(object):
             self.set_socket(None)
             raise RuntimeError("Error from SQream: " + str(err))
         if close is False:
-            # print ("message sent: ", cmd_str)  #dbg
             return self._get_msg()
         else:
             return
@@ -727,7 +716,6 @@ class SqreamConn(object):
             if self._use_ssl:
                 self.cloak_socket()     
             self.s.connect((ip_addr, port))
-        # print ("reconnecting from connect_database")
         # At this point we are in contact with the proper ip/port, establish coms
         if service is None:
             cmd_str = """{{"connectDatabase":"{0}","password":"{1}","username":"{2}"}}""".format(
@@ -803,10 +791,8 @@ class SqreamConn(object):
         
         # If 'reconnect' paramater in the json response to prepareStatement is presenet and set to True
         if self._balancer_params.get('reconnect'):
-            # print('reconnecting via _execute')
             self.close_socket() # no closeStatement / closeConnection statements on reconnection, dump and go
             port = self._balancer_params['port_ssl'] if self._use_ssl else self._balancer_params['port']
-            # print('params for reconnection:', self._balancer_params['ip'], port) 
             self.create_connection(self._balancer_params['ip'], port)
     
             cmd_str =  '{{"service": "{}", "reconnectDatabase":"{}", "connectionId":{}, "listenerId":{},"username":"{}", "password":"{}"}}'.format(
@@ -853,7 +839,7 @@ class SqreamConn(object):
         if mode == 'in':
             # Insert statement, update variables for auto-flush and column set tracker
             self._row_size = sum(col['type'][1] for col in self.column_json)
-            self._row_threshold = FLUSH_SIZE / self._row_size if self._row_size else 0  # calculate inside the network stuff
+            self._row_threshold = DEFAULT_FLUSH_SIZE / self._row_size if self._row_size else 0  # calculate inside the network stuff
             self._set_flags = [0] * len(self.column_json)
             
             for idx, col in enumerate(self.column_json):
@@ -933,7 +919,7 @@ class SqreamConn(object):
                 column_data = self.readcolumnbytes(col._column_size[1])  # ,col.get_type_size(), None, is_null)
                 column_data = [column_data[i:i + col._type_size] for i in
                                range(0, col._column_size[1], col._type_size)]
-                column_data = [self.bytes2val(col._type_name,column_data[idx]) if elem == 0 else u"\\N" for idx, elem in enumerate(is_null)]
+                column_data = [self.bytes2val(col._type_name,column_data[idx]) if elem == 0 else None for idx, elem in enumerate(is_null)]
 
             elif col._isTrueVarChar == True and col._nullable == False:
                 column_data = self.readcolumnbytes(col._column_size[0])
@@ -952,7 +938,7 @@ class SqreamConn(object):
                 nvarchar_lens = map(lambda c: unpack('i', c)[0], column_data)
                 nvarchar_inds = self.len2ind(nvarchar_lens)
                 column_data = self.readcolumnbytes(col._column_size[2])
-                column_data = [column_data[i:j] if k == 0 else u"\\N" for i, j, k in
+                column_data = [column_data[i:j] if k == 0 else None for i, j, k in
                                zip([0] + nvarchar_inds[:-1], nvarchar_inds[:-1] + [None], is_null)]
             else:
                 raise RuntimeError("Column data encountered malformed column during fetch")
@@ -961,7 +947,6 @@ class SqreamConn(object):
 
         # Update boundary parameter for _next_row() 
         # self._num_of_rows = self._query_data[0]._column_size[0]  # 1 is fetched column size
-        # print (self._num_of_rows)  #dbg
         return res['rows']  # No. of rows recieved 
 
 
@@ -983,10 +968,10 @@ class SqreamConn(object):
                 col_index = self._col_indices[col_index_or_name]
             except:
                 if self._col_indices:
-                    print ("Bad column name on get function")
+                    raise RuntimeError("Bad column name on get function")
                 else:
                     # if _col_indices is an empty list
-                    print ("No select statement issued")
+                    raise RuntimeError("No select statement issued, can't get item")
                 return 
         else:
             col_index = col_index_or_name -1
@@ -995,10 +980,9 @@ class SqreamConn(object):
         try:
             col = self.cols[col_index]
         except IndexError: 
-            print("Inexistent column index. Number of columns is " + str(len(self.cols)))
-            return "Inexistent column index. Number of columns is " + str(len(self.cols))
+            raise RuntimeError("Invalid column index - exceeds expected values. The number of columns is 1-" + str(len(self.cols)))
         except:
-            print("No select statement executed")
+            raise RuntimeError("No select statement executed, can't get item")
           
         # Column acquired, check if correct type if this is a get_() request
         if not null_check:
@@ -1168,6 +1152,7 @@ class Connector(object):
          
 
     def connect(self, host, port, database, user, password, clustered, timeout, service = 'sqream'):
+        """Open a new connection to SQream DB"""
         sqream_ssl_port = 5100
         # No connection yet, create a new one
         if self._sc is None:
@@ -1231,6 +1216,7 @@ class Connector(object):
         return [i.name for i in self._sc.meta]
 
     def fetch_all_as_dict(self):
+        """Return all values as a dictionary"""
         buf = []
         types = self.get_column_types()
         names = self.get_column_names()
@@ -1245,7 +1231,7 @@ class Connector(object):
               ,'Bigint' :   lambda i: self.get_long(i)
               ,'Date' :     lambda i: self.get_date(i)
               ,'DateTime' : lambda i: self.get_datetime(i)}
-
+        
         while self.next_row():
             k = {}
             for i in range(0,len(types)):
@@ -1254,6 +1240,31 @@ class Connector(object):
         
         return buf
 
+    def fetch_all_as_arrays(self,with_header=True):
+        """Return all values as arrays. First line is the header by default"""
+        buf = []
+        types = self.get_column_types()
+        names = self.get_column_names()
+        lu = {'Bool' :      lambda i: self.get_bool(i)
+              ,'Varchar' :  lambda i: self.get_string(i)
+              ,'NVarchar' : lambda i: self.get_nvarchar(i)
+              ,'Tinyint' :  lambda i: self.get_ubyte(i)
+              ,'Int' :      lambda i: self.get_int(i)
+              ,'Smallint' : lambda i: self.get_short(i)
+              ,'Float' :    lambda i: self.get_float(i)
+              ,'Double' :   lambda i: self.get_double(i)
+              ,'Bigint' :   lambda i: self.get_long(i)
+              ,'Date' :     lambda i: self.get_date(i)
+              ,'DateTime' : lambda i: self.get_datetime(i)}
+        if with_header:
+            buf.append(names)
+        while self.next_row():
+            k = []
+            for i in range(0,len(types)):
+                k.append(lu[types[i].tid](i+1))
+            buf.append(k)
+        return buf
+        
     def close(self):
         '''close statement'''
 
@@ -1443,7 +1454,6 @@ class Connector(object):
         # Also, inf, nan and friends can't be tested as floats
         if type(val) != float or (type(val) == float and not float_range[0] <= abs(val) <= float_range[1]):  
             if val not in (float('-0'), float('+0'), float('inf'), float('-inf'), float('nan')) or val is True or val is False:
-                # print (val, type (val))  #dbg   
                 announce(BadTypeForSetFunction, 'Expecting real(=float) value but got {} of type {}'.format(val, str(type(val))))
           
         return self._sc._set_item(col_index_or_name, val, 'ftFloat')
@@ -1476,4 +1486,4 @@ class Connector(object):
 if __name__ == '__main__':
 
     print ("This file is to be used as a module\nSee example usage at the top of the file\n")
-    print ("SQream Python driver version", PYSQREAM_VERSION, '\n')
+    print ("SQream Python driver version", __version__, '\n')
