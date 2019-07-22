@@ -6,7 +6,7 @@ with open("README.rst", "r") as fh:
 
 setuptools.setup(
     name="pysqream",
-    version="2.1.4a1",
+    version="2.1.4a2",
     author="SQream Technologies",
     author_email="info@sqream.com",
     description="Python Native API for communicating with SQream DB",

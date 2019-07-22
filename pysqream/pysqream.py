@@ -1,6 +1,6 @@
 from __future__ import absolute_import, division, print_function, unicode_literals
 
-version_inf = (2, 1, 4,'a1')
+version_inf = (2, 1, 4,'a2')
 __version__ = '.'.join(map(str, version_inf))
 
 """
@@ -679,6 +679,10 @@ class SqreamConn(object):
             self.close_connection()
             self.set_socket(None)
             raise RuntimeError("Error from SQream: " + str(err))
+        except ConnectionResetError as err:
+            self.close_connection()
+            self.set_socket(None)
+            raise RuntimeError(str(err))
         if close is False:
             return self._get_msg()
         else:
@@ -1226,7 +1230,8 @@ class Connector(object):
               ,'Tinyint' :  lambda i: self.get_ubyte(i)
               ,'Int' :      lambda i: self.get_int(i)
               ,'Smallint' : lambda i: self.get_short(i)
-              ,'Float' :    lambda i: self.get_float(i)
+              ,'Real' :     lambda i: self.get_float(i)
+              ,'Float' :    lambda i: self.get_double(i)
               ,'Double' :   lambda i: self.get_double(i)
               ,'Bigint' :   lambda i: self.get_long(i)
               ,'Date' :     lambda i: self.get_date(i)
@@ -1251,7 +1256,8 @@ class Connector(object):
               ,'Tinyint' :  lambda i: self.get_ubyte(i)
               ,'Int' :      lambda i: self.get_int(i)
               ,'Smallint' : lambda i: self.get_short(i)
-              ,'Float' :    lambda i: self.get_float(i)
+              ,'Real' :     lambda i: self.get_float(i)
+              ,'Float' :    lambda i: self.get_double(i)
               ,'Double' :   lambda i: self.get_double(i)
               ,'Bigint' :   lambda i: self.get_long(i)
               ,'Date' :     lambda i: self.get_date(i)
