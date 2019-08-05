@@ -113,11 +113,108 @@ Example of a SET data loop for data loading:
     con.close()
     con.close_connection()
     
+Example inserting from a csv to SQream
+----------
+.. code-block:: python
 
+    def insert_from_csv(con,table_name,csv_filename, field_delimiter = ',', null_markers = []):
+    
+        # get info on the columns for the insert statement
+    
+        # you can get this info after preparing the insert, but we need to at
+        # least know the number of columns to be able to construct the insert
+        # statement
+    
+        with pysqream.sqream_run(con,f"select * from {table_name} limit 0") as con:
+            column_types = con.get_column_types()
+
+    
+        def parse_datetime(v):
+            try:
+                return datetime.datetime.strptime(row[i], '%Y-%m-%d %H:%M:%S.%f')
+            except ValueError:
+                try: 
+                    return datetime.datetime.strptime(row[i], '%Y-%m-%d %H:%M:%S')
+                except ValueError:
+                    return datetime.datetime.strptime(row[i], '%Y-%m-%d')
+    
+        # insert the csv
+        qstring = ",".join(['?'] * len(column_types))
+        with pysqream.sqream_run(con, f"insert into {table_name} values ({qstring})") as con:
+            with open(csv_filename, mode='r') as csv_file:
+                csv_reader = csv.reader(csv_file, delimiter=field_delimiter)
+                for row in csv_reader:
+                    for i,(t,v) in enumerate(zip(column_types, row)):
+                        ii = i + 1
+                        if row[i] in null_markers:
+                            con.set_null(ii)
+                        elif t.tid == 'Tinyint':
+                            con.set_ubyte(ii, int(row[i]))
+                        elif t.tid == "Smallint":
+                            con.set_short(ii, int(row[i]))
+                        elif t.tid == "Int":
+                            con.set_int(ii, int(row[i]))
+                        elif t.tid == "Bigint":
+                            con.set_long(ii, int(row[i]))
+                        elif t.tid == "Real":
+                            con.set_float(ii, float(row[i]))
+                        elif t.tid == "Float":
+                            con.set_double(ii, float(row[i]))
+                        elif t.tid == "Date":
+                            dt = datetime.datetime.strptime(row[i], "%Y-%m-%d")
+                            dt = datetime.date(dt.year, dt.month, dt.day)
+                            con.set_date(ii, dt)
+                        elif t.tid == "DateTime":
+                            dt = parse_datetime(row[i])
+                            con.set_datetime(ii, dt)
+                        elif t.tid == "Varchar":
+                            con.set_varchar(ii, row[i])
+                        elif t.tid == "NVarchar":
+                            con.set_nvarchar(ii, row[i])
+                    con.next_row()
+        
+Example saving the results of a query to a csv file
+----------
+.. code-block:: python
+
+    def save_query(con, query, csv_filename, field_delimiter, null_marker):
+    
+        with pysqream.sqream_run(con, query) as con:
+            column_types = con.get_column_types()
+            with open(csv_filename, 'x', newline='') as csvfile:
+                wr = csv.writer(csvfile, delimiter=field_delimiter,quoting=csv.QUOTE_MINIMAL)
+                while con.next_row():
+                    csv_row = []
+                    for i,t in enumerate(column_types):
+                        ii = i + 1
+                        if con.is_null(ii):
+                            csv_row.append(null_marker)
+                        elif t.tid == 'Tinyint':
+                            csv_row.append(con.get_ubyte(ii))
+                        elif t.tid == "Smallint":
+                            csv_row.append(con.get_short(ii))
+                        elif t.tid == "Int":
+                            csv_row.append(con.get_int(ii))
+                        elif t.tid == "Bigint":
+                            csv_row.append(con.get_long(ii))
+                        elif t.tid == "Real":
+                            csv_row.append(con.get_float(ii))
+                        elif t.tid == "Float":
+                            csv_row.append(con.get_double(ii))
+                        elif t.tid == "Date":
+                            csv_row.append(con.get_date(ii))
+                        elif t.tid == "DateTime":
+                            csv_row.append(con.get_datetime(ii))
+                        elif t.tid == "Varchar":
+                            csv_row.append(con.get_varchar(ii))
+                        elif t.tid == "NVarchar":
+                            csv_row.append(con.get_nvarchar(ii))
+                    wr.writerow(csv_row)
+       
 API Reference
 -------------
 
-All functions are accessed through the Connector class imported from SQream_Python_Connector.py:
+All functions are accessed through the Connector class imported from pysqream.py:
 
 **Initialization - Termination**
 
