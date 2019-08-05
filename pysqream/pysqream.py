@@ -1,6 +1,6 @@
 from __future__ import absolute_import, division, print_function, unicode_literals
 
-version_inf = (2, 1, 4,'a2')
+version_inf = (2, 1, 4,'a3')
 __version__ = '.'.join(map(str, version_inf))
 
 """
@@ -133,7 +133,6 @@ def announce(exception, message = None):
 tinyint_range = 0, 255
 smallint_range = -32768, 32767
 int_range = -2147483648, 2147483647
-# bigint_range = -9223372036854775808, 9223372036854775807
 float_range = 1.18e-38, 3.4e38
 
 packing_column_codes =   {'ftBool':   'B',
@@ -285,7 +284,6 @@ class Column:
         ''' Empty all data related content after a sucessful flush'''
         
         self.encoded_data = b''
-        # self.encoded_data = self.setup_column(col_type)
         self._nulls = bytearray()                           # If nullable
         self._nvarchar_lengths = array.array(str('i'))        # length column for nVarchar
 
@@ -302,7 +300,6 @@ class Column:
         if self.col_type == 'ftVarchar':
 
             if self.nullable:
-                # add_val = lambda val: val.encode('utf-8')[:length].ljust(length, b' ')
                 def add_val(val):
                     self._nulls.append(0)
                     self.encoded_data += val.encode(VARCHAR_ENC)[:length].ljust(length, b' ')
@@ -317,33 +314,28 @@ class Column:
         elif self.col_type == 'ftBlob':   
             
             if self.nullable:
-                # add_val = lambda val: val.encode('utf-8')[:length].ljust(length, b' ')
                 def add_val(val):
                     try:
-                        encoded_val = val.encode('utf-8')[:length] #.ljust(length, b' ')
+                        encoded_val = val.encode('utf-8')[:length] 
                     except:
-                        encoded_val = unicode(val, 'utf-8').encode('utf-8')[:length] #.ljust(length, b' ')
+                        encoded_val = unicode(val, 'utf-8').encode('utf-8')[:length] 
                     self._nvarchar_lengths.append(len(encoded_val))
                     self._nulls.append(0)
                     self.encoded_data += encoded_val
-                    # self.encoded_data += val.encode('utf-8')[:length].ljust(length, b' ')  #Py3
 
                 def add_null():
                     self._nvarchar_lengths.append(len(''))
                     self._nulls.append(1)
-                    self.encoded_data += b''[:length]   #.ljust(length, b' ')
-                    # self.encoded_data += val.encode('utf-8')[:length].ljust(length, b' ')   #Py3
+                    self.encoded_data += b''[:length]   
             else:
                 def add_val(val):
                     encoded_val = unicode(val, 'utf-8').encode('utf-8')[:length]  #.ljust(length, b' ')
                     self._nvarchar_lengths.append(len(val.encode('utf-8'))) 
                     self.encoded_data += encoded_val
-                    # self.encoded_data += val.encode('utf-8')[:length].ljust(length, b' ')   #Py3
 
         elif self.col_type == 'ftDate':
            
             if self.nullable:
-                # add_val = lambda val: val.encode('utf-8')[:length].ljust(length, b' ')      
                 def add_val(val):
 
                     self._nulls.append(0)
@@ -391,20 +383,16 @@ class Column:
         elif self.col_type in ('ftBool', 'ftUByte', 'ftShort', 'ftInt', 'ftFloat', 'ftDouble'):
             # Non bigint numerical types
             if self.nullable:
-                # add_val = lambda val: val.encode('utf-8')[:length].ljust(length, b' ')      
                 def add_val(val):
                     self._nulls.append(0)
-                    # self.encoded_data += array.array(str(type_code), [val]).tostring()
                     self.encoded_data += pack(str(type_code), val)
             
                 def add_null():
                     self._nulls.append(1)
-                    # self.encoded_data += array.array(str(type_code), [0]).tostring()
                     self.encoded_data += pack(str(type_code), 0)
             
             else:
                 def add_val(val):
-                    # self.encoded_data += array.array(str(type_code), [val]).tostring()
                     self.encoded_data += pack(str(type_code), val)
         
         else:
@@ -560,8 +548,6 @@ class SqreamConn(object):
     
 
     def create_connection(self, ip, port):
-        #self.open_socket()
-        
         self.open_connection(ip, port)
 
     @staticmethod
@@ -601,11 +587,10 @@ class SqreamConn(object):
         cmd_bytes_1 = bytearray([2])               # Protocol version
 
         if not binary:
-            cmd_bytes_2 = bytearray([1])           # Vote 1 for text
-            # cmd_bytes_4 = cmd_str.expandtabs(1).encode('utf8')
+            cmd_bytes_2 = bytearray([1])           # for text
             cmd_bytes_4 = cmd_str.encode('utf8')
         else:    
-            cmd_bytes_2 = bytearray([2])           # 2 for binary
+            cmd_bytes_2 = bytearray([2])           # for binary
             cmd_bytes_4 = cmd_str
 
         cmd_bytes_3 = pack('q', len(cmd_bytes_4))
@@ -733,7 +718,6 @@ class SqreamConn(object):
     # Reading bytes in Python 2 and 3
     def get_nulls_py2(self,column_data):
         return map(lambda c: unpack('b', bytes(c))[0], column_data)
-        # or return [ord(c) for c in column_data]
    
     def get_nulls_py3(self,column_data):
         return [c for c in column_data]
@@ -751,15 +735,14 @@ class SqreamConn(object):
 
         # Protocol check
         if SERVER_PROTOCOL_VERSION in (5,6,7):    # remove if/once everyone's on 5
-            # getStatementId is new for SQream protocol version 5
+            # getStatementId is for protocol version 5 and above
             cmd_str = '{"getStatementId" : "getStatementId"}'
             self._statement_id = json.loads(self.exchange(cmd_str).decode('utf-8'))['statementId']
 
         # Send command and validate response from SQream
         cmd_str = """{{"prepareStatement":"{0}","chunkSize":{1}}}""".format(query_str.replace('"', '\\"'),
-                                                                            str(DEFAULT_NETWORK_CHUNKSIZE))        
+                                                                            str(DEFAULT_NETWORK_CHUNKSIZE))
         res = self.exchange(cmd_str)
-        #{"ip":"192.168.0.176","listener_id":0,"port":5000,"port_ssl":5001,"reconnect":true,"statementPrepared":true}
         self._balancer_params = json.loads(res.decode('utf-8'))
 
         # if b'statementPrepared' in res: 
@@ -776,7 +759,7 @@ class SqreamConn(object):
             self.current_row = 0      # number of rows that have been dispatched by next_row() = number of calls to next_row()
                            
         # Protocol versions 5 and below, queryType is called after prepareStatement
-        if SERVER_PROTOCOL_VERSION < 6:
+        if SERVER_PROTOCOL_VERSION <= 5:
             self._get_query_type()
 
         return res
@@ -838,21 +821,18 @@ class SqreamConn(object):
             self._set_flags = [0] * len(self.column_json)
             
             for idx, col in enumerate(self.column_json):
-                # col['name'] =  col.get('name', '')
                 self.meta[idx] = ColumnMetadata('', col['type'][0], col['type'][1], col['nullable'], col['isTrueVarChar'])
                 self.cols[idx] = Column(col['type'][0], col['nullable'], col['type'][1])
         
         elif mode =='out':
             for idx, col in enumerate(self.column_json):
                 # Column sizes (row number) is updated at fetch() time
-                # col['name'] =  col.get('name', '')
                 self.meta[idx] = ColumnMetadata(col['name'], col['type'][0], col['type'][1], col['nullable'], col['isTrueVarChar'])
 
                 sq_col = Column(col['type'][0], col['nullable'], col['type'][1])
                 sq_col._type_name = col['type'][0]
                 sq_col._type_size = col['type'][1]
                 sq_col._column_name = col['name']
-                #def _column_name = (self, column_name): self._column_name = column_name
                 self._ordered_col_names.append(sq_col._column_name) 
                 # To allow quick switching between column names and locations in the table 
                 self._col_indices[sq_col._column_name] = idx   
@@ -903,7 +883,7 @@ class SqreamConn(object):
             idx_last += 1
 
             if col._isTrueVarChar == False and col._nullable == False:
-                column_data = self.readcolumnbytes(col._column_size[0])  # , col.get_type_size())
+                column_data = self.readcolumnbytes(col._column_size[0])  
                 column_data = [column_data[i:i + col._type_size] for i in
                                range(0, col._column_size[0], col._type_size)]
                 column_data = list(map(lambda c: self.bytes2val(col._type_name, c), column_data))
@@ -911,7 +891,7 @@ class SqreamConn(object):
             elif col._isTrueVarChar == False and col._nullable == True:
                 column_data = self.readcolumnbytes(col._column_size[0])
                 is_null = self.get_nulls(column_data)
-                column_data = self.readcolumnbytes(col._column_size[1])  # ,col.get_type_size(), None, is_null)
+                column_data = self.readcolumnbytes(col._column_size[1])  
                 column_data = [column_data[i:i + col._type_size] for i in
                                range(0, col._column_size[1], col._type_size)]
                 column_data = [self.bytes2val(col._type_name,column_data[idx]) if elem == 0 else None for idx, elem in enumerate(is_null)]
@@ -921,7 +901,7 @@ class SqreamConn(object):
                 column_data = [column_data[i:i + 4] for i in range(0, col._column_size[0], 4)]
                 nvarchar_lens = map(lambda c: unpack('i', c)[0], column_data)
                 nvarchar_inds = self.len2ind(nvarchar_lens)
-                column_data = self.readcolumnbytes(col._column_size[1])  # , None, nvarchar_inds[:-1])
+                column_data = self.readcolumnbytes(col._column_size[1])  
                 column_data = [column_data[i:j] for i, j in
                                zip([0] + nvarchar_inds[:-1], nvarchar_inds[:-1] + [None])]
 
@@ -940,14 +920,12 @@ class SqreamConn(object):
 
             col.data += column_data
 
-        # Update boundary parameter for _next_row() 
-        # self._num_of_rows = self._query_data[0]._column_size[0]  # 1 is fetched column size
         return res['rows']  # No. of rows recieved 
 
 
 
     def _close_statement(self):
-        if 'add flush condition':  # flush() doesn't fire blanks so it's keewl
+        if 'add flush condition':
             self._flush()  
         
         self.exchange('{"closeStatement":"closeStatement"}')  
@@ -982,13 +960,11 @@ class SqreamConn(object):
         # Column acquired, check if correct type if this is a get_() request
         if not null_check:
             actual_type = col._type_name
-            if not col_type == actual_type: # and not (col_type, actual_type) == ('ftFloat', 'ftDouble'):
-                # print (col_type)
+            if not col_type == actual_type:
                 announce(WrongGetStatement, "Incorrect type. Column of type {}, trying to get {}".format(actual_type, col_type))
 
-        # Acquired and verified. Here cometh thy money
+        # Acquired and verified, place in result set
         try:
-            # print( col.data, self.current_row)   #dbg
             res = col.data[self.current_row-1]
         except IndexError:
             res = None
@@ -1006,11 +982,9 @@ class SqreamConn(object):
 
         # Convert column name to index, same as in _get_item()
         if type(col_index_or_name) in (str, unicode):
-            #OMG we totally don't support
             print ("Setting values by column name not supported")
             return
-            
-            # When we decide we do support insertion by column name
+            # TODO: When we decide we do support insertion by column name
             try:
                 col_index = self._col_indices[col_index_or_name]
             except:
@@ -1035,12 +1009,10 @@ class SqreamConn(object):
         
         # Column acquired, type check on non null inserts
         if col_type != col.col_type and not set_null: 
-            # print (col_type, col.col_type)  #dbg
             announce(WrongSetStatement, "Incorrect type. Column of type {}, inserted {}".format(col.col_type, col_type))        
 
         # Inserting value
         if val != None: 
-            # Acquired and verified. Here cometh thy money
             col.add_val(val)
             self._set_flags[col_index] = 1
             
@@ -1052,14 +1024,8 @@ class SqreamConn(object):
 
     def _flush(self):   # <== check if works on fumes
         ''' Gather a binary chunk from get() statements and send to SQream'''
-        # print (self._row_threshold)   #dbg
 
-        # chunk =  b''.join((str(col._nulls) + col._nvarchar_lengths.tostring() + str(col.encoded_data) for col in self.cols))
         chunk =  b''.join((col._nulls.decode().encode('utf8') + col._nvarchar_lengths.tostring() + col.encoded_data for col in self.cols))
-        # print ([(str(col._nulls),  col._nvarchar_lengths.tostring(),  str(col._data)) for col in self._batch])  #dbg
-        # print ([(col._nvarchar_lengths.tostring()) for col in self._batch])  #dbg
-        # print(len(chunk))
-        # print (repr(chunk))
         if chunk:
             # Insert sequence - put command, binary chunk
             put_cmd = '{{"put":{}}}'.format(self.current_row)
@@ -1078,26 +1044,7 @@ class SqreamConn(object):
         return zip(*(col.data for col in cols))      
 
     
-    '''
-    # Currently implemented independently at Connector class level   #
-    def _next_row(self):
-        # Money function - Take care of all background hustle and proceed to a
-        # new row if applicable. Currently implemented explicitly in the Connector class
-        
 
-        # Get / select operation
-        if self._query_data:
-            pass
-        # Set / insert operation
-        elif self._batch:
-            pass
-        # Denied
-        else:
-            print ("No select or insert operation executed")
-    #'''
-
-## This class should be used to create a connection
-#  ------------------------------------------------
 
 api_to_sqream = {'bool':     'ftBool',   
                 'ubyte' :    'ftUByte',
@@ -1113,8 +1060,8 @@ api_to_sqream = {'bool':     'ftBool',
                 }
 
 
-## User facing API object 
-# -----------------------
+## This class should be used to create a connection and execute statements
+#  ------------------------------------------------
 
 class Connector(object):
     
@@ -1151,7 +1098,6 @@ class Connector(object):
         sqream_ssl_port = 5100
         # No connection yet, create a new one
         if self._sc is None:
-            # (self, username, password, database, host, port, clustered=False, timeout=15)
             self._sc = SqreamConn(database=database, username=user, password=password, clustered=clustered, timeout=timeout)
             self._sc._use_ssl = True if port == sqream_ssl_port else False
             self._sc.service = service
@@ -1179,13 +1125,12 @@ class Connector(object):
         if self._sc is None:
             return
         else:
-            # self._sc.close_socket()
             self._sc.close_connection()
             self._sc = None
 
                 
 
-    #                                   API be here                               #
+    #                                   API                                       #
     #  ------------------------------------------------------------------------   #                
 
 
@@ -1265,10 +1210,10 @@ class Connector(object):
     def close(self):
         '''close statement'''
 
-        if self._sc.statement_type == 'INSERT':  # flush() doesn't fire blanks so it's keewl
-            self._sc._flush()  #'''
+        if self._sc.statement_type == 'INSERT':  
+            self._sc._flush()  
         
-        self._sc.exchange('{"closeStatement":"closeStatement"}')  #'''
+        self._sc.exchange('{"closeStatement":"closeStatement"}')  
 
 
 
@@ -1381,13 +1326,10 @@ class Connector(object):
 
      
     def set_null(self, col_index_or_name):
-
-        # col_index_or_name, val, col_type = None, set_null = False)
         return self._sc._set_item(col_index_or_name, None, None, True)
 
  
     def set_bool(self, col_index_or_name, val): 
-        # '''
         if val not in (0,1):  # supports True and False as well for pyarrow  # if val is not 0 and val is not 1: 
             announce(BadTypeForSetFunction, 'Expecting Boolean value but got {} of type {}'.format(val, str(type(val))))
         
@@ -1435,7 +1377,6 @@ class Connector(object):
 
 
     def set_long(self, col_index_or_name, val):
-       
         if type(val) != long: # or (type(val) == long and not bigint_range[0] <= val <= bigint_range[1]):  
             if type(val) != int:
                 announce(BadTypeForSetFunction, 'Expecting long value but got {} of type {}'.format(val, str(type(val))))
