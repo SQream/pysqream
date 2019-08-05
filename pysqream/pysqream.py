@@ -171,7 +171,7 @@ def long_to_datetime(dts):
     u = (dts >> 32)
     l = dts & 0xffffffff
     d = int_to_date(u)
-    msec = int(l) % 1000
+    msec = (int(l) % 1000) * 1000
     l //= 1000
     sec = l % 60
     l //= 60
