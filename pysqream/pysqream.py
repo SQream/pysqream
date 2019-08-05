@@ -185,35 +185,34 @@ def long_to_datetime(dts):
 #  ------------------------------------------
 
 # "Epoch's" long: 3090091537718528
-def dateparts_to_int (year, month, day):      
+def dateparts_to_int (dt):      
     ''' Adapted magic from day_g2() @ sqream/cpp/basic/utils/dateutils.h, ~ line 51 '''
+    year = dt.year
+    month = dt.month
+    day = dt.day
     month = (month + 9) % 12;
     year = year - month//10;
     
     return 365*year + year//4 - year//100 + year//400 + (month*306 + 5)//10 + (day - 1)
 
 
-def timeparts_to_int(hour, minute, second, msecond=0):
+def timeparts_to_int(dt):
     ''' Based on to_time() @ sqream/cpp/basic/utils/dateutils.h, ~ line 98 '''
+    hour = dt.hour
+    minute = dt.minute
+    second = dt.second
+    msecond = dt.microsecond//1000
     
-    return hour*3600*1000 + minute*60*1000 + second*1000 + msecond//1000
+    return hour*3600*1000 + minute*60*1000 + second*1000 + msecond
 
 
-def dtparts_to_long  (year, month, day, hour, minute, second, msecond=0):
+def dtparts_to_long (dt):
     ''' Convert a legal 7 figure to a SQream long'''
-    date_as_int = dateparts_to_int(year, month, day) 
-    time_as_int = timeparts_to_int(hour, minute, second, msecond)
+
+    date_as_int = dateparts_to_int(dt) 
+    time_as_int = timeparts_to_int(dt)
 
     return (date_as_int << 32) + time_as_int
-
-def validate_datetime_tuple(tup):
-    try:
-        datetime(*tup)
-    except:
-        return False
-    else:
-        return True  
-
 
 # Conversion helper to deal with dates
 def conv_data_type(type, data):
@@ -345,42 +344,33 @@ class Column:
             if self.nullable:
                 # add_val = lambda val: val.encode('utf-8')[:length].ljust(length, b' ')      
                 def add_val(val):
-                    if not validate_datetime_tuple(val):
-                        announce(FaultyDateTuple, 'Not a valid Date tuple')
 
                     self._nulls.append(0)
-                    self.encoded_data += pack(str(type_code), dateparts_to_int(*val))
+                    self.encoded_data += pack(str(type_code), dateparts_to_int(val))
 
                 def add_null():
                     self._nulls.append(1)
-                    self.encoded_data += pack(str(type_code), dateparts_to_int(0, 0, 0))
+                    self.encoded_data += pack(str(type_code), dateparts_to_int(date(0, 0, 0)))
             else:
                 def add_val(val):
-                    if not validate_datetime_tuple(val):
-                        announce(FaultyDateTuple, 'Not a valid Date tuple')
-
-                    self.encoded_data += pack(str(type_code), dateparts_to_int(*val))
+                    self.encoded_data += pack(str(type_code), dateparts_to_int(val))
 
         elif self.col_type == 'ftDateTime': 
             
             if self.nullable:
                 # add_val = lambda val: val.encode('utf-8')[:length].ljust(length, b' ')      
                 def add_val(val):
-                    if not validate_datetime_tuple(val):
-                        announce(FaultyDateTimeTuple, 'Not a valid Datetime tuple')
 
                     self._nulls.append(0)
-                    self.encoded_data += pack(str(type_code), dtparts_to_long(*val))
+                    self.encoded_data += pack(str(type_code), dtparts_to_long(val))
 
                 def add_null():
                     self._nulls.append(1)
-                    self.encoded_data += pack(str(type_code), dtparts_to_long(0, 0, 0, 0, 0, 0))
+                    self.encoded_data += pack(str(type_code), dtparts_to_long(datetime(0, 0, 0, 0, 0, 0, 0)))
             else:
                 def add_val(val):
-                    if not validate_datetime_tuple(val):
-                        announce(FaultyDateTimeTuple, 'Not a valid Datetime tuple')
 
-                    self.encoded_data += pack(str(type_code), dtparts_to_long(*val))
+                    self.encoded_data += pack(str(type_code), dtparts_to_long(val))
 
         elif self.col_type == 'ftLong':
            
@@ -1308,7 +1298,7 @@ class Connector(object):
 
         elif self._sc.statement_type == 'INSERT':  # Insert query
             if sum(self._sc._set_flags) < len(self._sc.cols):
-                raise RowFillException('Not all columns have been set')
+                raise RowFillException(f'Not all columns have been set, expected {len(self._sc.cols)}, got {sum(self._sc._set_flags)}')
 
             # Reset row flags and raise counter
             self._sc._set_flags = [0] * len(self._sc.column_json)
@@ -1475,7 +1465,7 @@ class Connector(object):
 
     def set_date(self, col_index_or_name, val):
         
-        if type(val) != tuple:
+        if type(val) != date:
             announce(BadTypeForSetFunction, 'Expecting date value but got {} of type {}'.format(val, str(type(val))))
 
         return self._sc._set_item(col_index_or_name, val, 'ftDate')
@@ -1483,7 +1473,7 @@ class Connector(object):
 
     def set_datetime(self, col_index_or_name, val):
         
-        if type(val) != tuple:
+        if type(val) != datetime:
             announce(BadTypeForSetFunction, 'Expecting datetime value but got {} of type {}'.format(val, str(type(val))))
 
         return self._sc._set_item(col_index_or_name, val, 'ftDateTime')
