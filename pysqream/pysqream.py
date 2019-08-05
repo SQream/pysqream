@@ -78,6 +78,7 @@ from decimal import Decimal
 from operator import add
 from threading import Event
 from collections import namedtuple
+from contextlib import contextmanager
 
 
 # Default constants
@@ -1478,6 +1479,28 @@ class Connector(object):
 
         return self._sc._set_item(col_index_or_name, val, 'ftDateTime')
 
+
+@contextmanager
+def sqream_connection(*args, **kwds):
+    con = Connector()
+    con.connect(*args, **kwds)
+    try:
+        yield con
+    finally:
+        con.close_connection()
+
+@contextmanager
+def sqream_run(con, sql):
+    try:
+        con.prepare(sql)
+        con.execute()
+        yield con
+    finally:
+        con.close()
+
+def sqream_run_command(con, sql):
+    with sqream_run(con, sql):
+        pass
 
 if __name__ == '__main__':
 
