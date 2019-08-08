@@ -1,6 +1,6 @@
 from __future__ import absolute_import, division, print_function, unicode_literals
 
-version_inf = (2, 1, 4,'a4')
+version_inf = (2, 1, 4,'a5')
 __version__ = '.'.join(map(str, version_inf))
 
 """
