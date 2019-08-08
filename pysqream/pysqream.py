@@ -1248,7 +1248,7 @@ class Connector(object):
 
         elif self._sc.statement_type == 'INSERT':  # Insert query
             if sum(self._sc._set_flags) < len(self._sc.cols):
-                raise RowFillException('Not all columns have been set, expected {}}, got {}'.format(len(self._sc.cols),sum(self._sc._set_flags))
+                raise RowFillException('Not all columns have been set, expected {}}, got {}'.format(len(self._sc.cols),sum(self._sc._set_flags)))
 
             # Reset row flags and raise counter
             self._sc._set_flags = [0] * len(self._sc.column_json)
