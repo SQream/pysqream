@@ -599,7 +599,7 @@ class SqreamConn(object):
         return cmd_bytes
 
     def socket_recv(self, param):
-        try:
+        #try:
             data_recv = self.s.recv(param)
             # TCP says recv will only read 'up to' param bytes, so keep filling buffer
             remainder = param - len(data_recv)
@@ -620,16 +620,19 @@ class SqreamConn(object):
                 remainder = param - len(data_recv)
             
             if b'{"error"' in data_recv:
-                raise RuntimeError("Error from SQream: " + repr(data_recv))
-        except socket.error as err:
-            self.close_connection()
-            self.set_socket(None)
-            raise RuntimeError("Error from SQream: " + str(err))
-        except RuntimeError as e:
-            raise RuntimeError(e)
-        except Exception as e:
-            raise RuntimeError("Other error while receiving from socket: " + str(e))
-        return data_recv
+                raise RuntimeError("Error: " + json.loads(data_recv.decode('utf-8'))["error"])
+            #else:
+            #    print(data_recv.decode('utf-8'))
+            return data_recv
+                
+        # except socket.error as err:
+        #     self.close_connection()
+        #     self.set_socket(None)
+        #     raise RuntimeError("Error from SQream: " + str(err))
+        # except RuntimeError as e:
+        #     raise RuntimeError(e)
+        # except Exception as e:
+        #     raise RuntimeError("Other error while receiving from socket: " + str(e))
 
     
     def _get_msg(self):
@@ -1210,8 +1213,9 @@ class Connector(object):
     def close(self):
         '''close statement'''
 
-        if self._sc.statement_type == 'INSERT':  
-            self._sc._flush()  
+        if hasattr(self._sc, 'statement_type'):
+            if self._sc.statement_type == 'INSERT':
+                self._sc._flush()
         
         self._sc.exchange('{"closeStatement":"closeStatement"}')  
 
