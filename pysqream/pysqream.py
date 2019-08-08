@@ -1,6 +1,6 @@
 from __future__ import absolute_import, division, print_function, unicode_literals
 
-version_inf = (2, 1, 4,'a3')
+version_inf = (2, 1, 4,'a4')
 __version__ = '.'.join(map(str, version_inf))
 
 """
@@ -1248,7 +1248,7 @@ class Connector(object):
 
         elif self._sc.statement_type == 'INSERT':  # Insert query
             if sum(self._sc._set_flags) < len(self._sc.cols):
-                raise RowFillException(f'Not all columns have been set, expected {len(self._sc.cols)}, got {sum(self._sc._set_flags)}')
+                raise RowFillException('Not all columns have been set, expected {}}, got {}'.format(len(self._sc.cols),sum(self._sc._set_flags))
 
             # Reset row flags and raise counter
             self._sc._set_flags = [0] * len(self._sc.column_json)
