@@ -22,6 +22,8 @@ Requirements
 Usage
 -----
 
+**DB-API:**
+
 .. code-block:: python
 
     from time import time 
