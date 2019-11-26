@@ -1,3 +1,11 @@
+Ver. 3.0.0
+----------
+*26/11/2019*
+
+* Connector rewritten to be DB-API complaint
+* Minimal supported Python version 3.6
+
+
 Ver. 2.1.4
 ----------
 *17/07/2019*
