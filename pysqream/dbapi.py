@@ -38,7 +38,7 @@ else:
     }
 
 
-__version__ = '0.1'
+__version__ = '3.0.0'
 
 PROTOCOL_VERSION = 7
 BUFFER_SIZE = 100 * int(1e6)  # For setting auto-flushing on netrwork insert
