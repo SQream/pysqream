@@ -1,24 +1,40 @@
-import setuptools
-from distutils.core import setup
+from setuptools import setup, find_packages
+
 
 with open("README.rst", "r") as fh:
     long_description = fh.read()
 
-setuptools.setup(
-    name="pysqream",
-    version="2.1.4a5",
+
+setup_params = dict(
+    name =          'pysqream',
+    version =       '3.0.0',
+    description =   'DB-API connector for SQreamDB', 
+    long_description=long_description,
+    url="https://github.com/SQream/pysqream",
     author="SQream Technologies",
     author_email="info@sqream.com",
-    description="Python Native API for communicating with SQream DB",
-    long_description=long_description,
-    long_description_content_type="text/markdown",
-    url="https://github.com/SQream/pysqream",
-    packages=setuptools.find_packages(),
+    packages =  ['pysqream'], 
     classifiers=[
-        "Programming Language :: Python :: 3",
+        "Programming Language :: Python :: 3.6",
         "License :: OSI Approved :: BSD License",
         "Operating System :: OS Independent",
     ],
-    keywords='database sqream sqreamdb',
-    python_requires='>=2.7, ~=3.3'
+    keywords='database db-api sqream sqreamdb',
+    python_requires='>=3.6'
+
+    '''
+    # install_requires=['sqlalchemy'],
+    # package_dir = {'': 'pysqream'},
+    entry_points={
+        'sqlalchemy.dialects':
+            ['sqream = pysqream.dialect:SqreamDialect']
+    },
+    # sqream://sqream:sqream@localhost/master
+    # sqream+sqream_dialect://sqream:sqream@localhost/master
+    '''
 )
+
+
+
+if __name__ == '__main__':
+    setup(**setup_params)
