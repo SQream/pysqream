@@ -2,11 +2,22 @@
 SQream Python package
 ===== 
 
+Modules
+-----
+
+- DB-API compliant connector
+
 Requirements
 -----
 
+**All modules:**
+    
 - Python 3.6+
-- Cython (Optional, faster performance) - `pip3 install cython`
+
+**DB-API:**
+
+- Cython (Optional, faster performance) - :code:`pip3 install cython`
+
 
 Usage
 -----
