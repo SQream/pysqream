@@ -17,7 +17,7 @@ Usage
     from datetime import date, datetime
     import sys, os
 
-    # Import dbapi, add to path first if pysqream was not pip installed and running from another folder
+    # If using dbapi.py directly (not via pip), add to path first
     # sys.path.append('path/to/pysqream') 
     import dbapi  
 
