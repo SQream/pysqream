@@ -32,7 +32,7 @@ Usage
 
     # If using dbapi.py directly (not via pip), add to path first
     # sys.path.append('path/to/pysqream') 
-    import dbapi  
+    from pysqream import dbapi  
 
     # Sample data to insert into SQream
     data = (False,2, 22, 222, 2222, 3.0, 4.0, "yada" , "yada" , date(2016, 12, 23), datetime(2016, 12, 23, 16, 56,45, 000))
