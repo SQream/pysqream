@@ -49,9 +49,12 @@ Usage
     insert = 'insert into perf values (?,?,?,?,?,?,?,?,?,?,?)'
     start = time()
     con.executemany(insert, [data for _ in range(amount)]) 
-    print (f"Total insert time for {amount} rows: {time() - start}") 
+    
+    print (f'Total insert time for {amount} rows: {time() - start}') 
 
     # Get data back if desired
     con.execute('select count(*) from perf')
     result = con.fetchall()
-    print (f"Count of inserted rows: {result[0][0]}")
+    #result = con.execute('select count(*) from perf').fetchall()   # works as well
+    
+    print (f'Count of inserted rows: {result[0][0]}')
