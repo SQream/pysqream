@@ -5,7 +5,7 @@
 import socket, json, ssl, logging, time, traceback
 from struct import pack, pack_into, unpack, error as struct_error
 from datetime import datetime, date, time as t
-from multiprocessing import Pool
+from multiprocessing import Pool, Manager
 from mmap import mmap
 from functools import reduce
 from concurrent.futures import ProcessPoolExecutor
@@ -42,6 +42,7 @@ __version__ = '3.0.0'
 
 PROTOCOL_VERSION = 7
 BUFFER_SIZE = 100 * int(1e6)  # For setting auto-flushing on netrwork insert
+ROWS_PER_FLUSH = 1000
 DEFAULT_CHUNKSIZE = 0  # Dummy variable for some jsons
 FETCH_MANY_DEFAULT = 1  # default parameter for fetchmany()
 VARCHAR_ENCODING = 'ascii'
@@ -79,7 +80,6 @@ def printdbg(*debug_print):
   The logic behind it is explained here:
   https:#alcor.concordia.ca/~gpkatch/gdate-method.html   
 '''
-
 
 def pad_dates(num):
     return ('0' if num < 10 else '') + str(num)
@@ -316,7 +316,6 @@ class SQSocket:
 
     def validate_response(self, response, expected):
 
-        # print("response: ", response)
         if expected not in response:
             # Color first line of SQream error (before the haskell thingy starts) in Red
             response = '\033[31m' + (response.split('\\n')[0] if clean_sqream_errors else response) + '\033[0m' 
@@ -328,30 +327,36 @@ class SQSocket:
 ## Buffer setup and functionality
 #  ------------------------------
 
-buf_map, buf_view = None, None
+manager = Manager()
+buf_maps, buf_views = [], []
 
 
 class ColumnBuffer:
     ''' Buffer holding packed columns to be sent to SQream '''
 
     def __init__(self, size=BUFFER_SIZE):
-        global buf_map, buf_view
-        buf_map = mmap(-1, size)
-        buf_view = memoryview(buf_map)
+        global buf_maps, buf_views
+        
+
+    def clear(self):
+        if buf_maps:
+            [buf_map.close() for buf_map in buf_maps[0]]
+
+
+    def init_buffers(self, col_sizes, col_nul):
+
+        self.clear()
+        buf_maps = [mmap(-1, ((1 if col_nul else 0)+(size if size!=0 else 104)) * ROWS_PER_FLUSH) for size in col_sizes]
+        buf_views = [memoryview(buf_map) for buf_map in buf_maps]
         self.pool = Pool()
 
     
-    def pack_columns(self, cols, capacity, col_types, col_sizes, col_nul,
-                     col_tvc):
+    def pack_columns(self, cols, capacity, col_types, col_sizes, col_nul, col_tvc):
         ''' Packs the buffer starting a given index with the column. 
             Returns number of bytes packed '''
 
-        bytes_per_col = [capacity * size for size in col_sizes]
-        buf_start_indices = [
-            sum(bytes_per_col[:i]) for i in range(len(bytes_per_col) + 1)
-        ]
-        pool_params = zip(cols, range(1, len(col_types) + 1), col_types,
-                          col_sizes, col_nul, col_tvc, buf_start_indices)
+        pool_params = zip(cols, range(len(col_types)), col_types,
+                          col_sizes, col_nul, col_tvc)
         # To use multiprocess type packing, we call a top level function with a single tuple parameter
         try:
             packed_cols = self.pool.map(_pack_column, pool_params)  # buf_end_indices
@@ -365,6 +370,7 @@ class ColumnBuffer:
 
 
     def close(self):
+        self.clear()
         self.pool.close()
         self.pool.join()
 
@@ -375,9 +381,11 @@ def _pack_column(col_tup, return_actual_data = True):
     ''' Packs the buffer starting a given index with the column. 
         Returns number of bytes packed '''
 
-    col, col_idx, col_type, size, nullable, tvc, start_idx = col_tup
+    col, col_idx, col_type, size, nullable, tvc = col_tup
     capacity = len(col)
-    buf_idx = start_idx
+    buf_idx = 0
+    buf_map =  mmap(-1, ((1 if nullable else 0)+(size if size!=0 else 104)) * ROWS_PER_FLUSH)
+    buf_view = memoryview(buf_map) 
 
     def pack_exception(e):
         ''' Allowing to return traceback info from parent process when using mp.Pool on _pack_column
@@ -385,7 +393,7 @@ def _pack_column(col_tup, return_actual_data = True):
         '''
         e.traceback = traceback.format_exc()
         raise ProgrammingError(
-            f'Trying to insert unsuitable types to column number {col_idx} of type {col_type}'
+            f'Trying to insert unsuitable types to column number {col_idx + 1} of type {col_type}'
         )
 
     # Numpy array for column
@@ -425,22 +433,32 @@ def _pack_column(col_tup, return_actual_data = True):
             buf_map.write(packed_np)
             buf_idx += len(packed_np)
 
-        '''
-        elif 'S' in repr(col.dtype):
-            # Numpy 'S' arrays are already represented as (ascii?) bytes
-            packed_strings = b''.join(strn[:size].ljust(size, b' ') for strn in col)
-            buf_map.seek(buf_idx)
-            buf_map.write(packed_strings)
-            buf_idx += len(packed_strings)
-            print (f'ascii strings:{packed_strings}')
-        # '''
 
-        return buf_map[start_idx:buf_idx] if return_actual_data else (start_idx,
-                                                                  buf_idx)
+        return buf_map[0:buf_idx] if return_actual_data else (0, buf_idx)
 
 
     # Pack null column if applicable
     type_code = type_to_letter[col_type]
+
+    # If a text column, replace and pack in adavnce to see if the buffer is sufficient
+    if col_type == 'ftBlob':
+        try:
+            encoded_col = [strn.encode('utf8') if strn is not None else b''
+                for strn in col
+            ]
+        except AttributeError as e:  # Non strings will not have .encode()
+            pack_exception(e)
+        else:
+            packed_strings = b''.join(encoded_col)
+
+        needed_buf_size = len(packed_strings) + 5* capacity
+        
+        # Resize the buffer if not enough space for the current strings
+        if needed_buf_size > len(buf_map):
+            buf_view.release()
+            buf_map.resize(needed_buf_size)
+            buf_view = memoryview(buf_map)
+
     if nullable:
         pack_into(f'{capacity}b', buf_view, buf_idx,
                   *[1 if item is None else 0 for item in col])
@@ -449,13 +467,7 @@ def _pack_column(col_tup, return_actual_data = True):
 
     # Replace Nones with appropriate placeholder - this affects the data itself
     if col_type == 'ftBlob':
-        try:
-            col = [
-                strn.encode('utf8')[:size] if strn is not None else b''
-                for strn in col
-            ]
-        except AttributeError as e:  # Non strings will not have .encode()
-            pack_exception(e)
+        pass     # Handled preemptively due to allow possible buffer resizing
 
     elif col_type == 'ftVarchar':
         try:
@@ -464,6 +476,8 @@ def _pack_column(col_tup, return_actual_data = True):
                    for strn in col)
         except AttributeError as e:  # Non strings will not have .encode()
             pack_exception(e)
+        else:
+            packed_strings = b''.join(col)
 
     elif col_type == 'ftDate':
         try:
@@ -492,19 +506,15 @@ def _pack_column(col_tup, return_actual_data = True):
 
     # Pack nvarchar length column if applicable
     if tvc:
-        # packed += pack(str(capacity) + 'i',*[len(string) for string in col])
         pack_into(f'{capacity}i', buf_view, buf_idx,
-                  *[len(string) for string in col])
+                  *[len(string) for string in encoded_col])
         buf_idx += 4 * capacity
 
 
     # Done preceding column handling, pack the actual data
-    # packed += b''.join(col) if col_type in ('ftVarchar','ftBlob') else pack(str(capacity) + type_code, *col)
     if col_type in ('ftVarchar', 'ftBlob'):
-        packed_strings = b''.join(col)
         buf_map.seek(buf_idx)
         buf_map.write(packed_strings)
-        # pack_into(f'{capacity}s', buf_view, buf_idx, packed_strings)
         buf_idx += len(packed_strings)
     else:
         try:
@@ -514,8 +524,7 @@ def _pack_column(col_tup, return_actual_data = True):
 
         buf_idx += capacity * size
 
-    return buf_map[start_idx:buf_idx] if return_actual_data else (start_idx,
-                                                                  buf_idx)
+    return buf_map[0:buf_idx] if return_actual_data else (0, buf_idx)
 
 
 class Connection:
@@ -525,8 +534,7 @@ class Connection:
 
     def __init__(self, ip, port, clustered, use_ssl=False, base_connection=True, reconnect_attempts=3, reconnect_interval=10):
 
-        self.buffer = ColumnBuffer(
-            BUFFER_SIZE)  # flushing buffer every BUFFER_SIZE bytes
+        self.buffer = ColumnBuffer(BUFFER_SIZE)  # flushing buffer every BUFFER_SIZE bytes
         self.row_size = 0
         self.rows_per_flush = 0
         self.stmt_id = None  # For error handling when called out of order
@@ -543,7 +551,6 @@ class Connection:
         if self.base_connection:
             self.cursors = []
 
-        # Class level DB-API warnings / errors. Defined globally at the bottom
 
     ## SQream mechanisms
     #  -----------------
@@ -565,7 +572,6 @@ class Connection:
 
             # Read the number of bytes, which is the IP in string format
             # Using a nonblocking socket in case clustered = True was passed but not connected to picker
-            
             self.ip = picker_socket.receive(read_len)
 
             # Now read port
@@ -584,7 +590,6 @@ class Connection:
     def _send_string(self, json_cmd, get_response=True, is_text_msg=True, sock=None):
         ''' Encode a JSON string and send to SQream. Optionally get response '''
 
-        # _open_connection
         # Generating the message header, and sending both over the socket
         self.s.send(self.s.generate_message_header(len(json_cmd)) + json_cmd.encode('utf8'))
 
@@ -633,28 +638,16 @@ class Connection:
             self.close_statement()
         self.open_statement = True
 
-        self.more_to_fetch = True    #if self.statement_type == 'SELECT' else None
+        self.more_to_fetch = True    
 
-        #try:
         self.stmt_id = json.loads(self._send_string('{"getStatementId" : "getStatementId"}'))["statementId"]
-        '''
-        except ConnectionRefusedError as e:
-            self._attempt_reconnect()
-            self.stmt_id = json.loads(self._send_string('{"getStatementId" : "getStatementId"}'))["statementId"]
-        '''
         
-        # stmt = stmt.replace('\n', ' ').replace('\r', '').replace('"', '\\"')
-        stmt = json.dumps({
-            "prepareStatement": stmt,
-            "chunkSize": DEFAULT_CHUNKSIZE
-        })
+        stmt = json.dumps({"prepareStatement": stmt, "chunkSize": DEFAULT_CHUNKSIZE})
         res = self._send_string(stmt)
 
         self.s.validate_response(res, "statementPrepared")
         self.lb_params = json.loads(res)
-        if self.lb_params.get(
-                'reconnect'
-        ):  # Reconnect exists and issued, otherwise False / None
+        if self.lb_params.get('reconnect'):  # Reconnect exists and issued, otherwise False / None
 
             # Close socket, open a new socket with new port/ip sent be the reconnect response
             self.s.reconnect(
@@ -705,7 +698,8 @@ class Connection:
             self.col_sizes = [type_tup[1] for type_tup in self.col_type_tups]
             self.row_size = sum(self.col_sizes) + sum(
                 self.col_nul) + 4 * sum(self.col_tvc)
-            self.rows_per_flush = BUFFER_SIZE // self.row_size
+            self.rows_per_flush = ROWS_PER_FLUSH
+            self.buffer.init_buffers(self.col_sizes, self.col_nul)
 
         # if self.statement_type == 'SELECT':
         self.parsed_rows = []
@@ -825,11 +819,7 @@ class Connection:
 
         cols = cols or self.cols
         cols = cols if isinstance(cols, (list, tuple, set, dict)) else list(cols)
-        '''
-        if len(set(len(col) for col in cols)) > 1:
-            raise ProgrammingError(
-                'Data columns passed for sending should be the same length')
-        '''
+
         capacity = capacity or self.capacity
 
         # Send columns and metadata to be packed into our buffer
@@ -922,6 +912,7 @@ class Connection:
         
         print (f'total loading csv: {time.time()-start}')
         start = time.time()
+        
         # Insert columns into SQream
         col_num = csv_arrow.shape[1]
         con.executemany(f'insert into {table_name} values ({"?,"*(col_num-1)}?)', numpy_cols)
@@ -958,11 +949,7 @@ class Connection:
         if not self.open_statement:
             raise ProgrammingError(
                 'No open statement while attempting fetch operation')
-        '''
-        if not self.statement_type == query_type:
-            raise ProgrammingError('Bad statement type for that operation: ',
-                                   query_type)
-        '''
+
 
     def _fill_description(self):
         '''Getting parameters for the cursor's 'description' attribute, even for 
@@ -990,7 +977,7 @@ class Connection:
         return self.description
 
     def execute(self, query, params=None):
-        ''' '''
+        ''' Execute a statement. Parameters are not supported '''
 
         self._verify_open()
         # print ("query executed: ", query)
@@ -1022,7 +1009,7 @@ class Connection:
         return self
 
     def executemany(self, query, rows_or_cols=None, data_as='rows', amount=None):
-        ''' For batch insert using 'insert into ?' syntax '''
+        ''' Execute a statement, including parametered data insert '''
 
         self._verify_open()
         self.execute(query)
@@ -1058,6 +1045,7 @@ class Connection:
         return self
 
     def fetchmany(self, size=None, data_as='rows'):
+        ''' Fetch an amount of result rows '''
 
         size = size or self.arraysize
         self._verify_open()
@@ -1080,12 +1068,16 @@ class Connection:
         return (res if res else []) if size != 1 else (res[0] if res else None)
 
     def fetchone(self, data_as='rows'):
+        ''' Fetch one result row '''
+
         if data_as not in ('rows',):
             raise ProgrammingError("Bad argument to fetchone()")
 
         return self.fetchmany(1, data_as)
 
     def fetchall(self, data_as='rows'):
+        ''' Fetch all result rows '''
+
         if data_as not in ('rows',):
             raise ProgrammingError("Bad argument to fetchall()")
 
@@ -1162,6 +1154,7 @@ class Connection:
 
 
 def connect(host, port, database, username, password, clustered = False, use_ssl = False, service='sqream', reconnect_attempts=3, reconnect_interval=10):
+    ''' Connect to SQream database '''
 
     if not isinstance(reconnect_attempts, int) or reconnect_attempts < 0:
         raise Exception(f'reconnect attempts should be a positive integer, got : {reconnect_attempts}')
@@ -1274,25 +1267,9 @@ def TimestampFromTicks(ticks):
 # More DBApi globals
 ## Globals
 apilevel = '2.0'  # Always 2.0, 1.0 is long deprecated
-'''
-Integer constant stating the level of thread safety the interface supports:
 
-    0 = Threads may not share the module.
-    1 = Threads may share the module, but not connections.
-    2 = Threads may share the module and connections.
-    3 = Threads may share the module, connections and cursors. Sharing in the above 
-    context means that two threads may use a resource without wrapping it using a mutex 
-    semaphore to implement resource locking.
-
-Note that you cannot always make external resources thread safe by managing access 
-using a mutex: the resource may rely on global variables or other external sources 
-that are beyond your control.
-'''
 threadsafety = 1
-'''
-String constant stating the type of parameter marker formatting expected by the interface:
-    'qmark' = 'INSERT INTO actors(first_name, last_name, birth_date) VALUES (?, ?, ?)'
-'''
+
 paramstyle = 'qmark'
 
 if __name__ == '__main__':
