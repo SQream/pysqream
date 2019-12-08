@@ -156,7 +156,7 @@ API Reference
     
 **Unsupported**
 
-``execute() with parameters``
+``execute()`` with parameters
 
 ``setinputsizes()``
 
