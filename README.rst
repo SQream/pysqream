@@ -153,3 +153,11 @@ API Reference
     con.fetchall()   # Get all results of select query
     con.fetchmany(num_rows) # Get num_rows results of select query
     con.fetchone()          # Get one result of select query
+    
+**Unsupported**
+
+``execute() with parameters``
+
+``setinputsizes()``
+
+``setoutputsize()``
