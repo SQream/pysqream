@@ -19,33 +19,36 @@ Usage example:
 ----------
 
 .. code-block:: python
+              
+    from time import time 
+    from datetime import date, datetime
+     
+    import pysqream  
 
-    ==========================================================================================  ===================================
-    ## Import and establish a connection                                                      
-    ==========================================================================================  ===================================
-    #                                                                                           ---------------------------------  
-    import pysqream                                                                           
-    # Connection parameters: IP, Port, Database, Username, Password, Clustered, Use_Ssl
-    sqream_connection_params = '127.0.0.1', 5000, 'master', 'sqream', 'sqream', False, False  
-    con = pysqream.connect(*sqream_connection_params)                                               
-    ==========================================================================================  ===================================
 
-    ## Run queries using the API 
-    #  -------------------------     
-    # Create a table
-    statement = 'create or replace table table_name (int_column int)'
-    con.execute(statement) 
+    # Sample data to insert into SQream
+    data = (False,2, 22, 222, 2222, 3.0, 4.0, "yada" , "yada" , date(2016, 12, 23), datetime(2016, 12, 23, 16, 56,45, 000))
+    amount = 10**6
 
-    # Insert sample data
-    statement = 'insert into table_name(int_column) values (5), (6)'
-    con.execute(statement)
+    # Connect and create table. Connection params are:
+    # ip, port, database, username, password, clustered, use_ssl
+    con = pysqream.connect('127.0.0.1', 5000, 'master', 'sqream', 'sqream', False, False) 
+    create = 'create or replace table perf (b bool, t tinyint, sm smallint, i int, bi bigint, f real, d double, s varchar(10), ss nvarchar(10), dt date, dtt datetime)'
+    con.execute(create) 
+        
+    #Insert data 
+    print ("Starting insert")
+    insert = 'insert into perf values (?,?,?,?,?,?,?,?,?,?,?)'
+    start = time()
+    con.executemany(insert, [data] * amount) 
+    print (f"Total insert time for {amount} rows: {time() - start}") 
 
-    # Retreive data
-    statement = 'select int_column from table_name'
-    result_rows = con.execute(statement).fetchall()
+    # Get data back if desired
+    con.execute('select count(*) from perf')
+    result = con.fetchall()
+    print (f"Count of inserted rows: {result[0][0]}")
 
-    ## When done
-    #  ----------------------------
+    # When done
     con.close()
     
 
@@ -153,7 +156,8 @@ API Reference
     con.fetchall()   # Get all results of select query
     con.fetchmany(num_rows) # Get num_rows results of select query
     con.fetchone()          # Get one result of select query
-    
+
+
 **Unsupported**
 
 ``execute()`` with parameters
