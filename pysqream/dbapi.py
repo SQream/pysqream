@@ -42,7 +42,7 @@ __version__ = '3.0.0'
 
 PROTOCOL_VERSION = 7
 BUFFER_SIZE = 100 * int(1e6)  # For setting auto-flushing on netrwork insert
-ROWS_PER_FLUSH = 1000
+ROWS_PER_FLUSH = 100000
 DEFAULT_CHUNKSIZE = 0  # Dummy variable for some jsons
 FETCH_MANY_DEFAULT = 1  # default parameter for fetchmany()
 VARCHAR_ENCODING = 'ascii'
