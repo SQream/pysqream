@@ -15,12 +15,12 @@ setup_params = dict(
     author_email="info@sqream.com",
     packages =  ['pysqream'], 
     classifiers=[
-        "Programming Language :: Python :: 3.6",
+        "Programming Language :: Python :: 3.7",
         "License :: OSI Approved :: BSD License",
         "Operating System :: OS Independent",
     ],
     keywords='database db-api sqream sqreamdb',
-    python_requires='>=3.6'
+    python_requires='>=3.7'
 
     '''
     # install_requires=['sqlalchemy'],
