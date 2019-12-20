@@ -17,7 +17,7 @@ Installing
 
 Install with `pip`, by running:
 
-:bash:`$ pip install pysqream`.
+:bash:`pip install pysqream`
 
 Usage example:
 ----------
@@ -75,8 +75,10 @@ Example of data retrieval methods:
 
     first_row = con.fetchone() # Fetch one row at a time (first row)
     second_row = con.fetchone() # Fetch one row at a time (second row)
+    
     # executing `fetchone` twice is equivalent to this form:
     third_and_fourth_rows = con.fetchmany(2)
+    
     # To get all rows at once, use `fetchall`
     remaining_rows = con.fetchall() 
 
@@ -92,6 +94,7 @@ Example of a SET data loop for data loading:
     
     # Each `?` placeholder represents a column value that will be inserted
     statement = 'INSERT INTO table_name(int_column, varchar_column) VALUES(?, ?)'
+    
     # To insert data, we execute the statement with `executemany`, and pass an array of values alongside it
     data_rows = [(1, 's1'), (2, 's2'), (3, 's3')] # Sample data
     con.executemany(statement, data_rows)
@@ -140,6 +143,7 @@ Example saving the results of a query to a csv file
     def save_query(con, query, csv_filename, field_delimiter, null_marker):
         # The query string has been passed from the outside, so we will now execute it:
         column_info = con.execute(query).description
+        
         # With the query information, we will write a new CSV file
         with open(csv_filename, 'x', newline='') as csvfile:
             wr = csv.writer(csvfile, delimiter=field_delimiter,quoting=csv.QUOTE_MINIMAL)
