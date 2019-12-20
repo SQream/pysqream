@@ -15,9 +15,9 @@ The connector allows executing statements, running queries, and inserting data.
 Requirements
 ------------
 
-Python 3.7+
+* Python 3.7+
 
-Cython (Optional, faster performance) - `pip3 install cython`
+* Cython (Optional, faster performance) - `pip3 install cython`
 
 Installing
 ----------
