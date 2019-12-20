@@ -16,6 +16,7 @@ Requirements
 ------------
 
 Python 3.7+
+
 Cython (Optional, faster performance) - `pip3 install cython`
 
 Installing
