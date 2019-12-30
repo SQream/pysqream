@@ -41,8 +41,10 @@ This example loads 1 million rows of dummy data to a SQream DB instance
 
 
     # Connect and create table. Connection params are:
-    # IP/Hostname, port, database name, username, password, connect to a cluster / single host, use SSL connection
-    con = pysqream.connect('127.0.0.1', 5000, 'master', 'sqream', 'sqream', False, False) 
+    # IP/Hostname, port, database name, username, password, connect to a cluster / single host, use SSL connection, and service queue
+    con = pysqream.connect(host='127.0.0.1', port=3108, database='raviga'
+                          , username='rhendricks', password='Tr0ub4dor&3'
+                          , clustered=True, use_ssl = False, service='etl')
     
     # Immediately after connection, we create the dummy table
     create = 'create or replace table perf (b bool, t tinyint, sm smallint, i int, bi bigint, f real, d double, s varchar(10), ss nvarchar(10), dt date, dtt datetime)'
