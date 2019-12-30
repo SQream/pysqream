@@ -53,7 +53,7 @@ This example loads 1 million rows of dummy data to a SQream DB instance
     # Insert data 
     print ("Starting insert")
     # Create dummy data which matches the table we created
-    data = (False, 2, 12, 145, 84124234, 3.141, -4.3, "Varchar text" , "International text" , date(2019, 12, 17), datetime(1955, 11, 04, 01, 23, 00, 000))
+    data = (False, 2, 12, 145, 84124234, 3.141, -4.3, "Varchar text" , "International text" , date(2019, 12, 17), datetime(1955, 11, 4, 1, 23, 0, 0))
     amount = 10**6
 
     insert = 'insert into perf values (?,?,?,?,?,?,?,?,?,?,?)'
