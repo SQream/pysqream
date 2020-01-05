@@ -41,7 +41,8 @@ else:
 __version__ = '3.0.1'
 
 
-PROTOCOL_VERSION = 7
+PROTOCOL_VERSION = 8
+SUPPORTED_PROTOCOLS = 6, 7, 8
 BUFFER_SIZE = 100 * int(1e6)  # For setting auto-flushing on netrwork insert
 ROWS_PER_FLUSH = 100000
 DEFAULT_CHUNKSIZE = 0  # Dummy variable for some jsons
@@ -294,7 +295,7 @@ class SQSocket:
         # Getting 10-byte response header back
         header = self.receive(10)
         server_protocol = header[0]
-        if server_protocol not in (6, 7):
+        if server_protocol not in SUPPORTED_PROTOCOLS:
             raise Exception(
                 f'Protocol mismatch, client version - {PROTOCOL_VERSION}, server version - {server_protocol}'
             )
