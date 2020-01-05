@@ -991,21 +991,6 @@ class Connection:
         if params:
             raise ProgrammingError("Parametered queries not supported. \
                 If this is an insert query, use executemany() with the data rows as the parameter")
-            
-            # query = reduce(lambda query, param: query.replace('?', param, 1), (query,) + params)
-            self.execute_sqream_statement(
-                f"select drop_saved_query('dbapi_query')")
-            self.close_statement()
-            printdbg(f"\n\nselect save_query('dbapi_query', $${query}$$)")
-            # query = query.replace("'", '"')
-            self.execute_sqream_statement(
-                f"select save_query('dbapi_query', $${query}$$)")
-            params_as_str = ', '.join((str(param) for param in params))
-            self.execute_sqream_statement(
-                f"select execute_saved_query('dbapi_query', {params_as_str})")
-            printdbg(
-                '\n\nsaved query:',
-                f"select execute_saved_query('dbapi_query', {params_as_str})")
         else:
             self.execute_sqream_statement(query)
 
