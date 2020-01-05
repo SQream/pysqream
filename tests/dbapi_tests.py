@@ -1,5 +1,3 @@
-''' Self contained version of the SQream DB-API test suite. Original suite written by Aviv Shemesh '''
-
 from datetime import datetime, date, timezone
 from numpy.random import randint, uniform
 from math import floor
@@ -7,17 +5,14 @@ from queue import Queue
 from subprocess import Popen
 from time import sleep
 
-import threading, sys
-sys.path.append('../pysqream')
+import threading, sys, os
+sys.path.append(sys.path[0].replace('\\', '/').rsplit('/', 1)[0] + '/pysqream')
 import dbapi
 
 q = Queue()
 varchar_length = 10
 nvarchar_length = 10
-
-ci_build_dir = '/home/gitlab-runner/sqream-with/submodules/sqream/build/'
-ci_ip = '192.168.0.67'
-
+max_bigint = sys.maxsize if sys.platform not in ('win32', 'cygwin') else 2147483647
 
 def generate_varchar(length):
     return ''.join(chr(num) for num in randint(32, 128, length))
@@ -28,7 +23,7 @@ pos_test_vals = {'bool': (0, 1, True, False, 2, 3.6, 'test', (1997, 5, 9), (1997
                  'tinyint': (randint(0, 255), randint(0, 255), 0, 255, True, False),
                  'smallint': (randint(-32768, 32767), 0, -32768, 32767, True, False),
                  'int': (randint(-2147483648, 2147483647), 0, -2147483648, 2147483647, True, False),
-                 'bigint': (randint(-9223372036854775808, 9223372036854775807), 0, -9223372036854775808, 9223372036854775807, True, False),
+                 'bigint': (randint(1-max_bigint, max_bigint), 0, 1-max_bigint, max_bigint, True, False),
                  'real': (float('inf'), float('-inf'), float('+0'), float('-0'), round(uniform(1e-6, 1e6), 5), 837326.52428, True, False),   # float('nan')
                  'double': (float('inf'), float('-inf'), float('+0'), float('-0'), uniform(1e-6, 1e6), True, False),  # float('nan')
                  'date': (date(1998, 9, 24), date(2020, 12, 1), date(1997, 5, 9), date(1993, 7, 13)),
@@ -48,7 +43,7 @@ neg_test_vals = {'tinyint': (258, 3.6, 'test',  (1997, 5, 9), (1997, 12, 12, 10,
                  'nvarchar': (5, 3.6, (1, 2), (1997, 12, 12, 10, 10, 10), False, True)}
 
 
-def start_stop(op = 'start', build_dir=ci_build_dir, ip=ci_ip):
+def start_stop(op = 'start', build_dir=None, ip=None):
 
     Popen(('killall', '-9', 'sqreamd'))  
     sleep(5)
@@ -71,12 +66,12 @@ def connect_dbapi(clustered=False, use_ssl=False):
         
         port = (3109 if use_ssl else 3108) if clustered else (5001 if use_ssl else 5000)
         
-        return dbapi.connect('127.0.0.1', port, 'master', 'sqream', 'sqream', clustered, use_ssl)
+        return dbapi.connect(ip, port, 'master', 'sqream', 'sqream', clustered, use_ssl)
 
 con = None
 
 
-def connection_tests(build_dir = ci_build_dir, ip = ci_ip):
+def connection_tests(build_dir = None, ip = None):
     
     print("Restart the server when a connection is open within 30 seconds") 
     con = connect_dbapi(False, False)
@@ -584,16 +579,13 @@ def copy_tests():
 
 if __name__ == "__main__":
 
-    local  = False
-    build_dir = '/home/eliy/text/build/' if local else ci_build_dir
-    ip = '192.168.1.4' if local else ci_ip
+    args = sys.argv
+    ip = args[1] if len(args) > 1 else '127.0.0.1'
 
     # start_stop('start', build_dir, ip)
 
     con = connect_dbapi()
-
-    connection_tests(build_dir, ip)
-
+    # connection_tests()
     positive_tests()
     negative_tests()
     fetch_tests()
