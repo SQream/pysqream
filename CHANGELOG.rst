@@ -1,3 +1,11 @@
+Ver. 3.0.1
+----------
+*05/01/2020*
+
+* Windows fix - connector now runs smoothly on Windows. 
+* Tests updated to run on Windows, and accept SQreamd p from command lineI
+
+
 Ver. 3.0.0
 ----------
 *26/11/2019*
