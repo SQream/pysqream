@@ -2,10 +2,10 @@
 
 '''
 
-import socket, json, ssl, logging, time, traceback
+import socket, json, ssl, logging, time, traceback, asyncio, sys
 from struct import pack, pack_into, unpack, error as struct_error
 from datetime import datetime, date, time as t
-from multiprocessing import Pool, Manager
+import multiprocessing as mp
 from mmap import mmap
 from functools import reduce
 from concurrent.futures import ProcessPoolExecutor
@@ -38,7 +38,8 @@ else:
     }
 
 
-__version__ = '3.0.0'
+__version__ = '3.0.1'
+
 
 PROTOCOL_VERSION = 7
 BUFFER_SIZE = 100 * int(1e6)  # For setting auto-flushing on netrwork insert
@@ -327,7 +328,6 @@ class SQSocket:
 ## Buffer setup and functionality
 #  ------------------------------
 
-manager = Manager()
 buf_maps, buf_views = [], []
 
 
@@ -348,7 +348,7 @@ class ColumnBuffer:
         self.clear()
         buf_maps = [mmap(-1, ((1 if col_nul else 0)+(size if size!=0 else 104)) * ROWS_PER_FLUSH) for size in col_sizes]
         buf_views = [memoryview(buf_map) for buf_map in buf_maps]
-        self.pool = Pool()
+        self.pool = mp.Pool()
 
     
     def pack_columns(self, cols, capacity, col_types, col_sizes, col_nul, col_tvc):
@@ -371,8 +371,12 @@ class ColumnBuffer:
 
     def close(self):
         self.clear()
-        self.pool.close()
-        self.pool.join()
+        try:
+            self.pool.close()
+            self.pool.join()
+        except Exception as e:
+            # print (f'testing pool closing, got: {e}')
+            pass # no pool was initiated
 
 
 
@@ -692,7 +696,7 @@ class Connection:
             name: idx
             for idx, name in enumerate(self.col_names)
         }
-
+ 
         if self.statement_type == 'INSERT':
             self.col_types = [type_tup[0] for type_tup in self.col_type_tups]
             self.col_sizes = [type_tup[1] for type_tup in self.col_type_tups]
@@ -847,6 +851,7 @@ class Connection:
         sock = sock or self.s
         self._send_string('{"closeStatement": "closeStatement"}')
         self.open_statement = False
+        self.buffer.close()
 
     def close_connection(self, sock=None):
 
@@ -859,6 +864,7 @@ class Connection:
         self.buffer.close()
         self.closed = True
         self.base_conn_open[0] = False if self.base_connection else True  
+
 
 
     # '''
