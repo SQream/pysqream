@@ -1,33 +1,177 @@
 .. role:: bash(code)
    :language: bash
    
-===== 
+===================================
 Python connector for SQream DB
-===== 
+===================================
 
 * **Version:**  3.0.0
 
-* **Supported SQream DB versions:** >= 2.13, 2019.2 recommended
+* **Supported SQream DB versions:** >= 2.13, 2019.2 or newer recommended
 
 The Python connector for SQream DB is a Python DB API 2.0-compliant interface for developing Python applications with SQream DB.
-The connector allows executing statements, running queries, and inserting data.
+
+The SQream Python connector provides an interface for creating and running Python applications that can connect to a SQream DB database. It provides a lighter-weight alternative to working through native C++ or Java bindings, including JDBC and ODBC drivers.
+
+pysqream conforms to Python DB-API specifications `PEP-249 <https://www.python.org/dev/peps/pep-0249/>`_
+
+``pysqream`` is native and pure Python, with minimal requirements. It can be installed with ``pip`` on any operating system, including Linux, Windows, and macOS.
 
 Requirements
-------------
+====================
 
 * Python 3.8+
 
 * Cython (Optional, faster performance) - `pip3 install cython`
 
-Installing
-----------
+Installing the Python connector
+==================================
 
-Install with `pip`, by running:
+Prerequisites
+----------------
 
-:bash:`pip install pysqream`
+1. Python
+^^^^^^^^^^^^
+
+The connector requires Python 3.6 or newer. To verify your version of Python:
+
+.. code-block:: console
+
+   $ python --version
+   Python 3.7.3
+   
+
+.. note:: If both Python 2.x and 3.x are installed, you can run ``python3`` and ``pip3`` instead of ``python`` and ``pip`` respectively for the rest of this guide
+
+2. PIP
+^^^^^^^^^^^^
+The Python connector is installed via ``pip``, the Python package manager and installer.
+
+We recommend upgrading to the latest version of ``pip`` before installing. To verify that you are on the latest version, run the following command:
+
+.. code-block:: console
+
+   $ python -m pip install --upgrade pip
+   Collecting pip
+      Downloading https://files.pythonhosted.org/packages/00/b6/9cfa56b4081ad13874b0c6f96af8ce16cfbc1cb06bedf8e9164ce5551ec1/pip-19.3.1-py2.py3-none-any.whl (1.4MB)
+        |████████████████████████████████| 1.4MB 1.6MB/s
+   Installing collected packages: pip
+     Found existing installation: pip 19.1.1
+       Uninstalling pip-19.1.1:
+         Successfully uninstalled pip-19.1.1
+   Successfully installed pip-19.3.1
+
+.. note:: 
+   * On macOS, you may want to use virtualenv to install Python and the connector, to ensure compatibility with the built-in Python environment
+   *  If you encounter an error including ``SSLError`` or ``WARNING: pip is configured with locations that require TLS/SSL, however the ssl module in Python is not available.`` - please be sure to reinstall Python with SSL enabled, or use virtualenv or Anaconda.
+
+3. OpenSSL for Linux
+^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+Some distributions of Python do not include OpenSSL. The Python connector relies on OpenSSL for secure connections to SQream DB.
+
+* To install OpenSSL on RHEL/CentOS
+
+   .. code-block:: console
+   
+      $ sudo yum install -y libffi-devel openssl-devel
+
+* To install OpenSSL on Ubuntu
+
+   .. code-block:: console
+   
+      $ sudo apt-get install libssl-dev libffi-dev -y
+
+4. Cython (optional)
+^^^^^^^^^^^^^^^^^^^^^^^^
+
+Optional but recommended is Cython, which improves performance of Python applications.
+
+   .. code-block:: console
+   
+      $ pip install cython
+
+Install via pip
+-----------------
+
+The Python connector is available via `PyPi <https://pypi.org/project/pysqream/>`_.
+
+Install the connector with ``pip``:
+
+.. code-block:: console
+   
+   $ pip install pysqream
+
+``pip`` will automatically installs all necessary libraries and modules.
+
+Validate the installation
+-----------------------------
+
+Create a file called ``test.py``, containing the following:
+
+.. literalinclude:: test.py
+    :language: python
+    :caption: pysqream Validation Script
+    :linenos:
+
+Make sure to replace the parameters in the connection with the respective parameters for your SQream DB installation.
+
+.. code-block:: python
+   
+   #!/usr/bin/env python
+
+   import pysqream
+
+   """
+   Connection parameters include:
+   * IP/Hostname
+   * Port
+   * database name
+   * username
+   * password 
+   * Connect through load balancer, or direct to worker (Default: false - direct to worker)
+   * use SSL connection (default: false)
+   * Optional service queue (default: 'sqream')
+   """
+
+   # Create a connection object
+
+   con = pysqream.connect(host='127.0.0.1', port=5000, database='master'
+                      , username='sqream', password='sqream'
+                      , clustered=False)
+
+   # Create a new cursor
+   cur = con.cursor()
+
+   # Prepare and execute a query
+   cur.execute('select show_version()')
+
+   result = cur.fetchall() # `fetchall` gets the entire data set
+
+   print (f"Version: {result[0][0]}")
+
+   # This should print the SQream DB version. For example ``Version: v2020.1``.
+
+   # Finally, close the connection
+
+   con.close()
+
+Run the test file to verify that you can connect to SQream DB:
+.. code-block:: console
+   
+   $ python test.py
+   Version: v2020.1
+
+If all went well, you are now ready to build an application using the SQream DB Python connector!
+
+If any connection error appears, verify that you have access to a running SQream DB and that the connection parameters are correct.
+
+
+Examples
+===============
 
 Usage example:
-----------
+-------------------
 
 This example loads 1 million rows of dummy data to a SQream DB instance
 
@@ -71,7 +215,7 @@ This example loads 1 million rows of dummy data to a SQream DB instance
     
 
 Example of data retrieval methods:
-----------
+-----------------------------------------
 
 .. code-block:: python
 
@@ -95,7 +239,8 @@ Example of data retrieval methods:
 
 
 Example of a SET data loop for data loading:
-----------
+-----------------------------------------------------
+
 .. code-block:: python
 
     # Assume a table structure:
@@ -112,7 +257,8 @@ Example of a SET data loop for data loading:
     
 
 Example inserting data from a CSV
-----------
+-----------------------------------------
+
 .. code-block:: python
 
     def insert_from_csv(con, table_name, csv_filename, field_delimiter = ',', null_markers = []):
@@ -146,7 +292,8 @@ Example inserting data from a CSV
                     
         
 Example saving the results of a query to a csv file
-----------
+-------------------------------------------------------------
+
 .. code-block:: python
 
     def save_query(con, query, csv_filename, field_delimiter, null_marker):
@@ -161,38 +308,4 @@ Example saving the results of a query to a csv file
                     csv_row = []
                     wr.writerow(result_row)
        
-API Reference
--------------
 
-**Initialization - Termination**
-
-.. code-block:: python
-    
-    import pysqream
-    
-    # Argument types are: string, integer, string, string, string, boolean, boolean
-    con = pysqream.connect(ip, port, database, username, password, clustered, timeout) 
-     
-    # closes the connection completely, destructing the socket.
-    con.close()
-    # The connection can't be reused, until "connect(...)" is called
-   
-
-**High level protocol functions**
-
-.. code-block:: python
-
-    con.execute(statement) # Accepts a query string to execute
-    con.executemany(insert_statement, rows) # Used exclusively for INSERT statements
-    con.fetchall()          # Get all results from a SELECT query
-    con.fetchmany(num_rows) # Get num_rows results from a SELECT query
-    con.fetchone()          # Get one result from a SELECT query
-
-
-**Unsupported functionality**
-
-``execute()`` with parameters
-
-``setinputsizes()``
-
-``setoutputsize()``
