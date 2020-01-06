@@ -109,14 +109,7 @@ Install the connector with ``pip``:
 Validate the installation
 -----------------------------
 
-Create a file called ``test.py``, containing the following:
-
-.. literalinclude:: test.py
-    :language: python
-    :caption: pysqream Validation Script
-    :linenos:
-
-Make sure to replace the parameters in the connection with the respective parameters for your SQream DB installation.
+Create a file called ``test.py`` (make sure to replace the parameters in the connection with the respective parameters for your SQream DB installation):
 
 .. code-block:: python
    
