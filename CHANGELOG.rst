@@ -1,17 +1,10 @@
-Ver. 3.0.1
+Ver. 3.0.0
 ----------
 *05/01/2020*
 
-* Windows fix - connector now runs smoothly on Windows. 
-* Tests updated to run on Windows, and accept SQreamd p from command lineI
-
-
-Ver. 3.0.0
-----------
-*26/11/2019*
-
 * Connector rewritten to be DB-API complaint
-* Minimal supported Python version 3.6
+* Minimal supported Python version 3.7
+* Tests: updated to run on Windows, and accept sqreamd from command line
 
 
 Ver. 2.1.4

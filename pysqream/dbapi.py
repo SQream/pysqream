@@ -1,6 +1,4 @@
-'''                     ----  SQream Native Python API  ----
-
-'''
+'''    ----  SQream Native Python API  ----     '''
 
 import socket, json, ssl, logging, time, traceback, asyncio, sys
 from struct import pack, pack_into, unpack, error as struct_error
@@ -9,6 +7,7 @@ import multiprocessing as mp
 from mmap import mmap
 from functools import reduce
 from concurrent.futures import ProcessPoolExecutor
+
 try:
     import cython
     CYTHON = True
@@ -38,7 +37,7 @@ else:
     }
 
 
-__version__ = '3.0.1'
+__version__ = '3.0.0b1'
 
 
 PROTOCOL_VERSION = 8
@@ -389,7 +388,7 @@ def _pack_column(col_tup, return_actual_data = True):
     col, col_idx, col_type, size, nullable, tvc = col_tup
     capacity = len(col)
     buf_idx = 0
-    buf_map =  mmap(-1, ((1 if nullable else 0)+(size if size!=0 else 104)) * ROWS_PER_FLUSH)
+    buf_map =  mmap(-1, ((1 if nullable else 0)+(size if size!=0 else 1024)) * ROWS_PER_FLUSH)
     buf_view = memoryview(buf_map) 
 
     def pack_exception(e):
@@ -987,7 +986,6 @@ class Connection:
         ''' Execute a statement. Parameters are not supported '''
 
         self._verify_open()
-        # print ("query executed: ", query)
         if params:
             raise ProgrammingError("Parametered queries not supported. \
                 If this is an insert query, use executemany() with the data rows as the parameter")
@@ -1055,8 +1053,6 @@ class Connection:
             res = self.parsed_rows[0:size if size != -1 else None]
             self.parsed_rows = self.parsed_rows[size:] if size != -1 else []
 
-        # print ('------ fetch result:', res)
-        
         return (res if res else []) if size != 1 else (res[0] if res else None)
 
     def fetchone(self, data_as='rows'):

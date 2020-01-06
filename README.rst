@@ -5,7 +5,7 @@
 Python connector for SQream DB
 ===================================
 
-* **Version:**  3.0.0
+* **Version:**  3.0.0a1
 
 * **Supported SQream DB versions:** >= 2.13, 2019.2 or newer recommended
 
@@ -17,10 +17,12 @@ pysqream conforms to Python DB-API specifications `PEP-249 <https://www.python.o
 
 ``pysqream`` is native and pure Python, with minimal requirements. It can be installed with ``pip`` on any operating system, including Linux, Windows, and macOS.
 
+For more information and a full API reference, see `SQream documentation's pysqream guide <https://sqream-docs.readthedocs.io/en/latest/guides/client_drivers/python/index.html>`_ .
+
 Requirements
 ====================
 
-* Python 3.8+
+* Python 3.7+
 
 * Cython (Optional, faster performance) - `pip3 install cython`
 
@@ -33,7 +35,7 @@ Prerequisites
 1. Python
 ^^^^^^^^^^^^
 
-The connector requires Python 3.6 or newer. To verify your version of Python:
+The connector requires Python 3.7 or newer. To verify your version of Python:
 
 .. code-block:: console
 
@@ -41,7 +43,7 @@ The connector requires Python 3.6 or newer. To verify your version of Python:
    Python 3.7.3
    
 
-.. note:: If both Python 2.x and 3.x are installed, you can run ``python3`` and ``pip3`` instead of ``python`` and ``pip`` respectively for the rest of this guide
+Note: If both Python 2.x and 3.x are installed, you can run ``python3`` and ``pip3`` instead of ``python`` and ``pip`` respectively for the rest of this guide
 
 2. PIP
 ^^^^^^^^^^^^
@@ -167,10 +169,10 @@ If all went well, you are now ready to build an application using the SQream DB 
 If any connection error appears, verify that you have access to a running SQream DB and that the connection parameters are correct.
 
 
-Examples
-===============
+Further examples
+====================
 
-Usage example:
+Data load example
 -------------------
 
 This example loads 1 million rows of dummy data to a SQream DB instance
@@ -214,7 +216,7 @@ This example loads 1 million rows of dummy data to a SQream DB instance
     con.close()
     
 
-Example of data retrieval methods:
+Example of data retrieval methods
 -----------------------------------------
 
 .. code-block:: python
@@ -238,7 +240,7 @@ Example of data retrieval methods:
     con.close()
 
 
-Example of a SET data loop for data loading:
+Example of a SET data loop for data loading
 -----------------------------------------------------
 
 .. code-block:: python

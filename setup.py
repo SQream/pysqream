@@ -7,7 +7,7 @@ with open("README.rst", "r") as fh:
 
 setup_params = dict(
     name =          'pysqream',
-    version =       '3.0.0',
+    version =       '3.0.0b1',
     description =   'DB-API connector for SQreamDB', 
     long_description = long_description,
     url = "https://github.com/SQream/pysqream",
@@ -15,23 +15,13 @@ setup_params = dict(
     author_email = "info@sqream.com",
     packages = ['pysqream'], 
     classifiers = [
-        "Programming Language :: Python :: 3.8",
+        "Programming Language :: Python :: 3.7",
         "License :: OSI Approved :: BSD License",
         "Operating System :: OS Independent",
     ],
     keywords = 'database db-api sqream sqreamdb',
     python_requires = '>=3.7.1'
 )
-
-'''
-    # install_requires=['sqlalchemy'],
-    # package_dir = {'': 'pysqream'},
-    entry_points={
-        'sqlalchemy.dialects':
-            ['sqream = pysqream.dialect:SqreamDialect']
-    },
-'''
-
 
 if __name__ == '__main__':
     setup(**setup_params)
