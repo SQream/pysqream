@@ -159,6 +159,7 @@ Make sure to replace the parameters in the connection with the respective parame
    con.close()
 
 Run the test file to verify that you can connect to SQream DB:
+
 .. code-block:: console
    
    $ python test.py
