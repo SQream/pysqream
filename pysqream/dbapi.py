@@ -7,7 +7,6 @@ import multiprocessing as mp
 from mmap import mmap
 from functools import reduce
 from concurrent.futures import ProcessPoolExecutor
-
 try:
     import cython
     CYTHON = True
@@ -39,7 +38,7 @@ else:
 
 __version__ = '3.0.0b1'
 
-
+WIN = True if sys.platform in ('win32', 'cygwin') else False
 PROTOCOL_VERSION = 8
 SUPPORTED_PROTOCOLS = 6, 7, 8
 BUFFER_SIZE = 100 * int(1e6)  # For setting auto-flushing on netrwork insert
@@ -348,8 +347,7 @@ class ColumnBuffer:
         self.clear()
         buf_maps = [mmap(-1, ((1 if col_nul else 0)+(size if size!=0 else 104)) * ROWS_PER_FLUSH) for size in col_sizes]
         buf_views = [memoryview(buf_map) for buf_map in buf_maps]
-        self.pool = mp.Pool()
-
+        
     
     def pack_columns(self, cols, capacity, col_types, col_sizes, col_nul, col_tvc):
         ''' Packs the buffer starting a given index with the column. 
@@ -357,14 +355,22 @@ class ColumnBuffer:
 
         pool_params = zip(cols, range(len(col_types)), col_types,
                           col_sizes, col_nul, col_tvc)
-        # To use multiprocess type packing, we call a top level function with a single tuple parameter
-        try:
-            packed_cols = self.pool.map(_pack_column, pool_params)  # buf_end_indices
-        except Exception as e:
-            printdbg("Original error from pool.map: ", e)
-            raise ProgrammingError(
-                "Error packing columns. Check that all types match the respective column types"
-            )
+
+        if WIN:
+            packed_cols = []
+            for param_tup in pool_params:
+                packed_cols.append(_pack_column(param_tup))
+            
+        else:
+            self.pool = mp.Pool()
+            # To use multiprocess type packing, we call a top level function with a single tuple parameter
+            try:
+                packed_cols = self.pool.map(_pack_column, pool_params)  # buf_end_indices
+            except Exception as e:
+                printdbg("Original error from pool.map: ", e)
+                raise ProgrammingError(
+                    "Error packing columns. Check that all types match the respective column types"
+                )
 
         return packed_cols
 
@@ -388,7 +394,7 @@ def _pack_column(col_tup, return_actual_data = True):
     col, col_idx, col_type, size, nullable, tvc = col_tup
     capacity = len(col)
     buf_idx = 0
-    buf_map =  mmap(-1, ((1 if nullable else 0)+(size if size!=0 else 1024)) * ROWS_PER_FLUSH)
+    buf_map =  mmap(-1, ((1 if nullable else 0)+(size if size!=0 else 104)) * ROWS_PER_FLUSH)
     buf_view = memoryview(buf_map) 
 
     def pack_exception(e):
