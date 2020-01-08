@@ -5,7 +5,7 @@
 Python connector for SQream DB
 ===================================
 
-* **Version:**  3.0.0a1
+* **Version:**  3.0.0
 
 * **Supported SQream DB versions:** >= 2.13, 2019.2 or newer recommended
 
@@ -169,46 +169,53 @@ Further examples
 Data load example
 -------------------
 
-This example loads 1 million rows of dummy data to a SQream DB instance
-
+This example loads 10,000 rows of dummy data to a SQream DB instance
 
 .. code-block:: python
-              
-    from time import time 
-    from datetime import date, datetime
-     
-    import pysqream  
+   
+   import pysqream
+   from datetime import date, datetime
+   from time import time
 
+   con = pysqream.connect(host='127.0.0.1', port=3108, database='master'
+                      , username='rhendricks', password='Tr0ub4dor&3'
+                      , clustered=True)
+   
+   # Create a table for loading
+   create = 'create or replace table perf (b bool, t tinyint, sm smallint, i int, bi bigint, f real, d double, s varchar(12), ss nvarchar(20), dt date, dtt datetime)'
+   con.execute(create)
 
-    # Connect and create table. Connection params are:
-    # IP/Hostname, port, database name, username, password, connect to a cluster / single host, use SSL connection, and service queue
-    con = pysqream.connect(host='127.0.0.1', port=3108, database='raviga'
-                          , username='rhendricks', password='Tr0ub4dor&3'
-                          , clustered=True, use_ssl = False, service='etl')
-    
-    # Immediately after connection, we create the dummy table
-    create = 'create or replace table perf (b bool, t tinyint, sm smallint, i int, bi bigint, f real, d double, s varchar(10), ss nvarchar(10), dt date, dtt datetime)'
-    con.execute(create) 
-        
-    # Insert data 
-    print ("Starting insert")
-    # Create dummy data which matches the table we created
-    data = (False, 2, 12, 145, 84124234, 3.141, -4.3, "Varchar text" , "International text" , date(2019, 12, 17), datetime(1955, 11, 4, 1, 23, 0, 0))
-    amount = 10**6
+   # After creating the table, we can load data into it with the INSERT command
 
-    insert = 'insert into perf values (?,?,?,?,?,?,?,?,?,?,?)'
-    start = time()
-    con.executemany(insert, [data] * amount) 
-    print (f"Total insert time for {amount} rows: {time() - start}") 
+   # Create dummy data which matches the table we created
+   data = (False, 2, 12, 145, 84124234, 3.141, -4.3, "Marty McFly" , u"キウイは楽しい鳥です" , date(2019, 12, 17), datetime(1955, 11, 4, 1, 23, 0, 0))
+   
+   
+   row_count = 10**4
 
-    # Verify that the data was inserted correctly
-    con.execute('select count(*) from perf')
-    result = con.fetchall() # `fetchall` collects the entire data set
-    print (f"Count of inserted rows: {result[0][0]}")
+   # Get a new cursor
+   cur = con.cursor()
+   insert = 'insert into perf values (?,?,?,?,?,?,?,?,?,?,?)'
+   start = time()
+   cur.executemany(insert, [data] * row_count)
+   print (f"Total insert time for {row_count} rows: {time() - start} seconds")
 
-    # When done, close the connection
-    con.close()
-    
+   # Close this cursor
+   cur.close()
+   
+   # Verify that the data was inserted correctly
+   # Get a new cursor
+   cur = con.cursor()
+   cur.execute('select count(*) from perf')
+   result = cur.fetchall() # `fetchall` collects the entire data set
+   print (f"Count of inserted rows: {result[0][0]}")
+
+   # When done, close the cursor
+   cur.close()
+   
+   # Close the connection
+   con.close()
+
 
 Example of data retrieval methods
 -----------------------------------------

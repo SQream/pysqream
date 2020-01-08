@@ -36,7 +36,7 @@ else:
     }
 
 
-__version__ = '3.0.0b1'
+__version__ = '3.0.0'
 
 WIN = True if sys.platform in ('win32', 'cygwin') else False
 PROTOCOL_VERSION = 8
@@ -1258,14 +1258,14 @@ def TimestampFromTicks(ticks):
     return Timestamp.fromtimestamp(ticks)
 
 
-# More DBApi globals
-## Globals
-apilevel = '2.0'  # Always 2.0, 1.0 is long deprecated
+# DB-API global parameters
 
-threadsafety = 1
+apilevel = '2.0'  # Conforms to 2.0
+
+threadsafety = 1 # Threads can share the module but not a connection
 
 paramstyle = 'qmark'
 
 if __name__ == '__main__':
 
-    print('PySqream DB-API connector, version no.: ', __version__)
+    print('PySqream DB-API connector, version ', __version__)
