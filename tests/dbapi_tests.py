@@ -5,7 +5,7 @@ from queue import Queue
 from subprocess import Popen
 from time import sleep
 
-import threading, sys, os
+import threading, sys, os, pandas as pd
 sys.path.append(sys.path[0].replace('\\', '/').rsplit('/', 1)[0] + '/pysqream')
 import dbapi
 
@@ -234,7 +234,7 @@ def positive_tests():
                     raise Exception("TEST ERROR: No match between the expected result to the returned result. expected to get {}, instead got {} on datatype {}".format(repr(val), repr(res), trimmed_col_type))
                 elif trimmed_col_type in ('date', 'datetime') and datetime(*val) != res and date(*val) != res:
                     raise Exception("TEST ERROR: No match between the expected result to the returned result. expected to get {}, instead got {} on datatype {}".format(repr(val), repr(res), trimmed_col_type))
-                elif trimmed_col_type == 'real' and floor(val) != floor(res):
+                elif trimmed_col_type == 'real' and abs(res-val) > 0.1:
                     # Single precision packing and unpacking is inaccurate:
                     # unpack('f', pack('f', 255759.83335))[0] == 255759.828125
                     raise Exception("TEST ERROR: No match between the expected result to the returned result. expected to get {}, instead got {} on datatype {}".format(repr(val), repr(res), trimmed_col_type))
@@ -575,7 +575,52 @@ def copy_tests():
         raise Exception("expected to get 2000, instead got {}".format(res))
 
 
+def pandas_tests():
 
+    print (f'Pandas tests')
+    # Creating a SQream table from a Pandas DataFrame
+    df = pd.DataFrame({
+        'bools': [True,False],
+        'ubytes': [10,11],
+        'shorts': [110,111],
+        'ints': [1110,1111],
+        'bigints': [1111110,11111111],
+        'floats': [10.0,11.0],
+        'doubles': [10.1111111,11.1111111],
+        'dates': [date(2012, 11, 23),date(2012, 11, 23)],
+        'datetimes':  [datetime(2012, 11, 23, 16, 34, 56),datetime(2012, 11, 23, 16, 34, 56)],
+        'varchars':  ['koko','koko2'],
+        'nvarchars':  ['shoko','shoko2']
+    })
+
+    # Passing the textual datatypes for the columns, used by Pandas for the CREATE query
+    dtype={
+        'bools': 'bool', 
+        'ubytes': 'tinyint',
+        'shorts': 'smallint',
+        'ints': 'int',
+        'bigints': 'bigint',
+        'floats': 'real',
+        'doubles': 'float',
+        'dates': 'date',
+        'datetimes': 'datetime',
+        'varchars': 'varchar(10)',
+        'nvarchars': 'text'
+    }
+
+    print ('Replace table test')
+    # Drop, create and insert using the DB-API connection
+    dbapi.support_pandas = True
+    df.to_sql('pandas_table', con, if_exists='replace', index=False, dtype=dtype)  
+    
+    res = pd.read_sql('select * from "pandas_table"', con)
+    assert ((res == df).eq(True).all()[0])
+
+    print ('Append to table test')
+    con.execute('truncate table "pandas_table"')
+    df.to_sql('pandas_table', con, if_exists='append', index=False, dtype=dtype)  
+    
+    assert ((pd.read_sql('select * from "pandas_table"', con) == df).eq(True).all()[0])
 
 if __name__ == "__main__":
 
@@ -593,4 +638,5 @@ if __name__ == "__main__":
     string_tests()
     datetime_tests()
     threads_tests()
+    pandas_tests()
     # copy_tests()
