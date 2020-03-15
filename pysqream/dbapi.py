@@ -1,4 +1,4 @@
-'''    ----  SQream Native Python API  ----     '''
+'''               ----  SQream Native Python API  ----              '''
 
 import socket, json, ssl, logging, time, traceback, asyncio, sys
 from struct import pack, pack_into, unpack, error as struct_error
@@ -65,6 +65,7 @@ type_to_letter = {
 ## ------------------------------
 dbg = False
 clean_sqream_errors = False
+support_pandas = False
 
 def printdbg(*debug_print):
     if dbg:
@@ -552,6 +553,7 @@ class Connection:
         self.orig_ip, self.orig_port, self.clustered, self.use_ssl = ip, port, clustered, use_ssl
         self.reconnect_attempts, self.reconnect_interval = reconnect_attempts, reconnect_interval
         self.base_connection = base_connection
+
         self._open_connection(clustered, use_ssl)
         self.arraysize = FETCH_MANY_DEFAULT
         self.rowcount = -1    # DB-API property
@@ -560,14 +562,15 @@ class Connection:
         if self.base_connection:
             self.cursors = []
 
+        self.lastrowid = None
 
     ## SQream mechanisms
     #  -----------------
 
     def _open_connection(self, clustered, use_ssl):
         ''' Get proper ip and port from picker if needed and connect socket. Used at __init__() '''
-        
-        if clustered:
+        if clustered is True:
+
             # Create non SSL socket for picker communication
             picker_socket = SQSocket(self.orig_ip, self.orig_port, False)
             # Parse picker response to get ip and port
@@ -650,7 +653,6 @@ class Connection:
         self.more_to_fetch = True    
 
         self.stmt_id = json.loads(self._send_string('{"getStatementId" : "getStatementId"}'))["statementId"]
-        
         stmt = json.dumps({"prepareStatement": stmt, "chunkSize": DEFAULT_CHUNKSIZE})
         res = self._send_string(stmt)
 
@@ -992,8 +994,14 @@ class Connection:
 
         self._verify_open()
         if params:
-            raise ProgrammingError("Parametered queries not supported. \
-                If this is an insert query, use executemany() with the data rows as the parameter")
+            if "SELECT name FROM sqlite_master WHERE type='table' AND name=" in query and support_pandas:
+                # THIS IS PANDAS
+                # Support for df.to_sql() using the DB-API directly
+                self.execute_sqream_statement(f"select * from sqream_catalog.tables where table_name='{params[0]}'")
+
+            else:
+                raise ProgrammingError("Parametered queries not supported. \
+                    If this is an insert query, use executemany() with the data rows as the parameter")
         else:
             self.execute_sqream_statement(query)
 
@@ -1011,6 +1019,12 @@ class Connection:
 
         if rows_or_cols is None:
             return self
+
+        if data_as =='alchemy_flat_list':
+            # Unflatten SQLalchemy data list
+            row_len = len(self.column_list)
+            rows_or_cols = [rows_or_cols[i:i+row_len] for i in range(0, len(rows_or_cols), row_len)]
+            data_as = 'rows'
 
         if 'numpy' in repr(type(rows_or_cols[0])):
             data_as = 'numpy'
@@ -1058,6 +1072,7 @@ class Connection:
             res = self.parsed_rows[0:size if size != -1 else None]
             self.parsed_rows = self.parsed_rows[size:] if size != -1 else []
 
+        
         return (res if res else []) if size != 1 else (res[0] if res else None)
 
     def fetchone(self, data_as='rows'):
@@ -1081,8 +1096,8 @@ class Connection:
             We use a connection as the equivalent of a 'cursor' '''
 
         cur = Connection(
-            self.picker_ip if self.clustered else self.ip,
-            self.picker_port if self.clustered else self.port,
+            self.picker_ip if self.clustered is True else self.ip,
+            self.picker_port if self.clustered is True else self.port,
             self.clustered,
             self.use_ssl,
             base_connection=False
@@ -1148,7 +1163,6 @@ class Connection:
 
 def connect(host, port, database, username, password, clustered = False, use_ssl = False, service='sqream', reconnect_attempts=3, reconnect_interval=10):
     ''' Connect to SQream database '''
-
     if not isinstance(reconnect_attempts, int) or reconnect_attempts < 0:
         raise Exception(f'reconnect attempts should be a positive integer, got : {reconnect_attempts}')
     if not isinstance(reconnect_interval, int) or reconnect_attempts < 0:
@@ -1258,8 +1272,7 @@ def TimestampFromTicks(ticks):
 
 
 # DB-API global parameters
-
-apilevel = '2.0'  # Conforms to 2.0
+apilevel = '2.0' 
 
 threadsafety = 1 # Threads can share the module but not a connection
 
