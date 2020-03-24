@@ -994,14 +994,10 @@ class Connection:
 
         self._verify_open()
         if params:
-            if "SELECT name FROM sqlite_master WHERE type='table' AND name=" in query and support_pandas:
-                # THIS IS PANDAS
-                # Support for df.to_sql() using the DB-API directly
-                self.execute_sqream_statement(f"select * from sqream_catalog.tables where table_name='{params[0]}'")
-
-            else:
-                raise ProgrammingError("Parametered queries not supported. \
-                    If this is an insert query, use executemany() with the data rows as the parameter")
+          
+            raise ProgrammingError("Parametered queries not supported. \
+                If this is an insert query, use executemany() with the data rows as the parameter")
+            
         else:
             self.execute_sqream_statement(query)
 
