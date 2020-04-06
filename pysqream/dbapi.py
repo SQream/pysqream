@@ -35,7 +35,7 @@ else:
         'ftBlob':     pa.utf8()
     }
 
-__version__ = '3.0.1'
+__version__ = '3.0.2'
 
 WIN = True if sys.platform in ('win32', 'cygwin') else False
 PROTOCOL_VERSION = 8
@@ -674,7 +674,7 @@ class Connection:
                 self.stmt_id))
 
         # Reconnected/reconstructed if needed,  send  execute command
-        self._send_string('{"execute" : "execute"}')
+        self.s.validate_response(self._send_string('{"execute" : "execute"}'), '{"executed":')
 
         # Send queryType message/s
         res = json.loads(self._send_string('{"queryTypeIn": "queryTypeIn"}'))
