@@ -1,3 +1,16 @@
+Ver. 3.0.2
+------------
+*10/04/2020*
+
+* Fixed bug in which a faulty statement would silently fail with `execute` and `executemany`
+
+Ver. 3.0.1
+-------------
+*09/01/2020*
+
+* Returned support for Python 3.6
+* Fixed minor packaging issue with README opening as UTF-8
+
 Ver. 3.0.0
 ----------
 *05/01/2020*
