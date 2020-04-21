@@ -723,9 +723,11 @@ class Connection:
 
         sock = sock or self.s
         # JSON correspondence
-        res = json.loads(self._send_string('{"fetch" : "fetch"}'))
-        num_rows_fetched, column_sizes = res['rows'], res['colSzs']
-
+        res = self._send_string('{"fetch" : "fetch"}')
+        self.s.validate_response(res, "colSzs")
+        fetch_meta = json.loads(res)
+        num_rows_fetched, column_sizes = fetch_meta['rows'], fetch_meta['colSzs']
+        
         if num_rows_fetched == 0:
             self.close_statement()
             return num_rows_fetched
