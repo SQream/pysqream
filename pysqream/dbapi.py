@@ -35,7 +35,7 @@ else:
         'ftBlob':     pa.utf8()
     }
 
-__version__ = '3.0.2'
+__version__ = '3.0.3'
 
 WIN = True if sys.platform in ('win32', 'cygwin') else False
 PROTOCOL_VERSION = 8
@@ -214,6 +214,8 @@ class SQSocket:
                 raise Exception ("Timeout when connecting to SQream, perhaps wrong IP?")
             elif '[SSL: UNKNOWN_PROTOCOL] unknown protocol' in repr(e):
                  raise Exception('Using use_ssl=True but connected to non ssl sqreamd port')
+            elif 'EOF occurred in violation of protocol (_ssl.c:' in repr(e):
+                 raise Exception('Using use_ssl=True but connected to non ssl sqreamd port') 
             else:
                 raise Exception(e)
         else:
@@ -335,7 +337,14 @@ class ColumnBuffer:
 
     def __init__(self, size=BUFFER_SIZE):
         global buf_maps, buf_views
-        
+        if not WIN:
+            try:
+                self.pool.close()
+                self.pool.join()
+            except Exception as e:
+                pass
+            
+            self.pool = mp.Pool()
 
     def clear(self):
         if buf_maps:
@@ -362,7 +371,7 @@ class ColumnBuffer:
                 packed_cols.append(_pack_column(param_tup))
             
         else:
-            self.pool = mp.Pool()
+            # self.pool = mp.Pool()
             # To use multiprocess type packing, we call a top level function with a single tuple parameter
             try:
                 packed_cols = self.pool.map(_pack_column, pool_params)  # buf_end_indices
@@ -377,13 +386,14 @@ class ColumnBuffer:
 
     def close(self):
         self.clear()
+        '''
         try:
             self.pool.close()
             self.pool.join()
         except Exception as e:
             # print (f'testing pool closing, got: {e}')
             pass # no pool was initiated
-
+        '''
 
 
 ## A top level packing function for Python's MP compatibility
@@ -674,7 +684,7 @@ class Connection:
                 self.stmt_id))
 
         # Reconnected/reconstructed if needed,  send  execute command
-        self.s.validate_response(self._send_string('{"execute" : "execute"}'), '{"executed":')
+        self.s.validate_response(self._send_string('{"execute" : "execute"}'), 'executed')
 
         # Send queryType message/s
         res = json.loads(self._send_string('{"queryTypeIn": "queryTypeIn"}'))
@@ -723,8 +733,10 @@ class Connection:
 
         sock = sock or self.s
         # JSON correspondence
-        res = json.loads(self._send_string('{"fetch" : "fetch"}'))
-        num_rows_fetched, column_sizes = res['rows'], res['colSzs']
+        res = self._send_string('{"fetch" : "fetch"}')
+        self.s.validate_response(res, "colSzs")
+        fetch_meta = json.loads(res)
+        num_rows_fetched, column_sizes = fetch_meta['rows'], fetch_meta['colSzs']
 
         if num_rows_fetched == 0:
             self.close_statement()
@@ -837,7 +849,7 @@ class Connection:
         packed_cols = self.buffer.pack_columns(cols, capacity, self.col_types,
                                                self.col_sizes, self.col_nul,
                                                self.col_tvc)
-
+        del cols
         byte_count = sum(len(packed_col) for packed_col in packed_cols)
 
         # Sending put message and binary header
@@ -849,7 +861,7 @@ class Connection:
             self.s.send((packed_col))
 
         self.s.validate_response(self.s.get_response(), '{"putted":"putted"}')
-
+        del packed_cols
 
     ## Closing
 
@@ -1026,8 +1038,8 @@ class Connection:
             data_as = 'numpy'
 
         # Network insert starts here if data was passed
-        if len(set(len(row_or_col) for row_or_col in rows_or_cols)) > 1: 
-            raise ProgrammingError(
+        column_lengths = [len(row_or_col) for row_or_col in rows_or_cols]
+        if column_lengths.count(column_lengths[0]) != len(column_lengths):            raise ProgrammingError(
                 "Incosistent data sequences passed for inserting. Please use rows/columns of consistent length"
             )
         if data_as == 'rows':
@@ -1038,16 +1050,22 @@ class Connection:
             self.capacity = len(self.cols)
 
         # Slice a chunk of columns and pass to _send_columns()
+        start_idx = 0
         while self.cols != [()]:
-            col_chunk = [col[:self.rows_per_flush] for col in self.cols]
+            col_chunk = [col[start_idx:start_idx + self.rows_per_flush] for col in self.cols]
             if len(col_chunk[0]) == 0:
                 break
             self._send_columns(col_chunk, len(col_chunk[0]))
-            self.cols = [col[self.rows_per_flush:] for col in self.cols]
+            start_idx += self.rows_per_flush
+            del col_chunk
 
         self.close_statement()
 
+        
+
         return self
+
+
 
     def fetchmany(self, size=None, data_as='rows'):
         ''' Fetch an amount of result rows '''
@@ -1066,8 +1084,7 @@ class Connection:
         # Get relevant part of parsed rows and reduce storage and counter
         if data_as == 'rows':
             res = self.parsed_rows[0:size if size != -1 else None]
-            self.parsed_rows = self.parsed_rows[size:] if size != -1 else []
-
+            del self.parsed_rows[:size if size!= -1 else None]
         
         return (res if res else []) if size != 1 else (res[0] if res else None)
 
