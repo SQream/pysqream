@@ -1,3 +1,11 @@
+Ver. 3.0.3
+------------
+*07/06/2020*
+
+* Fixed bad error message on timeout
+* A few adaptations to avoid memory buildup in large ETLs
+
+
 Ver. 3.0.2
 ------------
 *10/04/2020*
