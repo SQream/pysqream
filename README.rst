@@ -22,9 +22,9 @@ For more information and a full API reference, see `SQream documentation's pysqr
 Requirements
 ====================
 
-* Python 3.6.5+, with 3.7+ highly recommended
+* Python 3.7+ 
 
-* Cython (Optional, faster performance) - `pip3 install cython`
+* Cython 0.29.20+ (Optional, faster performance) - `pip3 install --upgrade cython`
 
 Installing the Python connector
 ==================================
@@ -35,7 +35,7 @@ Prerequisites
 1. Python
 ^^^^^^^^^^^^
 
-The connector requires Python 3.6.5 or newer. To verify your version of Python:
+The connector requires Python 3.7 or newer. To verify your version of Python:
 
 .. code-block:: console
 
@@ -91,7 +91,7 @@ Optional but recommended is Cython, which improves performance of Python applica
 
    .. code-block:: console
    
-      $ pip install cython
+      $ pip install --upgrade cython
 
 Install via pip
 -----------------
