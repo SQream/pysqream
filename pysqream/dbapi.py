@@ -1,6 +1,6 @@
 '''               ----  SQream Native Python API  ----              '''
 
-import socket, json, ssl, logging, time, traceback, asyncio, sys
+import socket, json, ssl, logging, time, traceback, asyncio, sys, array
 from struct import pack, pack_into, unpack, error as struct_error
 from datetime import datetime, date, time as t
 import multiprocessing as mp
@@ -126,16 +126,20 @@ def sq_datetime_to_tuple(sqream_datetime, dt_convert_func=datetime):
                            hour, mins, sec, msec)
 
 
-def date_tuple_to_int(year: int, month: int, day: int) -> int:
+def date_to_int(d: date) -> int:
 
-    mth: int = (month + 9) % 12
-    yr: int = year - mth // 10
-    return 365 * yr + yr // 4 - yr // 100 + yr // 400 + (mth * 306 +
-                                                         5) // 10 + (day - 1)
+    year, month, day = d.timetuple()[:3]
+    mth: int         = (month + 9) % 12
+    yr: int          = year - mth // 10
+    
+    return 365 * yr + yr // 4 - yr // 100 + yr // 400 + (mth * 306 + 5) // 10 + (day - 1)
 
 
-def datetime_tuple_to_long(year: int, month: int, day: int, hour: int, minute: int, second: int, msecond: int = 0) -> int:
+def datetime_to_long(dt: datetime) -> int:
     ''' self contained to avoid function calling overhead '''
+
+    year, month, day, hour, minute, second = dt.timetuple()[:6]
+    msecond = dt.microsecond
 
     mth: int = (month + 9) % 12
     yr: int = year - mth // 10
@@ -144,6 +148,14 @@ def datetime_tuple_to_long(year: int, month: int, day: int, hour: int, minute: i
     time_int: int = hour * 3600 * 1000 + minute * 60 * 1000 + second * 1000 + msecond // 1000
 
     return (date_int << 32) + time_int
+
+
+CYTHON = False #or True
+# '''
+if CYTHON:
+    import pyximport; pyximport.install(pyimport=True, language_level=3)
+    from cythonized import date_to_int, datetime_to_long
+# '''
 
 
 def lengths_to_pairs(nvarc_lengths):
@@ -374,14 +386,13 @@ class ColumnBuffer:
             # self.pool = mp.Pool()
             # To use multiprocess type packing, we call a top level function with a single tuple parameter
             try:
-                packed_cols = self.pool.map(_pack_column, pool_params)  # buf_end_indices
+                packed_cols = self.pool.map(_pack_column, pool_params, chunksize = 2)  # buf_end_indices
             except Exception as e:
                 printdbg("Original error from pool.map: ", e)
-                raise ProgrammingError(
-                    "Error packing columns. Check that all types match the respective column types"
-                )
+                raise ProgrammingError("Error packing columns. Check that all types match the respective column types")
 
-        return packed_cols
+
+        return list(packed_cols)
 
 
     def close(self):
@@ -401,7 +412,9 @@ def _pack_column(col_tup, return_actual_data = True):
     ''' Packs the buffer starting a given index with the column. 
         Returns number of bytes packed '''
 
+    global CYTHON
     col, col_idx, col_type, size, nullable, tvc = col_tup
+    col = list(col)
     capacity = len(col)
     buf_idx = 0
     buf_map =  mmap(-1, ((1 if nullable else 0)+(size if size!=0 else 104)) * ROWS_PER_FLUSH)
@@ -460,12 +473,44 @@ def _pack_column(col_tup, return_actual_data = True):
     # Pack null column if applicable
     type_code = type_to_letter[col_type]
 
+    # Pack null column and replace None with appropriate placeholder
+    col_placeholder = {
+        'ftBool': 0,
+        'ftUByte': 0,
+        'ftShort': 0,
+        'ftInt': 0,
+        'ftLong': 0,
+        'ftFloat': 0,
+        'ftDouble': 0,
+        'ftDate': None,     #updated separately
+        'ftDateTime': None, #updated separately
+        'ftVarchar': ''.ljust(size, ' '),
+        'ftBlob': ''
+    }
+
+    null_indices = array.array('i')
+    if nullable:
+        idx = -1
+        # nulls = bytearray(capacity)
+        while True:
+            try:
+                idx = col.index(None, idx+1)
+            except ValueError:
+                break
+            else:
+                null_indices.append(idx)
+                # nulls[idx] = 1
+                buf_map.seek(buf_idx + idx)
+                buf_map.write(b'\x01')
+                col[idx] = col_placeholder[col_type]
+        # buf_map.seek(buf_idx)
+        # buf_map.write(nulls)
+        buf_idx += capacity
+
     # If a text column, replace and pack in adavnce to see if the buffer is sufficient
     if col_type == 'ftBlob':
         try:
-            encoded_col = [strn.encode('utf8') if strn is not None else b''
-                for strn in col
-            ]
+            encoded_col = [strn.encode('utf8') for strn in col]
         except AttributeError as e:  # Non strings will not have .encode()
             pack_exception(e)
         else:
@@ -479,10 +524,18 @@ def _pack_column(col_tup, return_actual_data = True):
             buf_map.resize(needed_buf_size)
             buf_view = memoryview(buf_map)
 
-    if nullable:
-        pack_into(f'{capacity}b', buf_view, buf_idx,
-                  *[1 if item is None else 0 for item in col])
-        buf_idx += capacity
+        # Pack nvarchar length column 
+        if CYTHON:
+            pack_into(f'{capacity}i', buf_view, buf_idx, *[len(string) for string in encoded_col])
+            '''
+            buf_map.seek(buf_idx)
+            lengths = pack_ints([len(string) for string in encoded_col])
+            buf_map.write(lengths)
+            # '''
+        else:
+            pack_into(f'{capacity}i', buf_view, buf_idx, *[len(string) for string in encoded_col])
+
+        buf_idx += 4 * capacity
 
 
     # Replace Nones with appropriate placeholder - this affects the data itself
@@ -491,46 +544,40 @@ def _pack_column(col_tup, return_actual_data = True):
 
     elif col_type == 'ftVarchar':
         try:
-            col = (strn.encode(VARCHAR_ENCODING)[:size].ljust(size, b' ')
-                   if strn is not None else b''.ljust(size, b' ')
-                   for strn in col)
+            col = (strn.encode(VARCHAR_ENCODING)[:size].ljust(size, b' ') for strn in col)
         except AttributeError as e:  # Non strings will not have .encode()
             pack_exception(e)
         else:
             packed_strings = b''.join(col)
 
-    elif col_type == 'ftDate':
+    elif col_type == 'ftDate':   
+        # date_tuple_to_int(1900, 1, 1) = 693901
+        pass
+        # '''
         try:
-            col = (date_tuple_to_int(*deit.timetuple()[:3])
-                   if deit is not None else date_tuple_to_int(1900, 1, 1)
-                   for deit in col)
+            col = (date_to_int(deit) if deit is not None else 693901 for deit in col)
         except AttributeError as e:  # Non date/times will not have .timetuple()
             pack_exception(e)
+        # '''
 
     elif col_type == 'ftDateTime':
+        # datetime_tuple_to_long(1900, 1, 1, 0, 0, 0) = 2980282101661696
+        pass
+        # '''
         try:
-            col = (datetime_tuple_to_long(*(dt.timetuple()[:6] + (dt.microsecond, )))
-                   if dt is not None else datetime_tuple_to_long(
-                       1900, 1, 1, 0, 0, 0) for dt in col
-                   )
+            col = (datetime_to_long(dt) if dt is not None else 2980282101661696 for dt in col)
         except AttributeError as e:
             pack_exception(e)
+        # '''
 
     elif col_type in ('ftBool', 'ftUByte', 'ftShort', 'ftInt', 'ftLong',
                       'ftFloat', 'ftDouble'):
-        col = (num if num is not None else 0 for num in col)
-
+        pass
+        # col = (num if num is not None else 0 for num in col)
     else:
         raise ProgrammingError(f'Bad column type passed: {col_type}')
 
-
-    # Pack nvarchar length column if applicable
-    if tvc:
-        pack_into(f'{capacity}i', buf_view, buf_idx,
-                  *[len(string) for string in encoded_col])
-        buf_idx += 4 * capacity
-
-
+    CYTHON = False
     # Done preceding column handling, pack the actual data
     if col_type in ('ftVarchar', 'ftBlob'):
         buf_map.seek(buf_idx)
@@ -538,7 +585,14 @@ def _pack_column(col_tup, return_actual_data = True):
         buf_idx += len(packed_strings)
     else:
         try:
-            pack_into(f'{capacity}{type_code}', buf_view, buf_idx, *col)
+            if CYTHON:
+                buf_map.seek(buf_idx)
+                # Pack numbers into the buffer via cythonized function
+                # packed = type_packer[type_code](col, size)
+                # buf_map.write(type_packer[col_type](col, size, buf_view, buf_idx))
+                type_packer[col_type](col, size, buf_map, buf_idx)
+            else:
+                pack_into(f'{capacity}{type_code}', buf_view, buf_idx, *col)
         except struct_error as e:
             pack_exception(e)
 
