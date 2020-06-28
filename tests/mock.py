@@ -274,8 +274,9 @@ class MockSock:
         if not any(expected_msg in (msg or self.msg) for expected_msg in expected):
             raise MockException(f'\nExpected {expected} json but got:\n{msg}')
 
-    ## Query parsing
-    #  -------------
+            
+    # Query parsing
+    #  
 
     # Create
     def generate_table_metadata(self, query):
