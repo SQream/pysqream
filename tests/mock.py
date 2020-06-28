@@ -1,10 +1,9 @@
-import socket, ssl, selectors, json, sqlite3, datetime, sys, itertools as it
+import socket, ssl, selectors, json, datetime, sys, itertools as it
 import logging, time, traceback
 from struct import pack, unpack
 from collections import deque
 
 import dbapi
-from dbapi import ColumnBuffer, _pack_column, sq_date_to_tuple, sq_datetime_to_tuple, date_tuple_to_int, datetime_tuple_to_long
 
 
 PROTOCOL_VERSION = 8
@@ -24,7 +23,6 @@ type_to_letter = {
     'ftBlob': 's'
 }
 
-buf_maps, buf_views = [], []
 
 def printdbg(*debug_print, dbg = True):
     if dbg:
@@ -46,14 +44,7 @@ sql_to_sqream_type = {
 }
 
 
-db = sqlite3.connect('memory')
-
 class MockException(Exception):
-    pass
-
-class MetaMemory:
-    ''' Remember metada of insert statement to reproduce queryType response on select '''
-
     pass
 
 
@@ -282,23 +273,6 @@ class MockSock:
         return data
 
 
-    def get_msg(self, is_text_msg=True):
-        ''' Get answer JSON string from SQream after sending a relevant message '''
-
-        # Getting 10-byte response header back
-        header = self.receive(10)
-        server_protocol = header[0]
-        if server_protocol not in SUPPORTED_PROTOCOLS:
-            raise Exception(
-                f'Protocol mismatch, server version - {PROTOCOL_VERSION}, client version - {server_protocol}'
-            )
-        # bytes_or_text =  header[1]
-        message_len = unpack('q', header[2:10])[0]
-
-        return self.receive(message_len).decode(
-            'utf8') if is_text_msg else self.receive(message_len)
-
-    
     # Non socket aux. functionality
     #
 
