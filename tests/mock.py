@@ -9,20 +9,6 @@ import dbapi
 PROTOCOL_VERSION = 8
 VARCHAR_ENCODING = 'ascii'
 
-type_to_letter = {
-    'ftBool': '?',
-    'ftUByte': 'B',
-    'ftShort': 'h',
-    'ftInt': 'i',
-    'ftLong': 'q',
-    'ftFloat': 'f',
-    'ftDouble': 'd',
-    'ftDate': 'i',
-    'ftDateTime': 'q',
-    'ftVarchar': 's',
-    'ftBlob': 's'
-}
-
 
 def printdbg(*debug_print, dbg = True):
     if dbg:
