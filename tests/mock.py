@@ -3,8 +3,6 @@ import logging, time, traceback
 from struct import pack, unpack
 from collections import deque
 
-import dbapi
-
 
 PROTOCOL_VERSION = 8
 VARCHAR_ENCODING = 'ascii'
