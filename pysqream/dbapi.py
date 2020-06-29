@@ -1,11 +1,13 @@
 '''               ----  SQream Native Python API  ----              '''
 
-import socket, json, ssl, logging, time, traceback, asyncio, sys, array
+import socket, json, ssl, logging, time, traceback, asyncio, sys, array, _thread as thread
 from struct import pack, pack_into, unpack, error as struct_error
 from datetime import datetime, date, time as t
 import multiprocessing as mp
 from mmap import mmap
 from functools import reduce
+from collections import deque
+from queue import Queue, Empty
 from concurrent.futures import ProcessPoolExecutor
 try:
     import cython
@@ -627,6 +629,10 @@ class Connection:
             self.cursors = []
 
         self.lastrowid = None
+        self.unpack_q = Queue()
+
+        # Thread for unpacking fetched socket data
+        thread.start_new_thread(self._parse_fetched_cols, (self.unpack_q,))
 
     ## SQream mechanisms
     #  -----------------
@@ -794,16 +800,16 @@ class Connection:
 
         if num_rows_fetched == 0:
             self.close_statement()
-            return num_rows_fetched
+            # print(f'zero fetched')
+
+            return None, num_rows_fetched
 
         # Get preceding header
         self.s.receive(10)
 
         # Get data as memoryviews of bytearrays.
         unsorted_data_columns = [
-            memoryview(self.s.receive(size))
-            for idx, size in enumerate(column_sizes)
-        ]
+            memoryview(self.s.receive(size)) for idx, size in enumerate(column_sizes)]
 
         # Sort by columns, taking a memoryview and casting to the proper type
         self.data_columns = []
@@ -825,69 +831,95 @@ class Connection:
             self.data_columns.append(column)
 
         self.unparsed_row_amount = num_rows_fetched
+        # self.unpack_q.put(self.data_columns, num_rows_fetched)
 
-        return num_rows_fetched
+        return self.data_columns, num_rows_fetched
 
-    def _parse_fetched_cols(self):
+
+    def _parse_fetched_cols(self, queue = None):
         ''' Used by _fetch_and_parse ()  '''
+        
+        unpack_q = queue or self.unpack_q
+        self.extracted = deque()
+        
+        while True:
+            try:
+                data, num_rows = unpack_q.get(False)
+            except Empty:
+                time.sleep(0.1)
+                continue
+            
+            if data is None:
+                time.sleep(0.1)
+                continue
+            
+            self.extracted_batch = []
+            '''
+            if not self.data_columns:
+                return self.extracted_batch
+            # '''
 
-        self.extracted_cols = []
+            for idx, raw_col_data in enumerate(data):
+                # Extract data according to column type
+                if self.col_tvc[idx]:  # nvarchar
+                    nvarc_sizes = raw_col_data[1]
+                    col = [
+                        raw_col_data[-1][start:end].decode('utf8')
+                        for (start, end) in lengths_to_pairs(nvarc_sizes)
+                    ]
+                elif self.col_type_tups[idx][0] == "ftVarchar":
+                    varchar_size = self.col_type_tups[idx][1]
+                    col = [
+                        raw_col_data[-1][idx:idx + varchar_size].decode(
+                            self.varchar_enc).rstrip('\x00').rstrip()
+                        for idx in range(0, len(raw_col_data[-1]), varchar_size)
+                    ]
+                elif self.col_type_tups[idx][0] == "ftDate":
+                    col = [sq_date_to_tuple(d) for d in raw_col_data[-1]]
+                elif self.col_type_tups[idx][0] == "ftDateTime":
+                    col = [sq_datetime_to_tuple(d) for d in raw_col_data[-1]]
 
-        if not self.data_columns:
-            return self.extracted_cols
+                else:
+                    col = raw_col_data[-1]
 
-        for idx, raw_col_data in enumerate(self.data_columns):
-            # Extract data according to column type
-            if self.col_tvc[idx]:  # nvarchar
-                nvarc_sizes = raw_col_data[1]
-                col = [
-                    raw_col_data[-1][start:end].decode('utf8')
-                    for (start, end) in lengths_to_pairs(nvarc_sizes)
-                ]
-            elif self.col_type_tups[idx][0] == "ftVarchar":
-                varchar_size = self.col_type_tups[idx][1]
-                col = [
-                    raw_col_data[-1][idx:idx + varchar_size].decode(
-                        self.varchar_enc).rstrip('\x00').rstrip()
-                    for idx in range(0, len(raw_col_data[-1]), varchar_size)
-                ]
-            elif self.col_type_tups[idx][0] == "ftDate":
-                col = [sq_date_to_tuple(d) for d in raw_col_data[-1]]
-            elif self.col_type_tups[idx][0] == "ftDateTime":
-                col = [sq_datetime_to_tuple(d) for d in raw_col_data[-1]]
+                # Fill Nones if / where needed
+                if self.col_nul[idx]:
+                    nulls = raw_col_data[0]  # .tolist()
+                    col = [item if not null else None for item, null in zip(col, nulls)]
+                else:
+                    pass
 
-            else:
-                col = raw_col_data[-1]
+                self.extracted_batch.append(col)
 
-            # Fill Nones if / where needed
-            if self.col_nul[idx]:
-                nulls = raw_col_data[0]  # .tolist()
-                col = [
-                    item if not null else None
-                    for item, null in zip(col, nulls)
-                ]
-            else:
-                pass
+            # Done with the raw data buffers
+            self.unparsed_row_amount = 0
 
-            self.extracted_cols.append(col)
+            self.parsed_rows.extend(zip(*self.extracted_batch))
+            self.fetch_counter -= num_rows
 
-        # Done with the raw data buffers
-        self.unparsed_row_amount = 0
-        self.data_columns = []
-
-        return self.extracted_cols
 
     def _fetch_and_parse(self, requested_row_amount, data_as='rows'):
         ''' See if this amount of data is available or a fetch from sqream is required 
             -1 - fetch all available data. Used by fetchmany() '''
 
         if data_as == 'rows':
+            self.fetch_counter = 0
             while (requested_row_amount > len(self.parsed_rows)
                    or requested_row_amount == -1) and self.more_to_fetch:
-                self.more_to_fetch = bool(self._fetch())  # _fetch() updates self.unparsed_row_amount
+                data, num_rows = self._fetch()
+                self.unpack_q.put((data, num_rows))
+                self.more_to_fetch = bool(num_rows)
+                self.fetch_counter += num_rows
+            
+            total_rows_fetched = self.fetch_counter
+            # Socket work is done here, parsing may still be in progress
+            while (self.fetch_counter > 0):
+                # self.parsed_rows.extend(zip(self.unpack_q.get(False)))
+                # Waiting for _parse_fetched_cols()
+                time.sleep(0.1)
 
-                self.parsed_rows.extend(zip(*self._parse_fetched_cols()))
-
+        return total_rows_fetched
+                
 
     ## Insert
 
@@ -921,10 +953,11 @@ class Connection:
 
     def close_statement(self, sock=None):
 
-        sock = sock or self.s
-        self._send_string('{"closeStatement": "closeStatement"}')
-        self.open_statement = False
-        self.buffer.close()
+        if self.open_statement:
+            sock = sock or self.s
+            self._send_string('{"closeStatement": "closeStatement"}')
+            self.open_statement = False
+            self.buffer.close()
 
     def close_connection(self, sock=None):
 
@@ -1026,8 +1059,7 @@ class Connection:
     def _verify_query_type(self, query_type):
 
         if not self.open_statement:
-            raise ProgrammingError(
-                'No open statement while attempting fetch operation')
+            raise ProgrammingError('No open statement while attempting fetch operation')
 
 
     def _fill_description(self):
@@ -1115,32 +1147,32 @@ class Connection:
 
         self.close_statement()
 
-        
-
         return self
 
 
-
-    def fetchmany(self, size=None, data_as='rows'):
+    def fetchmany(self, size=None, data_as='rows', fetchone=False):
         ''' Fetch an amount of result rows '''
 
         size = size or self.arraysize
         self._verify_open()
-        
-        if self.more_to_fetch is False:
-            # All data in select statement was fetched
-            return []
-        
-        self._verify_query_type('SELECT')
-     
-        self._fetch_and_parse(size, data_as)
+        if self.statement_type != 'SELECT':
+            raise ProgrammingError('No open statement while attempting fetch operation')
+
+        if self.more_to_fetch is False: 
+            # All data from server for this select statement was fetched
+            if len(self.parsed_rows) == 0:
+                # Nothing
+                return [] if not fetchone else None
+        else:
+            self._fetch_and_parse(size, data_as)
 
         # Get relevant part of parsed rows and reduce storage and counter
         if data_as == 'rows':
             res = self.parsed_rows[0:size if size != -1 else None]
             del self.parsed_rows[:size if size!= -1 else None]
         
-        return (res if res else []) if size != 1 else (res[0] if res else None)
+        return (res if res else []) if not fetchone else (res[0] if res else None)
+        
 
     def fetchone(self, data_as='rows'):
         ''' Fetch one result row '''
@@ -1148,7 +1180,7 @@ class Connection:
         if data_as not in ('rows',):
             raise ProgrammingError("Bad argument to fetchone()")
 
-        return self.fetchmany(1, data_as)
+        return self.fetchmany(1, data_as, fetchone=True)
 
     def fetchall(self, data_as='rows'):
         ''' Fetch all result rows '''
