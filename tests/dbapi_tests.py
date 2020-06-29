@@ -5,7 +5,7 @@ from queue import Queue
 from subprocess import Popen
 from time import sleep
 
-import threading, sys, os, pandas as pd
+import threading, sys, os
 sys.path.append(sys.path[0].replace('\\', '/').rsplit('/', 1)[0] + '/pysqream')
 import dbapi
 
@@ -178,8 +178,7 @@ def connection_tests(build_dir = None, ip = None):
 
     print("Connection tests - positive test for use_ssl=True")
     con = connect_dbapi(False, True)
-    con.execute('select 1')
-    res = con.fetchall()[0][0]
+    res = con.execute('select 1').fetchall()[0][0]
     if res != 1:
         if f'expected to get 1, instead got {res}' not in repr(e):
             raise Exception("bad error message")
@@ -193,16 +192,14 @@ def connection_tests(build_dir = None, ip = None):
 
     print("Connection tests - positive test for clustered=True")
     con = connect_dbapi(True, False)
-    con.execute('select 1')
-    res = con.fetchall()[0][0]
+    res = con.execute('select 1').fetchall()[0][0]
     if res != 1:
         if f'expected to get 1, instead got {res}' not in repr(e):
             raise Exception("bad error message")
 
     print("Connection tests - both clustered and use_ssl flags on True")
     con = connect_dbapi(True, True)
-    con.execute('select 1')
-    res = con.fetchall()[0][0]
+    res = con.execute('select 1').fetchall()[0][0]
     if res != 1:
         if f'expected to get 1, instead got {res}' not in repr(e):
             raise Exception("bad error message")
@@ -219,8 +216,7 @@ def positive_tests():
             con.execute('truncate table test')
             rows = [(val,)]
             con.executemany("insert into test values (?)", rows)
-            con.execute("select * from test")
-            res = con.fetchall()[0][0]
+            res = con.execute("select * from test").fetchall()[0][0]
             
             # Compare
             if val != res:
@@ -242,8 +238,7 @@ def positive_tests():
         print(f'Null test for column type: {col_type}')
         con.execute("create or replace table test (t_{} {})".format(trimmed_col_type, col_type))
         con.executemany('insert into test values (?)', [(None,)])
-        con.execute('select * from test')
-        res = con.fetchall()[0][0]
+        res = con.execute('select * from test').fetchall()[0][0]
         if res not in (None,):
             raise Exception("TEST ERROR: Error setting null on column type: {}\nGot: {}, {}".format(trimmed_col_type, res, type(res)))
     
@@ -270,8 +265,7 @@ def positive_tests():
     print("Running a statement when there is an open statement")
     con.execute("select 1")
     sleep(10)
-    con.execute("select 1")
-    res = con.fetchall()[0][0]
+    res = con.execute("select 1").fetchall()[0][0]
     if res != 1:
         raise Exception(f'expected to get result 1, instead got {res}')
 
@@ -316,7 +310,7 @@ def negative_tests():
     try:
         con.executemany("insert into test values ('aa12345678910')")
     except Exception as e:
-        if "expected response statementPrepared but got" not in repr(e):
+        if "expected response executed but got" not in repr(e):
             raise Exception(f'bad error message')
 
     print("Incorrect usage of fetchmany - fetch without a statement")
@@ -326,7 +320,7 @@ def negative_tests():
     except Exception as e:
         if "No open statement while attempting fetch operation" not in repr(e):
             raise Exception(f'bad error message')
-
+    
     print("Incorrect usage of fetchall")
     con.execute("create or replace table test (xint int)")
     con.executemany("select * from test")
@@ -398,7 +392,7 @@ def fetch_tests():
     con.executemany('insert into test values (?)', [(1,), (2,), (3,), (4,), (5,), (6,), (7,), (8,), (9,), (10,)])
     # fetchmany(1) vs fetchone()
     con.execute("select * from test")
-    res = con.fetchmany(1)[0]
+    res = con.fetchmany(1)[0][0]
     con.execute("select * from test")
     res2 = con.fetchone()[0]
     if res != res2:
@@ -573,6 +567,8 @@ def copy_tests():
     res = con.fetchall()[0][0]
     if res != 2000:
         raise Exception("expected to get 2000, instead got {}".format(res))
+
+
 
 
 if __name__ == "__main__":
