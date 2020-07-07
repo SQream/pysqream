@@ -866,11 +866,12 @@ class Connection:
     ## Closing
 
     def close_statement(self, sock=None):
-
-        sock = sock or self.s
-        self._send_string('{"closeStatement": "closeStatement"}')
-        self.open_statement = False
-        self.buffer.close()
+        
+        if self.open_statement:
+            sock = sock or self.s
+            self._send_string('{"closeStatement": "closeStatement"}')
+            self.open_statement = False
+            self.buffer.close()
 
     def close_connection(self, sock=None):
 
