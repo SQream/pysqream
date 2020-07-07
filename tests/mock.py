@@ -14,17 +14,18 @@ def printdbg(*debug_print, dbg = True):
 
 
 sql_to_sqream_type = {
-    'boolean'  : ('ftBool', 1),
+    'bool'     : ('ftBool', 1),
     'tinyint'  : ('ftUByte', 1),
     'smallint' : ('ftShort', 2),
     'int'      : ('ftInt', 4),
     'bigint'   : ('ftLong', 8),
     'real'     : ('ftFloat', 4),
-    'float'    : ('ftDouble', 8),
+    'float'    : ('ftDouble', 8),   # Yeah I know
+    'double'   : ('ftDouble', 8),
     'date'     : ('ftDate', 4),
     'datetime' : ('ftDateTime', 8),
     'varchar'  : ('ftVarchar', None),
-    'text'  : ('ftBlob', 0),
+    'text'     : ('ftBlob', 0),
 }
 
 
@@ -84,7 +85,9 @@ class MockSock:
                 raise MockException(f'Protocol mismatch, client version - {client_protocol}, server version - {PROTOCOL_VERSION}')
             bytes_or_text =  header[1]
             # '''
+            printdbg ("header: ", header)
             message_len = unpack('q', header[2:10])[0]
+            printdbg(f'message len:{message_len}')
             data = conn.recv(message_len)
             self.msg = json.loads(data.decode('utf8'))
             printdbg(f'received: {self.msg}')  
@@ -195,7 +198,7 @@ class MockSock:
                 # Get binary data
                 binary_header = conn.recv(10)
                 binary_len    = unpack('q', binary_header[2:10])[0]
-                binary_data   = conn.recv(binary_len)
+                binary_data   = self.receive(conn, binary_len)
                 # binary_data   = conn.recv(unpack('q', conn.recv(10)[2:10])[0])
 
                 # Calculating colSzs
@@ -229,6 +232,8 @@ class MockSock:
 
 
     def send_json(self, conn, response):
+
+        printdbg(f'\033[94msending: {response}\033[0m' + ('\n' if 'statementClosed' in response else ''))  
         return conn.send(self.generate_message_header(len(response)) + response.encode('utf8'))
     
 
@@ -319,7 +324,6 @@ class MockSock:
 
             text_sizes_start += col_sizes[idx]
 
-        self.table_meta[table_name][1] = col_sizes
 
         return ','.join(str(size) for size in col_sizes)
 
