@@ -85,7 +85,7 @@ def pad_dates(num):
     return ('0' if num < 10 else '') + str(num)
 
 
-def sq_date_to_tuple(sqream_date, date_convert_func=date):
+def sq_date_to_py_date(sqream_date, date_convert_func=date):
 
     if sqream_date is None:
         return None
@@ -106,7 +106,7 @@ def sq_date_to_tuple(sqream_date, date_convert_func=date):
     return date_convert_func(year, month, day)
 
 
-def sq_datetime_to_tuple(sqream_datetime, dt_convert_func=datetime):
+def sq_datetime_to_py_datetime(sqream_datetime, dt_convert_func=datetime):
     ''' Getting the datetime items involves breaking the long into the date int and time it holds
         The date is extracted in the above, while the time is extracted here  '''
 
@@ -115,7 +115,7 @@ def sq_datetime_to_tuple(sqream_datetime, dt_convert_func=datetime):
 
     date_part = sqream_datetime >> 32
     time_part = sqream_datetime & 0xffffffff
-    date_part = sq_date_to_tuple(date_part)
+    date_part = sq_date_to_py_date(date_part)
 
     msec = time_part % 1000
     sec = (time_part // 1000) % 60
@@ -144,6 +144,12 @@ def datetime_tuple_to_long(year: int, month: int, day: int, hour: int, minute: i
     time_int: int = hour * 3600 * 1000 + minute * 60 * 1000 + second * 1000 + msecond // 1000
 
     return (date_int << 32) + time_int
+
+
+# CYTHON = False
+if CYTHON:
+    import pyximport; pyximport.install(pyimport=True, language_level=3, inplace=True)
+    from cythonized import sq_date_to_py_date, sq_datetime_to_py_datetime
 
 
 def lengths_to_pairs(nvarc_lengths):
@@ -777,6 +783,7 @@ class Connection:
     def _parse_fetched_cols(self):
         ''' Used by _fetch_and_parse ()  '''
 
+
         self.extracted_cols = []
 
         if not self.data_columns:
@@ -798,9 +805,9 @@ class Connection:
                     for idx in range(0, len(raw_col_data[-1]), varchar_size)
                 ]
             elif self.col_type_tups[idx][0] == "ftDate":
-                col = [sq_date_to_tuple(d) for d in raw_col_data[-1]]
+                col = [sq_date_to_py_date(d) for d in raw_col_data[-1]]
             elif self.col_type_tups[idx][0] == "ftDateTime":
-                col = [sq_datetime_to_tuple(d) for d in raw_col_data[-1]]
+                col = [sq_datetime_to_py_datetime(d) for d in raw_col_data[-1]]
 
             else:
                 col = raw_col_data[-1]
@@ -866,11 +873,12 @@ class Connection:
     ## Closing
 
     def close_statement(self, sock=None):
-
-        sock = sock or self.s
-        self._send_string('{"closeStatement": "closeStatement"}')
-        self.open_statement = False
-        self.buffer.close()
+        
+        if self.open_statement:
+            sock = sock or self.s
+            self._send_string('{"closeStatement": "closeStatement"}')
+            self.open_statement = False
+            self.buffer.close()
 
     def close_connection(self, sock=None):
 
