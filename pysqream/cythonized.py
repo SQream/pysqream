@@ -15,6 +15,7 @@ from cpython.datetime cimport date, datetime
 @wraparound(False)
 def sq_date_to_py_date_cy(cython.long sqream_date) -> date:
 
+    sqream_date : cython.uint = <unsigned int> sqream_date
     year        : cython.long = (10000 * sqream_date + 14780) // 3652425
     intermed_1  : cython.long = 365 * year + year//4 - year//100 + year//400
     intermed_2  : cython.long = sqream_date - intermed_1
@@ -38,9 +39,9 @@ def sq_date_to_py_date_cy(cython.long sqream_date) -> date:
 def sq_datetime_to_py_datetime_cy(cython.long sqream_datetime) -> datetime:
 
 
-    date_part : cython.uint = sqream_datetime >> 32
+    sqream_date : cython.uint = sqream_datetime >> 32
     time_part : cython.uint = sqream_datetime & 0xffffffff
-    date_part : cython.uint = sq_date_to_py_date_cy(date_part)
+    date_part : date = sq_date_to_py_date_cy(sqream_date)
 
     msec : cython.uint = time_part % 1000
     sec  : cython.uint = (time_part // 1000) % 60
@@ -59,4 +60,4 @@ def sq_date_to_py_date(sqream_date) -> date:
 
 def sq_datetime_to_py_datetime(sqream_datetime) -> datetime:
 
-    return sq_date_to_py_date_cy(sqream_datetime)
+    return sq_datetime_to_py_datetime_cy(sqream_datetime)
