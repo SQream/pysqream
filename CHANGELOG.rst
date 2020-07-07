@@ -1,10 +1,10 @@
 Ver. 3.0.3
 ------------
-*07/06/2020*
+*07/07/2020*
 
 * Fixed bad error message on timeout
 * A few adaptations to avoid memory buildup in large ETLs
-
+* Avoid double close statement for clearer SQreamd logs
 
 Ver. 3.0.2
 ------------
