@@ -24,7 +24,7 @@ Requirements
 
 * Python 3.6.5+, with 3.7+ highly recommended
 
-* Cython (Optional, faster performance) - `pip3 install cython`
+* Cython (Optional, faster performance) - `pip3 install --upgrade cython`
 
 Installing the Python connector
 ==================================
