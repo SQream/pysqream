@@ -120,7 +120,8 @@ def single_type_test():
             # prof_select(amount, table_name)
 
 
-def mixed_18_each_test():
+def mixed_types_test():
+   ''' 18 of each column type '''
 
    col_type_data = {
       'bool'          : False,
@@ -136,7 +137,7 @@ def mixed_18_each_test():
       'datetime'      : datetime(2016, 12, 23, 16, 56,45, 000)
    }
 
-   for row_amount in row_amounts:
+   for row_amount in (10**6,): #row_amounts:
       prof_insert([col_type_data.keys(), (18,) * len(col_type_data)], row_amount)
       # prof_select(amount, table_name)
       
@@ -148,6 +149,6 @@ if __name__ == '__main__':
    ip = args[1] if len(args) > 1 else '127.0.0.1'
    con = dbapi.connect(ip, 5000, 'master', 'sqream', 'sqream', False, False)
    # single_type_test()
-   mixed_18_each_test()
+   mixed_types_test()
    
    con.close()
