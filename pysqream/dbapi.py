@@ -71,6 +71,21 @@ def printdbg(*debug_print):
     if dbg:
         print(*debug_print)
 
+## --- To allow adaptive ROWS_PER_FLUSH ---
+##
+
+def get_ram_linux():
+
+    vmstat, err = Popen('vmstat -s'.split(), stdout=PIPE, stderr=PIPE).communicate() 
+    
+    return int(vmstat.splitlines()[0].split()[0]) 
+     
+
+def get_ram_windows():
+
+    pass
+
+get_ram = get_ram_windows if WIN else get_ram_linux
 
 ## Date and Datetime conversion functions
 #  --------------------------------------
