@@ -19,10 +19,10 @@ col_type_data = {
    'double'        : 4.0,
    'varchar(10)'   : 'y'*10,
    'varchar(100)'  : 'y'*100,
-   'varchar(1000)' : 'y'*1000,
+   'varchar(400)' : 'y'*400,
    'text*10'       : 'y'*10,
    'text*100'      : 'y'*100,
-   'text*1000'     : 'y'*1000,
+   'text*400'     : 'y'*400,
    'text'       : 'y'*10,
    'date'          : date(2016, 12, 23),
    'datetime'      : datetime(2016, 12, 23, 16, 56,45, 000)
@@ -39,11 +39,11 @@ col_type_to_prefix = {
    'varchar'       : 's',
    'varchar(10)'   : 's_10_',
    'varchar(100)'  : 's_100_',
-   'varchar(1000)' : 's_1000_',
+   'varchar(400)' : 's_400_',
    'text'          : 'ss',
    'text*10'       : 'ss_10_',
    'text*100'      : 'ss_100_',
-   'text*1000'     : 'ss_1000_',
+   'text*400'     : 'ss_400_',
    'date'          : 'dt',
    'datetime'      : 'dtt'
 }
@@ -61,63 +61,77 @@ def columns_ddl(col_types, amounts):
    return res
 
 
-def prof_insert(col_setup = None, amount=10**6, table_name = 'perf'):
-   ''' Profile insert for a specific column setup and row amount '''
+def mocker_ddl(col_types, amounts):
+   ''' Specific nomenclature for the java mocker for selecting '''
 
-   global con
+   # Single column passed
+   if isinstance(col_types, str):
+      res = ', '.join([f"{col_types.split('*')[0].split('(')[0]}?name={col_type_to_prefix[col_types]}{i}{'&length=' + col_types.split('(')[1][:-1] if 'varchar' in col_types else ''}" for i in range(amounts)])
+   else:
+      res =  ', '.join(f"{col_type.split('*')[0].split('(')[0]}?name={col_type_to_prefix[col_type]}{i}{'&length=' + col_type.split('(')[1][:-1] if 'varchar' in col_type else ''}" for (col_type, amount) in zip(col_types, amounts) for i in range(amount))
+
+   return res
+
+
+def perf_insert(col_setup = None, amount=10**6, table_name = 'perf'):
+   ''' Profile insert for a specific column setup and row amount '''
 
    col_setup = col_setup or [('bool', 'tinyint', 'smallint', 'int', 'bigint', 'real', 'double', 'varchar(10)', 'text', 'date', 'datetime'), (1,) * 11]
    create = f'create or replace table {table_name} ({columns_ddl(*col_setup)})'
    con.execute(create)  
 
-   print (f"\nTable setup: \033[94m{list(zip(*col_setup))}\033[0m, Rows: \033[94m10^{int(log10(amount))}\033[0m")
+   print (f"\nTable setup:\n\033[94m{list(zip(*col_setup))}\033[0m,\nRows: \033[94m10^{int(log10(amount))}\033[0m")
    # col_amount = len(create.split(','))
    col_amount = sum(col_setup[1])
-   qmarks = '?, ' * (col_amount -1) + '?'
+   qmarks = ('?, ' * (col_amount -1) + '?') if not test_mocker else mocker_ddl(*col_setup )
    insert = f'insert into {table_name} values ({qmarks})' 
    start = time() 
    data = sum([(col_type_data[col_type],) * amount for (col_type, amount) in zip(*col_setup)], ())
    con.executemany(insert, [data] * amount)  
-   print (f"Total insert time: \033[94m{time() - start}\033[0m")  
+   
+   total_insert_time = time() - start
+   print (f'Insert Measurement')
+   print (f"Total insert time: \033[94m{total_insert_time}\033[0m")  
 
    # Count data
-   print (f"Count of inserted rows: {con.execute(f'select count(*) from {table_name}').fetchall()[0][0]}") 
+   if not test_mocker:
+      inserted_rows = con.execute(f'select count(*) from {table_name}').fetchall()[0][0]
+      print (f"Count of inserted rows: {inserted_rows}") 
+      
+      print (f"Total insert time per 1000 rows: \033[94m{total_insert_time / inserted_rows * 1000}\033[0m")  
 
 
-
-def prof_select(col_setup = None, amount=10**6, table_name = 'perf'):
-
-   global con
+def perf_select(cols = '*', amount=10**6, table_name = 'perf'):
 
    # Get data from table used in prof_insert()
+   print ('\nSelect Measurement')
    print (f"Retrieving {amount} rows") 
    # print (f"Retrieving {con.execute(f'select count(*) from {table_name}').fetchall()[0][0]} rows") 
    start = time()
-   res = con.execute(f'select top {amount} * from {table_name}').fetchall() 
-   print (f"Total select time: {time() - start}")  
+   cols = '*' if not test_mocker else mocker_ddl(*cols)
+   res = con.execute(f'select {cols} from {table_name} limit {amount}').fetchall() 
+
+   total_select_time = time() - start
+   print (f"Total select time: \033[94m{total_select_time}\033[0m")  
+   print (f"Total select time per 1000 rows: \033[94m{total_select_time / amount * 1000}\033[0m") 
 
 
 ## --- Test setups ---
 #
-row_amounts = 1, 10**3, 10**4, 10**5, 10**6, 10**7
+
+row_amounts = 1, 10**3, 10**4, 10**5, 10**6
+col_amounts = 1, 10, 100
 
 def single_type_test():
    ''' Checking performance for single type tables '''
    
-   col_type_data = {
-      'varchar(1000)' : 'y'*1000,
-      'text*1000'     : 'y'*1000,
-      'date'          : date(2016, 12, 23),
-      'datetime'      : datetime(2016, 12, 23, 16, 56,45, 000)
-   }
-
    # Single type test
    for col_type in col_type_data:
-      for col_amount in (1, 10, 100):
-         single_row_amounts = row_amounts[:3]
+      for col_amount in col_amounts:
+         single_row_amounts = row_amounts[:2]
          for row_amount in single_row_amounts:
-            prof_insert([(col_type, ), (col_amount, )], row_amount)
-            # prof_select(amount, table_name)
+            perf_insert([(col_type, ), (col_amount, )], row_amount)
+            perf_select([(col_type, ), (col_amount, )], row_amount)
 
 
 def mixed_types_test():
@@ -137,18 +151,21 @@ def mixed_types_test():
       'datetime'      : datetime(2016, 12, 23, 16, 56,45, 000)
    }
 
-   for row_amount in (10**6,): #row_amounts:
-      prof_insert([col_type_data.keys(), (18,) * len(col_type_data)], row_amount)
-      # prof_select(amount, table_name)
-      
+   row_amount = 10**5
+   col_setup = [col_type_data.keys(), (18,) * len(col_type_data)]
+   perf_insert(col_setup, row_amount)
+   perf_select(col_setup, row_amount)
+
 
 if __name__ == '__main__':
 
    # global con
    args = sys.argv
    ip = args[1] if len(args) > 1 else '127.0.0.1'
-   con = dbapi.connect(ip, 5000, 'master', 'sqream', 'sqream', False, False)
-   # single_type_test()
-   mixed_types_test()
+   test_mocker = True
+   port = 5000 if not test_mocker else 6000
    
-   con.close()
+   with dbapi.connect(ip, port, 'master', 'sqream', 'sqream', False, False) as con:
+      single_type_test()
+      mixed_types_test()
+   
