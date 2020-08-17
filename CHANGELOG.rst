@@ -1,3 +1,9 @@
+Ver. 3.0.4
+------------
+*17/08/2020*
+
+* Parsing server side json errors for better output
+
 Ver. 3.0.3
 ------------
 *07/07/2020*
