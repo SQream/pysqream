@@ -64,7 +64,7 @@ type_to_letter = {
 ## Setup Logging and debug prings
 ## ------------------------------
 dbg = False
-clean_sqream_errors = False
+clean_sqream_errors = True
 support_pandas = False
 
 def printdbg(*debug_print):
