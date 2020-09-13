@@ -1,11 +1,13 @@
 '''               ----  SQream Native Python API  ----              '''
 
-import socket, json, ssl, logging, time, traceback, asyncio, sys
+import socket, json, ssl, logging, time, traceback, asyncio, sys, array, _thread as thread
 from struct import pack, pack_into, unpack, error as struct_error
 from datetime import datetime, date, time as t
 import multiprocessing as mp
 from mmap import mmap
 from functools import reduce
+from collections import deque
+from queue import Queue, Empty
 from concurrent.futures import ProcessPoolExecutor
 try:
     import cython
@@ -35,7 +37,7 @@ else:
         'ftBlob':     pa.utf8()
     }
 
-__version__ = '3.0.4'
+__version__ = '3.0.3'
 
 WIN = True if sys.platform in ('win32', 'cygwin') else False
 PROTOCOL_VERSION = 8
@@ -45,6 +47,9 @@ ROWS_PER_FLUSH = 100000
 DEFAULT_CHUNKSIZE = 0  # Dummy variable for some jsons
 FETCH_MANY_DEFAULT = 1  # default parameter for fetchmany()
 VARCHAR_ENCODING = 'ascii'
+
+clean_sqream_errors = True
+support_pandas = False
 
 # For encoding data to be sent to SQream using struct.pack() and for type checking by _set_val()
 type_to_letter = {
@@ -61,16 +66,70 @@ type_to_letter = {
     'ftBlob': 's'
 }
 
-## Setup Logging and debug prings
+## Setup Logging and debug prints
 ## ------------------------------
 dbg = False
-clean_sqream_errors = True
-support_pandas = False
 
 def printdbg(*debug_print):
     if dbg:
         print(*debug_print)
 
+class SQreamDbapiException(Exception):
+    pass
+
+
+logger  = logging.getLogger("dbapi_logger")
+logger.setLevel(logging.DEBUG)
+logger.disabled = True
+
+
+def start_logging(log_path=None):
+
+    log_path = log_path or '/tmp/sqream_dbapi.log'
+    # logging.disable(logging.NOTSET)
+    logger.disabled = False
+    try:
+        handler = logging.FileHandler(log_path)
+    except Exception as e:
+        raise Exception("Bad log path was given, please verify path is valid and no forbidden characters were used")
+
+    handler.setLevel(logging.DEBUG)
+    handler.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
+    logger.addHandler(handler)
+
+    return logger
+
+
+def stop_logging():
+
+    # logging.disable(logging.CRITICAL)
+    logger.handlers = []
+    logger.disabled = True
+
+
+def log_and_raise(exception_type, error_msg):
+
+    if logger.isEnabledFor(logging.ERROR):
+        logger.error(error_msg, exc_info=True)
+    
+    raise exception_type(error_msg)
+
+
+## --- To allow adaptive ROWS_PER_FLUSH ---
+##
+
+def get_ram_linux():
+
+    vmstat, err = Popen('vmstat -s'.split(), stdout=PIPE, stderr=PIPE).communicate() 
+    
+    return int(vmstat.splitlines()[0].split()[0]) 
+     
+
+def get_ram_windows():
+
+    pass
+
+get_ram = get_ram_windows if WIN else get_ram_linux
 
 ## Date and Datetime conversion functions
 #  --------------------------------------
@@ -85,7 +144,7 @@ def pad_dates(num):
     return ('0' if num < 10 else '') + str(num)
 
 
-def sq_date_to_tuple(sqream_date, date_convert_func=date):
+def sq_date_to_py_date(sqream_date, date_convert_func=date):
 
     if sqream_date is None:
         return None
@@ -106,7 +165,7 @@ def sq_date_to_tuple(sqream_date, date_convert_func=date):
     return date_convert_func(year, month, day)
 
 
-def sq_datetime_to_tuple(sqream_datetime, dt_convert_func=datetime):
+def sq_datetime_to_py_datetime(sqream_datetime, dt_convert_func=datetime):
     ''' Getting the datetime items involves breaking the long into the date int and time it holds
         The date is extracted in the above, while the time is extracted here  '''
 
@@ -115,7 +174,7 @@ def sq_datetime_to_tuple(sqream_datetime, dt_convert_func=datetime):
 
     date_part = sqream_datetime >> 32
     time_part = sqream_datetime & 0xffffffff
-    date_part = sq_date_to_tuple(date_part)
+    date_part = sq_date_to_py_date(date_part)
 
     msec = time_part % 1000
     sec = (time_part // 1000) % 60
@@ -126,16 +185,20 @@ def sq_datetime_to_tuple(sqream_datetime, dt_convert_func=datetime):
                            hour, mins, sec, msec)
 
 
-def date_tuple_to_int(year: int, month: int, day: int) -> int:
+def date_to_int(d: date) -> int:
 
-    mth: int = (month + 9) % 12
-    yr: int = year - mth // 10
-    return 365 * yr + yr // 4 - yr // 100 + yr // 400 + (mth * 306 +
-                                                         5) // 10 + (day - 1)
+    year, month, day = d.timetuple()[:3]
+    mth: int         = (month + 9) % 12
+    yr: int          = year - mth // 10
+    
+    return 365 * yr + yr // 4 - yr // 100 + yr // 400 + (mth * 306 + 5) // 10 + (day - 1)
 
 
-def datetime_tuple_to_long(year: int, month: int, day: int, hour: int, minute: int, second: int, msecond: int = 0) -> int:
+def datetime_to_long(dt: datetime) -> int:
     ''' self contained to avoid function calling overhead '''
+
+    year, month, day, hour, minute, second = dt.timetuple()[:6]
+    msecond = dt.microsecond
 
     mth: int = (month + 9) % 12
     yr: int = year - mth // 10
@@ -144,6 +207,18 @@ def datetime_tuple_to_long(year: int, month: int, day: int, hour: int, minute: i
     time_int: int = hour * 3600 * 1000 + minute * 60 * 1000 + second * 1000 + msecond // 1000
 
     return (date_int << 32) + time_int
+
+try:
+    from cythonized import date_to_int as pydate_to_int, datetime_to_long as pydt_to_long, sq_date_to_py_date as date_to_py, sq_datetime_to_py_datetime as dt_to_py
+except:
+    if CYTHON:
+        try:
+            import pyximport; pyximport.install(pyimport=True, language_level=3, inplace=True)
+            from cythonized import date_to_int as pydate_to_int, datetime_to_long as pydt_to_long, sq_date_to_py_date as date_to_py, sq_datetime_to_py_datetime as dt_to_py
+        except:
+            CYTHON = False
+else:
+    CYTHON = True
 
 
 def lengths_to_pairs(nvarc_lengths):
@@ -206,18 +281,18 @@ class SQSocket:
             self.timeout(10)
             self.s.connect((ip, port))
         except ConnectionRefusedError as e:
-            raise ConnectionRefusedError("Connection refused, perhaps wrong IP?")
+            log_and_raise(ConnectionRefusedError, "Connection refused, perhaps wrong IP?")
         except ConnectionResetError:
-            raise Exception('Trying to connect to an SSL port with use_ssl = False')
+            log_and_raise(Exception, 'Trying to connect to an SSL port with use_ssl = False')
         except Exception as e:
             if 'timeout' in repr(e):
-                raise Exception ("Timeout when connecting to SQream, perhaps wrong IP?")
+                log_and_raise(Exception, "Timeout when connecting to SQream, perhaps wrong IP?")
             elif '[SSL: UNKNOWN_PROTOCOL] unknown protocol' in repr(e):
-                 raise Exception('Using use_ssl=True but connected to non ssl sqreamd port')
+                 log_and_raise(Exception, 'Using use_ssl=True but connected to non ssl sqreamd port')
             elif 'EOF occurred in violation of protocol (_ssl.c:' in repr(e):
-                 raise Exception('Using use_ssl=True but connected to non ssl sqreamd port') 
+                 log_and_raise(Exception, 'Using use_ssl=True but connected to non ssl sqreamd port') 
             else:
-                raise Exception(e)
+                log_and_raise(Exception, e)
         else:
             self.timeout(None)
 
@@ -229,8 +304,7 @@ class SQSocket:
         try:
             SQSocket(ip or self.ip, port or self.port, use_ssl or self.use_ssl)
         except ConnectionRefusedError:
-            raise ConnectionRefusedError("Connection to SQream interrupted")
-
+            log_and_raise(ConnectionRefusedError, f"Connection to SQream interrupted")
 
     def send(self, data):
 
@@ -278,7 +352,7 @@ class SQSocket:
             # Get whatever the socket gives and put it inside the bytearray
             received = self.s.recv_into(view)
             if received == 0:
-                raise ConnectionRefusedError('SQreamd connection interrupted - 0 returned by socket')
+                log_and_raise(ConnectionRefusedError, f'SQreamd connection interrupted - 0 returned by socket')
             view = view[received:]
             total += received
 
@@ -296,9 +370,7 @@ class SQSocket:
         header = self.receive(10)
         server_protocol = header[0]
         if server_protocol not in SUPPORTED_PROTOCOLS:
-            raise Exception(
-                f'Protocol mismatch, client version - {PROTOCOL_VERSION}, server version - {server_protocol}'
-            )
+            log_and_raise(Exception, f'Protocol mismatch, client version - {PROTOCOL_VERSION}, server version - {server_protocol}')
         # bytes_or_text =  header[1]
         message_len = unpack('q', header[2:10])[0]
 
@@ -321,9 +393,7 @@ class SQSocket:
         if expected not in response:
             # Color first line of SQream error (before the haskell thingy starts) in Red
             response = '\033[31m' + (response.split('\\n')[0] if clean_sqream_errors else response) + '\033[0m' 
-            raise Exception(f'\nexpected response {expected} but got:\n\n {response}')
-
-    
+            log_and_raise(Exception, f'\nexpected response {expected} but got:\n\n {response}')
 
 
 ## Buffer setup and functionality
@@ -331,6 +401,11 @@ class SQSocket:
 
 buf_maps, buf_views = [], []
 
+def init_lock(l):
+    ''' To pass a lock to mp.Pool() '''
+
+    global lock
+    lock = l
 
 class ColumnBuffer:
     ''' Buffer holding packed columns to be sent to SQream '''
@@ -344,7 +419,11 @@ class ColumnBuffer:
             except Exception as e:
                 pass
             
-            self.pool = mp.Pool()
+            l = mp.Lock()
+            self.pool = mp.Pool(initializer=init_lock, initargs=(l,))
+
+
+
 
     def clear(self):
         if buf_maps:
@@ -374,14 +453,14 @@ class ColumnBuffer:
             # self.pool = mp.Pool()
             # To use multiprocess type packing, we call a top level function with a single tuple parameter
             try:
-                packed_cols = self.pool.map(_pack_column, pool_params)  # buf_end_indices
+                packed_cols = self.pool.map(_pack_column, pool_params, chunksize = 2)  # buf_end_indices
             except Exception as e:
                 printdbg("Original error from pool.map: ", e)
-                raise ProgrammingError(
-                    "Error packing columns. Check that all types match the respective column types"
-                )
+                if logger.isEnabledFor(logging.ERROR):
+                    logger.error("Original error from pool.map: ", e)
+                log_and_raise(ProgrammingError, "Error packing columns. Check that all types match the respective column types")
 
-        return packed_cols
+        return list(packed_cols)
 
 
     def close(self):
@@ -401,7 +480,9 @@ def _pack_column(col_tup, return_actual_data = True):
     ''' Packs the buffer starting a given index with the column. 
         Returns number of bytes packed '''
 
+    global CYTHON
     col, col_idx, col_type, size, nullable, tvc = col_tup
+    col = list(col)
     capacity = len(col)
     buf_idx = 0
     buf_map =  mmap(-1, ((1 if nullable else 0)+(size if size!=0 else 104)) * ROWS_PER_FLUSH)
@@ -411,10 +492,13 @@ def _pack_column(col_tup, return_actual_data = True):
         ''' Allowing to return traceback info from parent process when using mp.Pool on _pack_column
             [add link]
         '''
+
         e.traceback = traceback.format_exc()
-        raise ProgrammingError(
-            f'Trying to insert unsuitable types to column number {col_idx + 1} of type {col_type}'
-        )
+        error_msg =  f'Trying to insert unsuitable types to column number {col_idx + 1} of type {col_type}'
+        with lock:
+            logger.error(error_msg, exc_info=True)
+        raise ProgrammingError(error_msg)
+        
 
     # Numpy array for column
     if ARROW and isinstance(col, np.ndarray):
@@ -460,12 +544,40 @@ def _pack_column(col_tup, return_actual_data = True):
     # Pack null column if applicable
     type_code = type_to_letter[col_type]
 
+    # Pack null column and replace None with appropriate placeholder
+    col_placeholder = {
+        'ftBool': 0,
+        'ftUByte': 0,
+        'ftShort': 0,
+        'ftInt': 0,
+        'ftLong': 0,
+        'ftFloat': 0,
+        'ftDouble': 0,
+        'ftDate': None,     #updated separately
+        'ftDateTime': None, #updated separately
+        'ftVarchar': ''.ljust(size, ' '),
+        'ftBlob': ''
+    }
+
+    if nullable:
+        idx = -1
+        while True:
+            try:
+                idx = col.index(None, idx+1)
+            except ValueError:
+                break
+            else:
+                buf_map.seek(buf_idx + idx)
+                buf_map.write(b'\x01')
+                col[idx] = col_placeholder[col_type]
+        # buf_map.seek(buf_idx)
+        # buf_map.write(nulls)
+        buf_idx += capacity
+
     # If a text column, replace and pack in adavnce to see if the buffer is sufficient
     if col_type == 'ftBlob':
         try:
-            encoded_col = [strn.encode('utf8') if strn is not None else b''
-                for strn in col
-            ]
+            encoded_col = [strn.encode('utf8') for strn in col]
         except AttributeError as e:  # Non strings will not have .encode()
             pack_exception(e)
         else:
@@ -479,10 +591,10 @@ def _pack_column(col_tup, return_actual_data = True):
             buf_map.resize(needed_buf_size)
             buf_view = memoryview(buf_map)
 
-    if nullable:
-        pack_into(f'{capacity}b', buf_view, buf_idx,
-                  *[1 if item is None else 0 for item in col])
-        buf_idx += capacity
+        # Pack nvarchar length column 
+        pack_into(f'{capacity}i', buf_view, buf_idx, *[len(string) for string in encoded_col])
+
+        buf_idx += 4 * capacity
 
 
     # Replace Nones with appropriate placeholder - this affects the data itself
@@ -491,46 +603,38 @@ def _pack_column(col_tup, return_actual_data = True):
 
     elif col_type == 'ftVarchar':
         try:
-            col = (strn.encode(VARCHAR_ENCODING)[:size].ljust(size, b' ')
-                   if strn is not None else b''.ljust(size, b' ')
-                   for strn in col)
+            col = (strn.encode(VARCHAR_ENCODING)[:size].ljust(size, b' ') for strn in col)
         except AttributeError as e:  # Non strings will not have .encode()
             pack_exception(e)
         else:
             packed_strings = b''.join(col)
 
-    elif col_type == 'ftDate':
+    elif col_type == 'ftDate':   
+        # date_tuple_to_int(1900, 1, 1) = 693901
+        pass
+        # '''
         try:
-            col = (date_tuple_to_int(*deit.timetuple()[:3])
-                   if deit is not None else date_tuple_to_int(1900, 1, 1)
-                   for deit in col)
+            col = (date_to_int(deit) if deit is not None else 693901 for deit in col)
         except AttributeError as e:  # Non date/times will not have .timetuple()
             pack_exception(e)
+        # '''
 
     elif col_type == 'ftDateTime':
+        # datetime_tuple_to_long(1900, 1, 1, 0, 0, 0) = 2980282101661696
         try:
-            col = (datetime_tuple_to_long(*(dt.timetuple()[:6] + (dt.microsecond, )))
-                   if dt is not None else datetime_tuple_to_long(
-                       1900, 1, 1, 0, 0, 0) for dt in col
-                   )
+            col = (datetime_to_long(dt) if dt is not None else 2980282101661696 for dt in col)
         except AttributeError as e:
             pack_exception(e)
 
-    elif col_type in ('ftBool', 'ftUByte', 'ftShort', 'ftInt', 'ftLong',
-                      'ftFloat', 'ftDouble'):
-        col = (num if num is not None else 0 for num in col)
-
+    elif col_type in ('ftBool', 'ftUByte', 'ftShort', 'ftInt', 'ftLong','ftFloat', 'ftDouble'):
+        pass
     else:
-        raise ProgrammingError(f'Bad column type passed: {col_type}')
+        error_msg = f'Bad column type passed: {col_type}'
+        with lock:
+            logger.error(error_msg, exc_info=True)
+        raise ProgrammingError(error_msg)
 
-
-    # Pack nvarchar length column if applicable
-    if tvc:
-        pack_into(f'{capacity}i', buf_view, buf_idx,
-                  *[len(string) for string in encoded_col])
-        buf_idx += 4 * capacity
-
-
+    CYTHON = False
     # Done preceding column handling, pack the actual data
     if col_type in ('ftVarchar', 'ftBlob'):
         buf_map.seek(buf_idx)
@@ -538,7 +642,11 @@ def _pack_column(col_tup, return_actual_data = True):
         buf_idx += len(packed_strings)
     else:
         try:
-            pack_into(f'{capacity}{type_code}', buf_view, buf_idx, *col)
+            if CYTHON:
+                buf_map.seek(buf_idx)
+                type_packer[col_type](col, size, buf_map, buf_idx)
+            else:
+                pack_into(f'{capacity}{type_code}', buf_view, buf_idx, *col)
         except struct_error as e:
             pack_exception(e)
 
@@ -552,12 +660,13 @@ class Connection:
 
     base_conn_open = [False]
 
-    def __init__(self, ip, port, clustered, use_ssl=False, base_connection=True, reconnect_attempts=3, reconnect_interval=10):
+    def __init__(self, ip, port, clustered, use_ssl=False, log = False, base_connection=True, reconnect_attempts=3, reconnect_interval=10):
 
         self.buffer = ColumnBuffer(BUFFER_SIZE)  # flushing buffer every BUFFER_SIZE bytes
         self.row_size = 0
         self.rows_per_flush = 0
         self.stmt_id = None  # For error handling when called out of order
+        self.statement_type = None
         self.open_statement = False
         self.closed = False
         self.orig_ip, self.orig_port, self.clustered, self.use_ssl = ip, port, clustered, use_ssl
@@ -567,12 +676,23 @@ class Connection:
         self._open_connection(clustered, use_ssl)
         self.arraysize = FETCH_MANY_DEFAULT
         self.rowcount = -1    # DB-API property
-        self.more_to_fetch = None
+        self.more_to_fetch = False
+        self.parsed_rows = []
 
         if self.base_connection:
             self.cursors = []
 
         self.lastrowid = None
+        self.unpack_q = Queue()
+        if CYTHON:
+            # To allow hot swapping for testing
+            date_to_int, datetime_to_long, sq_date_to_py_date, sq_datetime_to_py_datetime = pydate_to_int, pydt_to_long, date_to_py, dt_to_py
+
+        if log is not False:
+            start_logging(None if log is True else log)
+        # Thread for unpacking fetched socket data
+        # thread.start_new_thread(self._parse_fetched_cols, (self.unpack_q,))
+
 
     ## SQream mechanisms
     #  -----------------
@@ -589,7 +709,8 @@ class Connection:
             try:
                 read_len = unpack('i', picker_socket.receive(4))[0]
             except socket.timeout:
-                raise ProgrammingError(f'Connected with clustered=True, but apparently not a server picker port')
+
+                log_and_raise(ProgrammingError, f'Connected with clustered=True, but apparently not a server picker port')
             picker_socket.timeout(None)
 
             # Read the number of bytes, which is the IP in string format
@@ -613,6 +734,7 @@ class Connection:
         ''' Encode a JSON string and send to SQream. Optionally get response '''
 
         # Generating the message header, and sending both over the socket
+        printdbg(f'string sent: {json_cmd}')
         self.s.send(self.s.generate_message_header(len(json_cmd)) + json_cmd.encode('utf8'))
 
         if get_response:
@@ -630,9 +752,12 @@ class Connection:
         try:
             self.connection_id = res['connectionId']
         except KeyError as e:
-            raise ProgrammingError('Error connecting to database: ', res['error'])
+            log_and_raise(ProgrammingError, f"Error connecting to database: {res['error']}")
 
         self.varchar_enc = res.get('varcharEncoding', 'ascii')
+
+        if logger.isEnabledFor(logging.INFO):
+            logger.info(f'Connection opened to database {database}. Connection ID: {self.connection_id}')
 
 
     def _attempt_reconnect(self):
@@ -648,7 +773,7 @@ class Connection:
                 return
 
         # Attempts failed
-        raise ConnectionRefusedError('Reconnection attempts to sqreamd failed')
+        log_and_raise(ConnectionRefusedError, 'Reconnection attempts to sqreamd failed')
 
 
     def execute_sqream_statement(self, stmt):
@@ -663,8 +788,8 @@ class Connection:
         self.more_to_fetch = True    
 
         self.stmt_id = json.loads(self._send_string('{"getStatementId" : "getStatementId"}'))["statementId"]
-        stmt = json.dumps({"prepareStatement": stmt, "chunkSize": DEFAULT_CHUNKSIZE})
-        res = self._send_string(stmt)
+        stmt_json = json.dumps({"prepareStatement": stmt, "chunkSize": DEFAULT_CHUNKSIZE})
+        res = self._send_string(stmt_json)
 
         self.s.validate_response(res, "statementPrepared")
         self.lb_params = json.loads(res)
@@ -725,7 +850,10 @@ class Connection:
         # if self.statement_type == 'SELECT':
         self.parsed_rows = []
         self.parsed_row_amount = 0
-    
+        
+        if logger.isEnabledFor(logging.INFO):
+            logger.info(f'Executing statement over connection {self.connection_id} with statement id {self.stmt_id}:\n{stmt}')
+
 
     ## Select
 
@@ -774,9 +902,10 @@ class Connection:
 
         return num_rows_fetched
 
-    def _parse_fetched_cols(self):
-        ''' Used by _fetch_and_parse ()  '''
 
+    def _parse_fetched_cols(self, queue = None):
+        ''' Used by _fetch_and_parse ()  '''
+        
         self.extracted_cols = []
 
         if not self.data_columns:
@@ -798,9 +927,9 @@ class Connection:
                     for idx in range(0, len(raw_col_data[-1]), varchar_size)
                 ]
             elif self.col_type_tups[idx][0] == "ftDate":
-                col = [sq_date_to_tuple(d) for d in raw_col_data[-1]]
+                col = [sq_date_to_py_date(d) for d in raw_col_data[-1]]
             elif self.col_type_tups[idx][0] == "ftDateTime":
-                col = [sq_datetime_to_tuple(d) for d in raw_col_data[-1]]
+                col = [sq_datetime_to_py_datetime(d) for d in raw_col_data[-1]]
 
             else:
                 col = raw_col_data[-1]
@@ -822,6 +951,7 @@ class Connection:
         self.data_columns = []
 
         return self.extracted_cols
+
 
     def _fetch_and_parse(self, requested_row_amount, data_as='rows'):
         ''' See if this amount of data is available or a fetch from sqream is required 
@@ -866,18 +996,21 @@ class Connection:
     ## Closing
 
     def close_statement(self, sock=None):
-        
+
         if self.open_statement:
             sock = sock or self.s
             self._send_string('{"closeStatement": "closeStatement"}')
             self.open_statement = False
             self.buffer.close()
 
+        if logger.isEnabledFor(logging.INFO):
+            logger.info(f'Done executing statement {self.stmt_id} over connection {self.connection_id}')
+
+
     def close_connection(self, sock=None):
 
         if self.closed:
-            raise ProgrammingError(
-                "Trying to close a connection that's already closed")
+            log_and_raise(ProgrammingError, "Trying to close a connection that's already closed")
         
         self._send_string('{"closeConnection":  "closeConnection"}')
         self.s.close()
@@ -885,6 +1018,8 @@ class Connection:
         self.closed = True
         self.base_conn_open[0] = False if self.base_connection else True  
 
+        if logger.isEnabledFor(logging.INFO):
+            logger.info(f'Connection closed to database {self.database}. Connection ID: {self.connection_id}')
 
 
     # '''
@@ -965,16 +1100,15 @@ class Connection:
     def _verify_open(self):
 
         if not self.base_conn_open[0]:
-            raise ProgrammingError('Connection has been closed')
+            log_and_raise(ProgrammingError, 'Connection has been closed')
 
         if self.closed:
-            raise ProgrammingError('Cursor has been closed')
+            log_and_raise(ProgrammingError, 'Cursor has been closed')
 
     def _verify_query_type(self, query_type):
 
         if not self.open_statement:
-            raise ProgrammingError(
-                'No open statement while attempting fetch operation')
+            log_and_raise(ProgrammingError, 'No open statement while attempting fetch operation')
 
 
     def _fill_description(self):
@@ -1008,7 +1142,7 @@ class Connection:
         self._verify_open()
         if params:
           
-            raise ProgrammingError("Parametered queries not supported. \
+            log_and_raise(ProgrammingError, "Parametered queries not supported. \
                 If this is an insert query, use executemany() with the data rows as the parameter")
             
         else:
@@ -1017,6 +1151,7 @@ class Connection:
         self._fill_description()
         self.rows_fetched = 0
         self.rows_returned = 0
+
 
         return self
 
@@ -1040,7 +1175,8 @@ class Connection:
 
         # Network insert starts here if data was passed
         column_lengths = [len(row_or_col) for row_or_col in rows_or_cols]
-        if column_lengths.count(column_lengths[0]) != len(column_lengths):            raise ProgrammingError(
+        if column_lengths.count(column_lengths[0]) != len(column_lengths):            
+            log_and_raise(ProgrammingError,
                 "Incosistent data sequences passed for inserting. Please use rows/columns of consistent length"
             )
         if data_as == 'rows':
@@ -1054,54 +1190,62 @@ class Connection:
         start_idx = 0
         while self.cols != [()]:
             col_chunk = [col[start_idx:start_idx + self.rows_per_flush] for col in self.cols]
-            if len(col_chunk[0]) == 0:
+            chunk_len = len(col_chunk[0])
+            if chunk_len == 0:
                 break
-            self._send_columns(col_chunk, len(col_chunk[0]))
+            self._send_columns(col_chunk, chunk_len)
             start_idx += self.rows_per_flush
             del col_chunk
 
-        self.close_statement()
+            if logger.isEnabledFor(logging.INFO):
+                logger.info(f'Sent {chunk_len} rows of data')
 
-        
+
+        self.close_statement()
 
         return self
 
 
-
-    def fetchmany(self, size=None, data_as='rows'):
+    def fetchmany(self, size=None, data_as='rows', fetchone=False):
         ''' Fetch an amount of result rows '''
 
         size = size or self.arraysize
         self._verify_open()
-        
-        if self.more_to_fetch is False:
-            # All data in select statement was fetched
-            return []
-        
-        self._verify_query_type('SELECT')
-     
-        self._fetch_and_parse(size, data_as)
+        if self.statement_type not in (None, 'SELECT'):
+            log_and_raise(ProgrammingError,'No open statement while attempting fetch operation')
+
+        if self.more_to_fetch is False: 
+            # All data from server for this select statement was fetched
+            if len(self.parsed_rows) == 0:
+                # Nothing
+                return [] if not fetchone else None
+        else:
+            self._fetch_and_parse(size, data_as)
 
         # Get relevant part of parsed rows and reduce storage and counter
         if data_as == 'rows':
             res = self.parsed_rows[0:size if size != -1 else None]
             del self.parsed_rows[:size if size!= -1 else None]
         
-        return (res if res else []) if size != 1 else (res[0] if res else None)
+        if logger.isEnabledFor(logging.INFO):
+            logger.info(f'Fetched {size} rows')
+        
+        return (res if res else []) if not fetchone else (res[0] if res else None)
+        
 
     def fetchone(self, data_as='rows'):
         ''' Fetch one result row '''
 
         if data_as not in ('rows',):
-            raise ProgrammingError("Bad argument to fetchone()")
+            log_and_raise(ProgrammingError, "Bad argument to fetchone()")
 
-        return self.fetchmany(1, data_as)
+        return self.fetchmany(1, data_as, fetchone=True)
 
     def fetchall(self, data_as='rows'):
         ''' Fetch all result rows '''
 
         if data_as not in ('rows',):
-            raise ProgrammingError("Bad argument to fetchall()")
+            log_and_raise(ProgrammingError, "Bad argument to fetchall()")
 
         return self.fetchmany(-1, data_as)
 
@@ -1110,14 +1254,13 @@ class Connection:
             We use a connection as the equivalent of a 'cursor' '''
 
         cur = Connection(
-            self.picker_ip if self.clustered is True else self.ip,
-            self.picker_port if self.clustered is True else self.port,
+            self.orig_ip if self.clustered is True else self.ip,
+            self.orig_port if self.clustered is True else self.port,
             self.clustered,
             self.use_ssl,
             base_connection=False
         )  # self is the calling connection instance, so cursor can trace back to pysqream
-        cur.connect_database(self.database, self.username, self.password,
-                             self.service)
+        cur.connect_database(self.database, self.username, self.password, self.service)
 
         self.cursors.append(cur)
 
@@ -1132,8 +1275,7 @@ class Connection:
     def close(self):
 
         if self.closed:
-            raise ProgrammingError(
-                "Trying to close a connection that's already closed")
+            log_and_raise(ProgrammingError, "Trying to close a connection that's already closed")
 
         self.close_statement()
         self.close_connection()
@@ -1175,15 +1317,15 @@ class Connection:
 #  -----------------------
 
 
-def connect(host, port, database, username, password, clustered = False, use_ssl = False, service='sqream', reconnect_attempts=3, reconnect_interval=10):
+def connect(host, port, database, username, password, clustered = False, use_ssl = False, service='sqream', log=False, reconnect_attempts=3, reconnect_interval=10):
     ''' Connect to SQream database '''
     if not isinstance(reconnect_attempts, int) or reconnect_attempts < 0:
-        raise Exception(f'reconnect attempts should be a positive integer, got : {reconnect_attempts}')
+        log_and_raise(Exception, f'reconnect attempts should be a positive integer, got : {reconnect_attempts}')
     if not isinstance(reconnect_interval, int) or reconnect_attempts < 0:
-        raise Exception(f'reconnect interval should be a positive integer, got : {reconnect_interval}')
+        log_and_raise(Exception, f'reconnect interval should be a positive integer, got : {reconnect_interval}')
 
 
-    conn = Connection(host, port, clustered, use_ssl, base_connection=True, reconnect_attempts=reconnect_attempts, reconnect_interval=reconnect_interval)
+    conn = Connection(host, port, clustered, use_ssl, log=log, base_connection=True, reconnect_attempts=reconnect_attempts, reconnect_interval=reconnect_interval)
     conn.connect_database(database, username, password, service)
 
     return conn
