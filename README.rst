@@ -162,6 +162,22 @@ If all went well, you are now ready to build an application using the SQream DB 
 
 If any connection error appears, verify that you have access to a running SQream DB and that the connection parameters are correct.
 
+Logging
+-------
+
+To enable logging, pass a path to a log file in the connection string as follows:
+
+.. code-block:: python
+   
+   con = pysqream.connect('127.0.0.1', 5000, 'master', 'sqream', 'sqream', False, False, log = '/path/to/logfile.xx')
+
+Or pass True to save to `'/tmp/sqream_dbapi.log'`:
+
+.. code-block:: python
+   
+   con = pysqream.connect('127.0.0.1', 5000, 'master', 'sqream', 'sqream', False, False, log =True)
+    
+
 
 Further examples
 ====================
