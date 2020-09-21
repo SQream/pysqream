@@ -5,6 +5,9 @@
 ### How does a SQream connector communicate
 
 - SQreamd listens on 1-2 ports, one is plain, the other secure.
+
+#### Message Types
+
 - The server accepts two types of messages: 
   
      - json messages - valid json strings encoded to bytes.
@@ -13,6 +16,9 @@
      The json messages will mostly be plain English, except for possibly one - the json that passes the SQL query that was entered by the user.
      
      For our nvarchar / text (textual data type) columns, the encoding SQreamD uses is UTF8 - also the standard encoding in Python.  
+     
+#### Message Headers
+
  - Each message, json or data, is prepended by a 10 byte header:
      
      - byte 1     - Protocol version   - The Python connector supports versions 6-8
@@ -24,8 +30,11 @@
      - SQreamd supports only one protocol version, a connector may support several.
      - SQreamd may raise an error if the text/binary flag is mismatched, a connector may be more forgiving.
      - etc.
+     
+#### Protocol State Machine
+
  - Each side (SQreamd / connector) sends one message and waits for a response. 
- - There is only one occasion where 2 messages are sent one after the other - the message before a binary data is sent to or from SQream (see Protocol state machine)    
+ - There is only one occasion where 2 messages are sent one after the other - the message before a binary data is sent to or from SQream 
  
  ### Data Column Structure
  
@@ -80,11 +89,10 @@ The funny names on the left are the internal representation names for SQream's t
  
 What about the null column?
 
+If a column is nullable (Can contain null values), we will prepend the data column with a byte column, each byte being 1 or 0. The indices of values that are 1, represent indices in the data column that contain nulls. The data column will still have values filled in these locations - "fillers". The filler value is not important to SQreamd, only that it's the right size (i.e. 4 bytes for an int column). We usually use 0's for numerica columns, spaces for varchars (to be deprecated), and an empty string (b'') for `text` columns (See explanation on `text` columns).
 
  
- 
- 
- ### Protocol State Machine
+
  
  
  ### Python connector mechanics
