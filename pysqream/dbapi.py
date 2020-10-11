@@ -37,7 +37,7 @@ else:
         'ftBlob':     pa.utf8()
     }
 
-__version__ = '3.0.3'
+__version__ = '3.1.0'
 
 WIN = True if sys.platform in ('win32', 'cygwin') else False
 PROTOCOL_VERSION = 8
