@@ -4,6 +4,7 @@ from math import floor
 from queue import Queue
 from subprocess import Popen
 from time import sleep
+from decimal import Decimal, getcontext
 
 import threading, sys, os
 sys.path.append(os.path.abspath(__file__).rsplit('tests/', 1)[0] + '/pysqream/')
@@ -12,6 +13,8 @@ import dbapi, pytest
 q = Queue()
 varchar_length = 10
 nvarchar_length = 10
+precision = 38
+scale = 10
 max_bigint = sys.maxsize if sys.platform not in ('win32', 'cygwin') else 2147483647
 
 def generate_varchar(length):
@@ -20,8 +23,9 @@ def generate_varchar(length):
 def print_test(test_desc):
     print (f'\033[94mTest: {test_desc}\033[0m')
 
+getcontext().prec = 38
 
-col_types = {'bool', 'tinyint', 'smallint', 'int', 'bigint', 'real', 'double', 'date', 'datetime', 'varchar({})'.format(varchar_length), 'nvarchar({})'.format(varchar_length)}
+col_types = ['bool', 'tinyint', 'smallint', 'int', 'bigint', 'real', 'double', 'date', 'datetime', 'varchar({})'.format(varchar_length), 'nvarchar({})'.format(varchar_length), 'numeric({},{})'.format(precision, scale)]
 
 pos_test_vals = {'bool': (0, 1, True, False, 2, 3.6, 'test', (1997, 5, 9), (1997, 12, 12, 10, 10, 10)),
                  'tinyint': (randint(0, 255), randint(0, 255), 0, 255, True, False),
@@ -33,7 +37,8 @@ pos_test_vals = {'bool': (0, 1, True, False, 2, 3.6, 'test', (1997, 5, 9), (1997
                  'date': (date(1998, 9, 24), date(2020, 12, 1), date(1997, 5, 9), date(1993, 7, 13), date(1001, 1, 1)),
                  'datetime': (datetime(1001, 1, 1, 10, 10, 10), datetime(1997, 11, 30, 10, 10, 10), datetime(1987, 7, 27, 20, 15, 45), datetime(1993, 12, 20, 17, 25, 46)),
                  'varchar': (generate_varchar(varchar_length), generate_varchar(varchar_length), generate_varchar(varchar_length), 'b   '),
-                 'nvarchar': ('א', 'א  ', '', 'ab א')}
+                 'nvarchar': ('א', 'א  ', '', 'ab א'),
+                 'numeric': (Decimal("0"), Decimal("1"), Decimal("1.1"), Decimal("-1"), Decimal("-1.0"), Decimal("12345678901234567890.0123456789"))}
 
 neg_test_vals = {'tinyint': (258, 3.6, 'test',  (1997, 5, 9), (1997, 12, 12, 10, 10, 10)),
                  'smallint': (40000, 3.6, 'test', (1997, 5, 9), (1997, 12, 12, 10, 10, 10)),
@@ -44,7 +49,8 @@ neg_test_vals = {'tinyint': (258, 3.6, 'test',  (1997, 5, 9), (1997, 12, 12, 10,
                  'date': (5, 3.6, (-8, 9, 1), (2012, 15, 6), (2012, 9, 45), 'test', False, True),
                  'datetime': (5, 3.6, (-8, 9, 1, 0, 0, 0), (2012, 15, 6, 0, 0, 0), (2012, 9, 45, 0, 0, 0), (2012, 9, 14, 26, 0, 0), (2012, 9, 14, 13, 89, 0), 'test', False, True),
                  'varchar': (5, 3.6, (1, 2), (1997, 12, 12, 10, 10, 10), False, True),
-                 'nvarchar': (5, 3.6, (1, 2), (1997, 12, 12, 10, 10, 10), False, True)}
+                 'nvarchar': (5, 3.6, (1, 2), (1997, 12, 12, 10, 10, 10), False, True),
+                 'numeric': ('a')}
 
 
 def start_stop(op = 'start', build_dir=None, ip=None):
