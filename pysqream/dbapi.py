@@ -9,6 +9,10 @@ from functools import reduce
 from collections import deque
 from queue import Queue, Empty
 from concurrent.futures import ProcessPoolExecutor
+from decimal import Decimal, getcontext
+from math import floor, ceil
+import functools
+import operator
 try:
     import cython
     CYTHON = True
@@ -34,10 +38,11 @@ else:
         'ftDate':     pa.timestamp('ns'),
         'ftDateTime': pa.timestamp('ns'),
         'ftVarchar':  pa.string(),
-        'ftBlob':     pa.utf8()
+        'ftBlob':     pa.utf8(),
+        'ftNumeric':  pa.decimal128(38, 11)
     }
 
-__version__ = '3.1.0'
+__version__ = '3.0.3'
 
 WIN = True if sys.platform in ('win32', 'cygwin') else False
 PROTOCOL_VERSION = 8
@@ -63,7 +68,8 @@ type_to_letter = {
     'ftDate': 'i',
     'ftDateTime': 'q',
     'ftVarchar': 's',
-    'ftBlob': 's'
+    'ftBlob': 's',
+    'ftNumeric': '4i'
 }
 
 ## Setup Logging and debug prints
@@ -207,6 +213,25 @@ def datetime_to_long(dt: datetime) -> int:
     time_int: int = hour * 3600 * 1000 + minute * 60 * 1000 + second * 1000 + msecond // 1000
 
     return (date_int << 32) + time_int
+
+tenth = Decimal("0.1")
+if getcontext().prec < 38:
+    getcontext().prec = 38
+def sq_numeric_to_decimal(bigint: int, scale: int) -> Decimal:
+    if getcontext().prec < 38:
+        getcontext().prec = 38
+    return Decimal(bigint) * (tenth ** scale)
+
+def decimal_to_sq_numeric(dec: Decimal, scale: int) -> int: # returns bigint
+    if getcontext().prec < 38:
+        getcontext().prec = 38
+    res = dec * (10 ** scale)
+    return ceil(res) if res > 0 else floor(res)
+
+def bytes_to_bigint(bytes) -> int:
+    c = unpack('4i', bytes)
+    res = ((c[3] << 96) + ((c[2] & 0xffffffff) << 64) + ((c[1] & 0xffffffff) << 32) + (c[0] & 0xffffffff))
+    return res
 
 try:
     from cythonized import date_to_int as pydate_to_int, datetime_to_long as pydt_to_long, sq_date_to_py_date as date_to_py, sq_datetime_to_py_datetime as dt_to_py
@@ -437,13 +462,12 @@ class ColumnBuffer:
         buf_views = [memoryview(buf_map) for buf_map in buf_maps]
         
     
-    def pack_columns(self, cols, capacity, col_types, col_sizes, col_nul, col_tvc):
+    def pack_columns(self, cols, capacity, col_types, col_sizes, col_nul, col_tvc, col_scales):
         ''' Packs the buffer starting a given index with the column. 
             Returns number of bytes packed '''
 
         pool_params = zip(cols, range(len(col_types)), col_types,
-                          col_sizes, col_nul, col_tvc)
-
+                          col_sizes, col_nul, col_tvc, col_scales)
         if WIN:
             packed_cols = []
             for param_tup in pool_params:
@@ -481,7 +505,7 @@ def _pack_column(col_tup, return_actual_data = True):
         Returns number of bytes packed '''
 
     global CYTHON
-    col, col_idx, col_type, size, nullable, tvc = col_tup
+    col, col_idx, col_type, size, nullable, tvc, scale = col_tup
     col = list(col)
     capacity = len(col)
     buf_idx = 0
@@ -556,7 +580,8 @@ def _pack_column(col_tup, return_actual_data = True):
         'ftDate': None,     #updated separately
         'ftDateTime': None, #updated separately
         'ftVarchar': ''.ljust(size, ' '),
-        'ftBlob': ''
+        'ftBlob': '',
+        'ftNumeric': 0
     }
 
     if nullable:
@@ -626,6 +651,12 @@ def _pack_column(col_tup, return_actual_data = True):
         except AttributeError as e:
             pack_exception(e)
 
+    elif col_type == 'ftNumeric':
+        try:
+            col = (decimal_to_sq_numeric(Decimal(num), scale) for num in col)
+        except AttributeError as e:
+            pack_exception(e)
+
     elif col_type in ('ftBool', 'ftUByte', 'ftShort', 'ftInt', 'ftLong','ftFloat', 'ftDouble'):
         pass
     else:
@@ -640,6 +671,11 @@ def _pack_column(col_tup, return_actual_data = True):
         buf_map.seek(buf_idx)
         buf_map.write(packed_strings)
         buf_idx += len(packed_strings)
+    elif col_type == 'ftNumeric':
+        buf_map.seek(buf_idx)
+        all = functools.reduce(operator.iconcat, (num.to_bytes(16, byteorder='little', signed=True) for num in col), [])
+        buf_map.write(bytearray(all))
+        buf_idx += len(all)
     else:
         try:
             if CYTHON:
@@ -842,6 +878,7 @@ class Connection:
         if self.statement_type == 'INSERT':
             self.col_types = [type_tup[0] for type_tup in self.col_type_tups]
             self.col_sizes = [type_tup[1] for type_tup in self.col_type_tups]
+            self.col_scales = [type_tup[2] for type_tup in self.col_type_tups]
             self.row_size = sum(self.col_sizes) + sum(
                 self.col_nul) + 4 * sum(self.col_tvc)
             self.rows_per_flush = ROWS_PER_FLUSH
@@ -865,7 +902,6 @@ class Connection:
         self.s.validate_response(res, "colSzs")
         fetch_meta = json.loads(res)
         num_rows_fetched, column_sizes = fetch_meta['rows'], fetch_meta['colSzs']
-
         if num_rows_fetched == 0:
             self.close_statement()
             return num_rows_fetched
@@ -891,8 +927,7 @@ class Connection:
                 column.append(unsorted_data_columns.pop(0).cast('i'))
 
             column.append(unsorted_data_columns.pop(0))
-
-            if type_tup[0] not in ('ftVarchar', 'ftBlob'):
+            if type_tup[0] not in ('ftVarchar', 'ftBlob', 'ftNumeric'):
                 column[-1] = column[-1].cast(type_to_letter[type_tup[0]])
             else:
                 column[-1] = column[-1].tobytes()
@@ -923,13 +958,19 @@ class Connection:
                 varchar_size = self.col_type_tups[idx][1]
                 col = [
                     raw_col_data[-1][idx:idx + varchar_size].decode(
-                        self.varchar_enc).rstrip('\x00').rstrip()
+                        self.varchar_enc, "ignore").replace('\x00', '').rstrip()
                     for idx in range(0, len(raw_col_data[-1]), varchar_size)
                 ]
             elif self.col_type_tups[idx][0] == "ftDate":
                 col = [sq_date_to_py_date(d) for d in raw_col_data[-1]]
             elif self.col_type_tups[idx][0] == "ftDateTime":
                 col = [sq_datetime_to_py_datetime(d) for d in raw_col_data[-1]]
+            elif self.col_type_tups[idx][0] == "ftNumeric":
+                scale = self.col_type_tups[idx][2]
+                col = [
+                    sq_numeric_to_decimal(bytes_to_bigint(raw_col_data[-1][idx:idx + 16]), scale)
+                    for idx in range(0, len(raw_col_data[-1]), 16)
+                ]
 
             else:
                 col = raw_col_data[-1]
@@ -978,7 +1019,7 @@ class Connection:
         # Send columns and metadata to be packed into our buffer
         packed_cols = self.buffer.pack_columns(cols, capacity, self.col_types,
                                                self.col_sizes, self.col_nul,
-                                               self.col_tvc)
+                                               self.col_tvc, self.col_scales)
         del cols
         byte_count = sum(len(packed_col) for packed_col in packed_cols)
 
@@ -1040,7 +1081,8 @@ class Connection:
             'ftDate':     pa.timestamp('ns'),
             'ftDateTime': pa.timestamp('ns'),
             'ftVarchar':  pa.string(),
-            'ftBlob':     pa.utf8()
+            'ftBlob':     pa.utf8(),
+            'ftNumeric':  pa.decimal128(28, 11)
         }
 
         start = time.time()
@@ -1064,7 +1106,7 @@ class Connection:
         for col_type, col in zip(sqream_col_types, csv_arrow):
             # Only one chunk after combine_chunks()
             col = col.chunks[0]
-            if col_type in  ('ftVarchar', 'ftBlob', 'ftDate', 'ftDateTime'):
+            if col_type in  ('ftVarchar', 'ftBlob', 'ftDate', 'ftDateTime', 'ftNumeric'):
                 col = col.to_pandas()
             else:
                 col = col.to_numpy()
@@ -1127,8 +1169,8 @@ class Connection:
                 col_type_tup[0]]  # Convert SQream type to DBAPI identifier
             display_size = internal_size = col_type_tup[
                 1]  # Check if other size is available from API
-            precision = None
-            scale = None
+            precision = 38
+            scale = col_type_tup[2]
 
             self.description.append(
                 (col_name, type_code, display_size, internal_size, precision,
@@ -1225,7 +1267,7 @@ class Connection:
         # Get relevant part of parsed rows and reduce storage and counter
         if data_as == 'rows':
             res = self.parsed_rows[0:size if size != -1 else None]
-            del self.parsed_rows[:size if size!= -1 else None]
+            del self.parsed_rows[:size if size != -1 else None]
         
         if logger.isEnabledFor(logging.INFO):
             logger.info(f'Fetched {size} rows')
@@ -1409,7 +1451,8 @@ typecodes = {
     'ftDate': 'DATETIME',
     'ftDateTime': 'DATETIME',
     'ftVarchar': 'STRING',
-    'ftBlob': 'STRING'
+    'ftBlob': 'STRING',
+    'ftNumeric': 'NUMBER'
 }
 
 
