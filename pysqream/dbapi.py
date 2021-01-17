@@ -1,6 +1,6 @@
 '''               ----  SQream Native Python API  ----              '''
 
-import socket, json, ssl, logging, time, traceback, asyncio, sys, array, _thread as thread
+import socket, json, ssl, logging, time, traceback, asyncio, sys, array, _thread as thread, threading
 from struct import pack, pack_into, unpack, error as struct_error
 from datetime import datetime, date, time as t
 import multiprocessing as mp
@@ -8,11 +8,12 @@ from mmap import mmap
 from functools import reduce
 from collections import deque
 from queue import Queue, Empty
-from concurrent.futures import ProcessPoolExecutor
 from decimal import Decimal, getcontext
 from math import floor, ceil
 import functools
 import operator
+import re
+from packaging import version
 try:
     import cython
     CYTHON = True
@@ -282,6 +283,17 @@ def numpy_datetime_str_to_tup2(numpy_dt):
 
     return year, month, day, hour, mins, sec, ns
 
+## Version compare
+def version_compare(v1, v2) :
+    if (v2 is None or v1 is None):
+        return None
+    r1 = re.search("\\d{4}(\\.\\d+)+", v1)
+    r2 = re.search("\\d{4}(\\.\\d+)+", v2)
+    if (r2 is None or r1 is None):
+        return None
+    v1 = version.parse(r1.group(0))
+    v2 = version.parse(r2.group(0))
+    return -1 if v1 < v2 else 1 if v1 > v2 else 0
 
 
 ## Socket related
@@ -437,15 +449,6 @@ class ColumnBuffer:
 
     def __init__(self, size=BUFFER_SIZE):
         global buf_maps, buf_views
-        if not WIN:
-            try:
-                self.pool.close()
-                self.pool.join()
-            except Exception as e:
-                pass
-            
-            l = mp.Lock()
-            self.pool = mp.Pool(initializer=init_lock, initargs=(l,))
 
 
 
@@ -456,7 +459,15 @@ class ColumnBuffer:
 
 
     def init_buffers(self, col_sizes, col_nul):
-
+        if not WIN:
+            try:
+                self.pool.close()
+                self.pool.join()
+            except Exception as e:
+                pass
+            
+            l = mp.Lock()
+            self.pool = mp.Pool(initializer=init_lock, initargs=(l,))
         self.clear()
         buf_maps = [mmap(-1, ((1 if col_nul else 0)+(size if size!=0 else 104)) * ROWS_PER_FLUSH) for size in col_sizes]
         buf_views = [memoryview(buf_map) for buf_map in buf_maps]
@@ -489,14 +500,12 @@ class ColumnBuffer:
 
     def close(self):
         self.clear()
-        '''
         try:
             self.pool.close()
             self.pool.join()
         except Exception as e:
             # print (f'testing pool closing, got: {e}')
             pass # no pool was initiated
-        '''
 
 
 ## A top level packing function for Python's MP compatibility
@@ -690,6 +699,45 @@ def _pack_column(col_tup, return_actual_data = True):
 
     return buf_map[0:buf_idx] if return_actual_data else (0, buf_idx)
 
+class PingLoop(threading.Thread):
+    def __init__(self, conn):
+        self.conn = conn
+        super(PingLoop, self).__init__()
+        self.done = False
+
+    def run(self):
+        conn = self.conn
+        json_cmd = '{"ping": "ping"}'
+        while self.sleep():
+            try:
+                conn.s.send(conn.s.generate_message_header(len(json_cmd)) + json_cmd.encode('utf8'))
+            except:
+                self.done = True
+
+    def halt(self):
+        self.done = True
+
+    def sleep(self):
+        if self.done:
+            return False
+        count = 0
+        while (count < 100):
+            count = count + 1
+            time.sleep(.1)
+            if self.done:
+                return False
+        return True
+
+def _start_ping_loop(self):
+    self.ping_loop = PingLoop(self)
+    self.ping_loop.start()
+
+def _end_ping_loop(self):
+    if (self.ping_loop is not None):
+        self.ping_loop.halt()
+        self.ping_loop.join()
+    self.ping_loop = None
+
 
 class Connection:
     ''' Connection class used to interact with SQream '''
@@ -701,6 +749,7 @@ class Connection:
         self.buffer = ColumnBuffer(BUFFER_SIZE)  # flushing buffer every BUFFER_SIZE bytes
         self.row_size = 0
         self.rows_per_flush = 0
+        self.version = None
         self.stmt_id = None  # For error handling when called out of order
         self.statement_type = None
         self.open_statement = False
@@ -708,6 +757,7 @@ class Connection:
         self.orig_ip, self.orig_port, self.clustered, self.use_ssl = ip, port, clustered, use_ssl
         self.reconnect_attempts, self.reconnect_interval = reconnect_attempts, reconnect_interval
         self.base_connection = base_connection
+        self.ping_loop = None
 
         self._open_connection(clustered, use_ssl)
         self.arraysize = FETCH_MANY_DEFAULT
@@ -787,6 +837,8 @@ class Connection:
         res = json.loads(res)
         try:
             self.connection_id = res['connectionId']
+            if 'version' in res:
+                self.version = res['version']
         except KeyError as e:
             log_and_raise(ProgrammingError, f"Error connecting to database: {res['error']}")
 
@@ -811,7 +863,6 @@ class Connection:
         # Attempts failed
         log_and_raise(ConnectionRefusedError, 'Reconnection attempts to sqreamd failed')
 
-
     def execute_sqream_statement(self, stmt):
         ''' '''
 
@@ -824,6 +875,9 @@ class Connection:
         self.more_to_fetch = True    
 
         self.stmt_id = json.loads(self._send_string('{"getStatementId" : "getStatementId"}'))["statementId"]
+        comp = version_compare(self.version, "2020.3.1")
+        if (comp is not None and comp > -1):
+            _start_ping_loop(self)
         stmt_json = json.dumps({"prepareStatement": stmt, "chunkSize": DEFAULT_CHUNKSIZE})
         res = self._send_string(stmt_json)
 
@@ -1043,6 +1097,7 @@ class Connection:
             self._send_string('{"closeStatement": "closeStatement"}')
             self.open_statement = False
             self.buffer.close()
+            _end_ping_loop(self)
 
         if logger.isEnabledFor(logging.INFO):
             logger.info(f'Done executing statement {self.stmt_id} over connection {self.connection_id}')
@@ -1056,6 +1111,7 @@ class Connection:
         self._send_string('{"closeConnection":  "closeConnection"}')
         self.s.close()
         self.buffer.close()
+        _end_ping_loop(self)
         self.closed = True
         self.base_conn_open[0] = False if self.base_connection else True  
 
