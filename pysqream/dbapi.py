@@ -43,7 +43,7 @@ else:
         'ftNumeric':  pa.decimal128(38, 11)
     }
 
-__version__ = '3.0.3'
+__version__ = '3.1.3'
 
 WIN = True if sys.platform in ('win32', 'cygwin') else False
 PROTOCOL_VERSION = 8
@@ -153,7 +153,7 @@ def pad_dates(num):
 
 def sq_date_to_py_date(sqream_date, date_convert_func=date):
 
-    if sqream_date is None:
+    if sqream_date is None or sqream_date == 0:
         return None
 
     year = (10000 * sqream_date + 14780) // 3652425
@@ -176,12 +176,15 @@ def sq_datetime_to_py_datetime(sqream_datetime, dt_convert_func=datetime):
     ''' Getting the datetime items involves breaking the long into the date int and time it holds
         The date is extracted in the above, while the time is extracted here  '''
 
-    if sqream_datetime is None:
+    if sqream_datetime is None or sqream_datetime == 0:
         return None
 
     date_part = sqream_datetime >> 32
     time_part = sqream_datetime & 0xffffffff
     date_part = sq_date_to_py_date(date_part)
+
+    if date_part is None:
+        return None
 
     msec = time_part % 1000
     sec = (time_part // 1000) % 60
@@ -706,11 +709,12 @@ class PingLoop(threading.Thread):
         self.done = False
 
     def run(self):
-        conn = self.conn
         json_cmd = '{"ping": "ping"}'
+        binary = conn.s.generate_message_header(len(json_cmd)) + json_cmd.encode('utf8');
         while self.sleep():
+            conn = self.conn
             try:
-                conn.s.send(conn.s.generate_message_header(len(json_cmd)) + json_cmd.encode('utf8'))
+                conn.s.send(binary)
             except:
                 self.done = True
 
