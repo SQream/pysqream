@@ -710,7 +710,7 @@ class PingLoop(threading.Thread):
 
     def run(self):
         json_cmd = '{"ping": "ping"}'
-        binary = conn.s.generate_message_header(len(json_cmd)) + json_cmd.encode('utf8');
+        binary = self.conn.s.generate_message_header(len(json_cmd)) + json_cmd.encode('utf8');
         while self.sleep():
             conn = self.conn
             try:
