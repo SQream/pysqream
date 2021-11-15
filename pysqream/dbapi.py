@@ -43,7 +43,7 @@ else:
         'ftNumeric':  pa.decimal128(38, 11)
     }
 
-__version__ = '3.1.4'
+__version__ = '3.1.5'
 
 WIN = True if sys.platform in ('win32', 'cygwin') else False
 PROTOCOL_VERSION = 8
@@ -709,7 +709,7 @@ class PingLoop(threading.Thread):
         self.done = False
 
     def run(self):
-        json_cmd = '{"ping": "ping"}'
+        json_cmd = '{"ping":"ping"}'
         binary = self.conn.s.generate_message_header(len(json_cmd)) + json_cmd.encode('utf8');
         while self.sleep():
             conn = self.conn
@@ -1007,7 +1007,7 @@ class Connection:
         for idx, raw_col_data in enumerate(self.data_columns):
             # Extract data according to column type
             if self.col_tvc[idx]:  # nvarchar
-                nvarc_sizes = raw_col_data[1]
+                nvarc_sizes = raw_col_data[1 if self.col_nul[idx] else 0]
                 col = [
                     raw_col_data[-1][start:end].decode('utf8')
                     for (start, end) in lengths_to_pairs(nvarc_sizes)
