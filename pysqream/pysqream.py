@@ -14,12 +14,15 @@ import functools
 import operator
 import re
 from packaging import version
+
+# Cython (Optional optimization) imports
 try:
     import cython
     CYTHON = True
 except:
     CYTHON = False
 
+# Pyarrow (Optional fast csv loading) imports
 try:
     import pyarrow as pa
     from pyarrow import csv
@@ -315,8 +318,16 @@ class SQSocket:
 
         self.s = socket.socket()
         if self.use_ssl:
-            self.s = ssl.wrap_socket(self.s)
-
+            # Python 3.10 SSL fix
+            # 3.10 has increased the defulat TLS security settings, need to downgrade to be compatible with current versions of sqream
+            if sys.version_info.minor >=10: 
+                self.ssl_context = ssl._create_unverified_context()
+                self.ssl_context.set_ciphers('DEFAULT')  #'AES256-SHA', 'RSA'
+                # self.ssl_context.verify_mode = ssl.VerifyMode.CERT_NONE
+                # self.ssl_context.options &= ~ssl.OP_NO_SSLv3 
+                self.s = self.ssl_context.wrap_socket(self.s, server_hostname=ip)
+            else:
+                self.s = ssl.wrap_socket(self.s)
         try:
             self.timeout(10)
             self.s.connect((ip, port))
@@ -327,7 +338,7 @@ class SQSocket:
         except Exception as e:
             if 'timeout' in repr(e):
                 log_and_raise(Exception, "Timeout when connecting to SQream, perhaps wrong IP?")
-            elif '[SSL: UNKNOWN_PROTOCOL] unknown protocol' in repr(e):
+            elif '[SSL: UNKNOWN_PROTOCOL] unknown protocol' in repr(e) or '[SSL: WRONG_VERSION_NUMBER]' in repr(e):
                  log_and_raise(Exception, 'Using use_ssl=True but connected to non ssl sqreamd port')
             elif 'EOF occurred in violation of protocol (_ssl.c:' in repr(e):
                  log_and_raise(Exception, 'Using use_ssl=True but connected to non ssl sqreamd port') 
@@ -968,10 +979,7 @@ class Connection:
         self.s.receive(10)
 
         # Get data as memoryviews of bytearrays.
-        unsorted_data_columns = [
-            memoryview(self.s.receive(size))
-            for idx, size in enumerate(column_sizes)
-        ]
+        unsorted_data_columns = [memoryview(self.s.receive(size)) for idx, size in enumerate(column_sizes)]
 
         # Sort by columns, taking a memoryview and casting to the proper type
         self.data_columns = []
@@ -1379,6 +1387,13 @@ class Connection:
         if self.closed:
             log_and_raise(ProgrammingError, "Trying to close a connection that's already closed")
 
+        if self.base_connection:
+            for cursor in self.cursors:
+                try:
+                    cursor.close()
+                except:
+                    pass
+        
         self.close_statement()
         self.close_connection()
         self.closed = True
