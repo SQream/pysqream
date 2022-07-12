@@ -1,14 +1,14 @@
 ## Running the tests
-`python3 dbapi_tests.py`
+`python3 pysqream_tests.py`
 
 ## Checking test coverage
 Using `coverage` package:
 
 `pip3 install coverage`
-
+ 
 To run the test from the test folder, saving the html report in a folder `test_report`:
 
-`coverage run dbapi_tests.py  && coverage html --include='../pysqream/dbapi.py' -d test_report`
+`coverage run pysqream_tests.py  && coverage html --include='../pysqream/dbapi.py' -d test_report`
 
 To see the report with your web browser:
 
@@ -21,7 +21,7 @@ Using `diff-cover` package:
 
 Run the coverage test on your code and generate an xml report
 
-`coverage run dbapi_tests.py  && coverage xml`
+`coverage run pysqream_tests.py  && coverage xml`
 
 Then generate html of new uncovered code:
 
