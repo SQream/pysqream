@@ -1,3 +1,13 @@
+Ver. 3.1.6
+------------
+*12/07/2022*
+
+* Bug fix -  closing a connection didn't close open cursors as well
+* New test - Running a query and not closing a cursor directly
+* Tests fix - Running tests on a different machine
+* Added Python 3.10 support for SSL connections
+* Some clearer printouts
+
 Ver. 3.0.4
 ------------
 *17/08/2020*
