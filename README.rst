@@ -5,7 +5,7 @@
 Python connector for SQream DB
 ===================================
 
-* **Version:**  3.1.6
+* **Version:**  3.1.7
 
 * **Supported SQream DB versions:** >= 2.13, 2019.2 or newer recommended
 
@@ -84,14 +84,7 @@ Some distributions of Python do not include OpenSSL. The Python connector relies
    
       $ sudo apt-get install libssl-dev libffi-dev -y
 
-4. Cython (optional)
-^^^^^^^^^^^^^^^^^^^^^^^^
 
-Optional but recommended is Cython, which improves performance of Python applications.
-
-   .. code-block:: console
-   
-      $ pip install cython
 
 Install via pip
 -----------------
