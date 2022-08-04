@@ -15,12 +15,13 @@ import operator
 import re
 from packaging import version
 
+# Cython IS NOT SUPPORTED
 # Cython (Optional optimization) imports
-try:
-    import cython
-    CYTHON = True
-except:
-    CYTHON = False
+# try:
+#     import cython
+#     CYTHON = True
+# except:
+CYTHON = False
 
 # Pyarrow (Optional fast csv loading) imports
 try:
@@ -242,23 +243,23 @@ def decimal_to_sq_numeric(dec: Decimal, scale: int) -> int: # returns bigint
     return ceil(res) if res > 0 else floor(res)
 
 
-try:
-    from cythonized import date_to_int as pydate_to_int, datetime_to_long as pydt_to_long, sq_date_to_py_date as date_to_py, sq_datetime_to_py_datetime as dt_to_py
-    logger.debug("Using cython")
-    CYTHON = True
-except:
-    if CYTHON:
-        try:
-            import pyximport; py_importer, pyx_importer = pyximport.install(pyimport=True, language_level=3, inplace=True)
-            from cythonized import date_to_int as pydate_to_int, datetime_to_long as pydt_to_long, sq_date_to_py_date as date_to_py, sq_datetime_to_py_datetime as dt_to_py
-            logger.debug("Using cython with pyximport")
-        except:
-            try:
-                CYTHON = False
-                pyximport.uninstall(py_importer, pyx_importer)
-                logger.debug("Cython is not installed")
-            except:
-                logger.debug("Cython is not installed and can't uninstall pyximport")
+# try:
+#     from cythonized import date_to_int as pydate_to_int, datetime_to_long as pydt_to_long, sq_date_to_py_date as date_to_py, sq_datetime_to_py_datetime as dt_to_py
+#     logger.debug("Using cython")
+#     CYTHON = True
+# except:
+#     if CYTHON:
+#         try:
+#             import pyximport; py_importer, pyx_importer = pyximport.install(pyimport=True, language_level=3, inplace=True)
+#             from cythonized import date_to_int as pydate_to_int, datetime_to_long as pydt_to_long, sq_date_to_py_date as date_to_py, sq_datetime_to_py_datetime as dt_to_py
+#             logger.debug("Using cython with pyximport")
+#         except:
+#             try:
+#                 CYTHON = False
+#                 pyximport.uninstall(py_importer, pyx_importer)
+#                 logger.debug("Cython is not installed")
+#             except:
+#                 logger.debug("Cython is not installed and can't uninstall pyximport")
 
 
 def lengths_to_pairs(nvarc_lengths):
