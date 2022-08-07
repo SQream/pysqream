@@ -227,6 +227,7 @@ tenth = Decimal("0.1")
 if getcontext().prec < 38:
     getcontext().prec = 38
 
+
 def sq_numeric_to_decimal(bigint_as_bytes: bytes, scale: int) -> Decimal:
     
     getcontext().prec = 38
@@ -242,6 +243,11 @@ def decimal_to_sq_numeric(dec: Decimal, scale: int) -> int: # returns bigint
     res = dec * (10 ** scale)
     return ceil(res) if res > 0 else floor(res)
 
+
+def bytes_to_bigint(bytes) -> int:
+    c = unpack('4i', bytes)
+    res = ((c[3] << 96) + ((c[2] & 0xffffffff) << 64) + ((c[1] & 0xffffffff) << 32) + (c[0] & 0xffffffff))
+    return res
 
 # try:
 #     from cythonized import date_to_int as pydate_to_int, datetime_to_long as pydt_to_long, sq_date_to_py_date as date_to_py, sq_datetime_to_py_datetime as dt_to_py
@@ -272,7 +278,6 @@ def lengths_to_pairs(nvarc_lengths):
         idx = new_idx
 
 
-
 def numpy_datetime_str_to_tup(numpy_dt):
     ''' '1970-01-01T00:00:00.699148800' '''
 
@@ -281,10 +286,7 @@ def numpy_datetime_str_to_tup(numpy_dt):
     year, month, day = date_part.split('-')
     hms, ns = time_part.split('.')
     hour, mins, sec = hms.split(':')
-
-
     return year, month, day, hour, mins, sec, ns
-
 
 
 def numpy_datetime_str_to_tup2(numpy_dt):
@@ -295,8 +297,6 @@ def numpy_datetime_str_to_tup2(numpy_dt):
 
     return dt.year, dt.month, dt.day
 
-
-    return year, month, day, hour, mins, sec, ns
 
 ## Version compare
 def version_compare(v1, v2) :
@@ -1043,7 +1043,7 @@ class Connection:
             elif self.col_type_tups[idx][0] == "ftNumeric":
                 scale = self.col_type_tups[idx][2]
                 col = [
-                    sq_numeric_to_decimal(raw_col_data[-1][idx:idx + 16], scale)
+                    sq_numeric_to_decimal(bytes_to_bigint(raw_col_data[-1][idx:idx + 16]), scale)
                     for idx in range(0, len(raw_col_data[-1]), 16)
                 ]
 
