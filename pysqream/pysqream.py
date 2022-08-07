@@ -1043,7 +1043,7 @@ class Connection:
             elif self.col_type_tups[idx][0] == "ftNumeric":
                 scale = self.col_type_tups[idx][2]
                 col = [
-                    sq_numeric_to_decimal(bytes_to_bigint(raw_col_data[-1][idx:idx + 16]), scale)
+                    sq_numeric_to_decimal(raw_col_data[-1][idx:idx + 16], scale)
                     for idx in range(0, len(raw_col_data[-1]), 16)
                 ]
 
