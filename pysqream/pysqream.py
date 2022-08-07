@@ -47,7 +47,7 @@ else:
         'ftNumeric':  pa.decimal128(38, 11)
     }
 
-__version__ = '3.1.6'
+__version__ = '3.1.8'
 
 WIN = True if sys.platform in ('win32', 'cygwin') else False
 PROTOCOL_VERSION = 8
