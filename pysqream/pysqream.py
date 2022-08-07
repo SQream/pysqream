@@ -244,10 +244,10 @@ def decimal_to_sq_numeric(dec: Decimal, scale: int) -> int: # returns bigint
     return ceil(res) if res > 0 else floor(res)
 
 
-def bytes_to_bigint(bytes) -> int:
-    c = unpack('4i', bytes)
-    res = ((c[3] << 96) + ((c[2] & 0xffffffff) << 64) + ((c[1] & 0xffffffff) << 32) + (c[0] & 0xffffffff))
-    return res
+# def bytes_to_bigint(bytes) -> int:
+#     c = unpack('4i', bytes)
+#     res = ((c[3] << 96) + ((c[2] & 0xffffffff) << 64) + ((c[1] & 0xffffffff) << 32) + (c[0] & 0xffffffff))
+#     return res
 
 # try:
 #     from cythonized import date_to_int as pydate_to_int, datetime_to_long as pydt_to_long, sq_date_to_py_date as date_to_py, sq_datetime_to_py_datetime as dt_to_py
@@ -1043,7 +1043,8 @@ class Connection:
             elif self.col_type_tups[idx][0] == "ftNumeric":
                 scale = self.col_type_tups[idx][2]
                 col = [
-                    sq_numeric_to_decimal(bytes_to_bigint(raw_col_data[-1][idx:idx + 16]), scale)
+                    # sq_numeric_to_decimal(bytes_to_bigint(raw_col_data[-1][idx:idx + 16]), scale)
+                    sq_numeric_to_decimal(raw_col_data[-1][idx:idx + 16], scale)
                     for idx in range(0, len(raw_col_data[-1]), 16)
                 ]
 
