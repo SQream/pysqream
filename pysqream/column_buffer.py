@@ -4,6 +4,11 @@ from logger import *
 import traceback
 import array
 from struct import pack_into, error as struct_error
+import multiprocessing as mp
+from mmap import mmap
+from functools import reduce
+import functools
+import operator
 
 
 def init_lock(l):

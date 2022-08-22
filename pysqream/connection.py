@@ -6,6 +6,8 @@ from globals import BUFFER_SIZE, ROWS_PER_FLUSH, DEFAULT_CHUNKSIZE, FETCH_MANY_D
 from logger import *
 import json
 import time
+from queue import Queue, Empty
+import utils
 
 
 # Cython IS NOT SUPPORTED
@@ -176,7 +178,7 @@ class Connection:
         self.more_to_fetch = True
 
         self.stmt_id = json.loads(self._send_string('{"getStatementId" : "getStatementId"}'))["statementId"]
-        comp = version_compare(self.version, "2020.3.1")
+        comp = utils.version_compare(self.version, "2020.3.1")
         if (comp is not None and comp > -1):
             _start_ping_loop(self)
         stmt_json = json.dumps({"prepareStatement": stmt, "chunkSize": DEFAULT_CHUNKSIZE})
@@ -728,16 +730,3 @@ def _end_ping_loop(self):
         self.ping_loop.halt()
         self.ping_loop.join()
     self.ping_loop = None
-
-
-## Version compare
-def version_compare(v1, v2) :
-    if (v2 is None or v1 is None):
-        return None
-    r1 = re.search("\\d{4}(\\.\\d+)+", v1)
-    r2 = re.search("\\d{4}(\\.\\d+)+", v2)
-    if (r2 is None or r1 is None):
-        return None
-    v1 = version.parse(r1.group(0))
-    v2 = version.parse(r2.group(0))
-    return -1 if v1 < v2 else 1 if v1 > v2 else 0
