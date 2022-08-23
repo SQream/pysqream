@@ -8,6 +8,9 @@ import json
 import time
 from queue import Queue, Empty
 import utils
+from struct import pack, pack_into, unpack, error as struct_error
+import socket
+from casting import date_to_int as pydate_to_int, datetime_to_long as pydt_to_long, sq_date_to_py_date as date_to_py, sq_datetime_to_py_datetime as dt_to_py
 
 
 # Cython IS NOT SUPPORTED
@@ -730,3 +733,33 @@ def _end_ping_loop(self):
         self.ping_loop.halt()
         self.ping_loop.join()
     self.ping_loop = None
+
+class Error(Exception):
+    pass
+
+class Warning(Exception):
+    pass
+
+class InterfaceError(Error):
+    pass
+
+class DatabaseError(Error):
+    pass
+
+class DataError(DatabaseError):
+    pass
+
+class OperationalError(DatabaseError):
+    pass
+
+class IntegrityError(DatabaseError):
+    pass
+
+class InternalError(DatabaseError):
+    pass
+
+class ProgrammingError(DatabaseError):
+    pass
+
+class NotSupportedError(DatabaseError):
+    pass

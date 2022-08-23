@@ -1,10 +1,11 @@
 import casting as c
-from globals import buf_maps, buf_views, WIN, BUFFER_SIZE, ROWS_PER_FLUSH, VARCHAR_ENCODING, type_to_letter
+from globals import buf_maps, buf_views, WIN, BUFFER_SIZE, ROWS_PER_FLUSH, VARCHAR_ENCODING, type_to_letter, ARROW
 from logger import *
 import traceback
 import array
 from struct import pack_into, error as struct_error
 import multiprocessing as mp
+import numpy as np
 from mmap import mmap
 from functools import reduce
 import functools
@@ -265,3 +266,12 @@ def _pack_column(col_tup, return_actual_data=True):
         buf_idx += capacity * size
 
     return buf_map[0:buf_idx] if return_actual_data else (0, buf_idx)
+
+class Error(Exception):
+    pass
+
+class DatabaseError(Error):
+    pass
+
+class ProgrammingError(DatabaseError):
+    pass

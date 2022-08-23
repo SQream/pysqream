@@ -24,6 +24,29 @@ elif MAC:
 else:
     get_ram = utils.get_ram_linux()
 
+try:
+    import pyarrow as pa
+    from pyarrow import csv
+    import numpy as np
+    ARROW = True
+except:
+    ARROW = False
+else:
+    sqream_to_pa = {
+        'ftBool':     pa.bool_(),
+        'ftUByte':    pa.uint8(),
+        'ftShort':    pa.int16(),
+        'ftInt':      pa.int32(),
+        'ftLong':     pa.int64(),
+        'ftFloat':    pa.float32(),
+        'ftDouble':   pa.float64(),
+        'ftDate':     pa.timestamp('ns'),
+        'ftDateTime': pa.timestamp('ns'),
+        'ftVarchar':  pa.string(),
+        'ftBlob':     pa.utf8(),
+        'ftNumeric':  pa.decimal128(38, 11)
+    }
+
 # For encoding data to be sent to SQream using struct.pack() and for type checking by _set_val()
 type_to_letter = {
     'ftBool': '?',
