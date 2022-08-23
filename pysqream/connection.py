@@ -2,7 +2,7 @@ import column_buffer as cb
 import SQSocket as sqs
 import ping as p
 import casting as c
-from globals import BUFFER_SIZE, ROWS_PER_FLUSH, DEFAULT_CHUNKSIZE, FETCH_MANY_DEFAULT, type_to_letter
+from globals import BUFFER_SIZE, ROWS_PER_FLUSH, DEFAULT_CHUNKSIZE, FETCH_MANY_DEFAULT, type_to_letter, typecodes
 from logger import *
 import json
 import time

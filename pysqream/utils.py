@@ -1,5 +1,6 @@
 import re
 from packaging import version
+from subprocess import Popen, PIPE
 
 
 def get_ram_linux():

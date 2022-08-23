@@ -2,6 +2,11 @@ from globals import dbg
 import logging
 
 
+logger = logging.getLogger("dbapi_logger")
+logger.setLevel(logging.DEBUG)
+logger.disabled = True
+
+
 def printdbg(*debug_print):
     if dbg:
         print(*debug_print)
