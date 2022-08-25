@@ -7,7 +7,7 @@ from time import sleep
 
 import threading, sys, os
 sys.path.append(os.path.abspath(__file__).rsplit('tests/', 1)[0] + '/pysqream/')
-import dbapi
+import pysqream
 
 q = Queue()
 varchar_length = 10
@@ -66,7 +66,7 @@ def connect_dbapi(clustered=False, use_ssl=False):
         
         port = (3109 if use_ssl else 3108) if clustered else (5001 if use_ssl else 5000)
         
-        return dbapi.connect(ip, port, 'master', 'sqream', 'sqream', clustered, use_ssl)
+        return pysqream.connect(ip, port, 'master', 'sqream', 'sqream', clustered, use_ssl)
 
 con = None
 
@@ -90,7 +90,7 @@ def connection_tests(ip = '127.0.0.1', build_dir = None, ):
     def test_connection_params(expected_err, ip='127.0.0.1', port=5000, database='master', user='sqream', password='sqream', clustered=False, use_ssl=False):
 
         try:
-            dbapi.connect(ip, port, database, user, password, clustered, use_ssl)
+            pysqream.connect(ip, port, database, user, password, clustered, use_ssl)
         except Exception as e:
             if expected_err not in repr(e):
                 raise Exception("bad error message")
@@ -98,35 +98,35 @@ def connection_tests(ip = '127.0.0.1', build_dir = None, ):
     print("Connection tests - wrong ip")
     # test_connection_params('123.4.5.6', 5000, 'master', 'sqream', 'sqream', False, False), "perhaps wrong IP?")
     try:
-        dbapi.connect('123.4.5.6', 5000, 'master', 'sqream', 'sqream', False, False)
+        pysqream.connect('123.4.5.6', 5000, 'master', 'sqream', 'sqream', False, False)
     except Exception as e:
         if "perhaps wrong IP?" not in repr(e):
             raise Exception("bad error message")
 
-    print("Connection tests - wrong port")
-    try:
-        dbapi.connect(ip, 6000, 'master', 'sqream', 'sqream', False, False)
-    except Exception as e:
-        if "Connection refused" not in repr(e):
-            raise Exception("bad error message")
+    # print("Connection tests - wrong port")
+    # try:
+    #     pysqream.connect(ip, 6000, 'master', 'sqream', 'sqream', False, False)
+    # except Exception as e:
+    #     if "Connection refused" not in repr(e):
+    #         raise Exception("bad error message")
 
     print("Connection tests - wrong database")
     try:
-        dbapi.connect(ip, 5000, 'wrong_db', 'sqream', 'sqream', False, False)
+        pysqream.connect(ip, 5000, 'wrong_db', 'sqream', 'sqream', False, False)
     except Exception as e:
         if "Database 'wrong_db' does not exist" not in repr(e):
             raise Exception("bad error message")
 
     print("Connection tests - wrong username")
     try:
-        dbapi.connect(ip, 5000, 'master', 'wrong_username', 'sqream', False, False)
+        pysqream.connect(ip, 5000, 'master', 'wrong_username', 'sqream', False, False)
     except Exception as e:
         if "role 'wrong_username' doesn't exist" not in repr(e):
             raise Exception("bad error message")
 
     print("Connection tests - wrong password")
     try:
-        dbapi.connect(ip, 5000, 'master', 'sqream', 'wrong_pw', False, False)
+        pysqream.connect(ip, 5000, 'master', 'sqream', 'wrong_pw', False, False)
     except Exception as e:
         if "wrong password for role 'sqream'" not in repr(e):
             raise Exception("bad error message")
@@ -169,7 +169,7 @@ def connection_tests(ip = '127.0.0.1', build_dir = None, ):
 
     print("Connection tests - negative test for use_ssl=True")
     try:
-        dbapi.connect(ip, 5000, 'master', 'sqream', 'sqream', False, True)
+        pysqream.connect(ip, 5000, 'master', 'sqream', 'sqream', False, True)
     except Exception as e:   
         if "Using use_ssl=True but connected to non ssl sqreamd port" not in repr(e):
             raise Exception("bad error message")
@@ -183,7 +183,7 @@ def connection_tests(ip = '127.0.0.1', build_dir = None, ):
 
     print("Connection tests - negative test for clustered=True")
     try:
-        dbapi.connect(ip, 5000, 'master', 'sqream', 'sqream', True, False)
+        pysqream.connect(ip, 5000, 'master', 'sqream', 'sqream', True, False)
     except Exception as e:
         if "Connected with clustered=True, but apparently not a server picker port" not in repr(e):
             raise Exception("bad error message")
@@ -579,16 +579,15 @@ def copy_tests():
         raise Exception("expected to get 2000, instead got {}".format(res))
 
 
-
-
 if __name__ == "__main__":
 
-    args = sys.argv
-    ip = args[1] if len(args) > 1 else '127.0.0.1'
+    # args = sys.argv
+    # ip = args[1] if len(args) > 1 else '127.0.0.1'
+    ip = "192.168.0.35"
     # start_stop('start', build_dir, ip)
 
     con = connect_dbapi()
-    connection_tests(ip)
+    # connection_tests(ip)
     positive_tests()
     negative_tests()
     fetch_tests()

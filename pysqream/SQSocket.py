@@ -139,3 +139,13 @@ class SQSocket:
             # Color first line of SQream error (before the haskell thingy starts) in Red
             response = '\033[31m' + (response.split('\\n')[0] if clean_sqream_errors else response) + '\033[0m'
             log_and_raise(Exception, f'\nexpected response {expected} but got:\n\n {response}')
+
+    def send_string(self, json_cmd, get_response=True, is_text_msg=True, sock=None):
+        ''' Encode a JSON string and send to SQream. Optionally get response '''
+
+        # Generating the message header, and sending both over the socket
+        printdbg(f'string sent: {json_cmd}')
+        self.send(self.generate_message_header(len(json_cmd)) + json_cmd.encode('utf8'))
+
+        if get_response:
+            return self.get_response(is_text_msg)

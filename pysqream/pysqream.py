@@ -1,19 +1,22 @@
 '''               ----  SQream Native Python API  ----              '''
 
-import socket, json, ssl, logging, time, traceback, asyncio, sys, array, _thread as thread, threading
-from struct import pack, pack_into, unpack, error as struct_error
+# import socket, json, ssl, logging, time, traceback, asyncio, sys, array, _thread as thread, threading
+# from struct import pack, pack_into, unpack, error as struct_error
 from datetime import datetime, date, time as t
-import multiprocessing as mp
-from mmap import mmap
-from functools import reduce
-from collections import deque
-from queue import Queue, Empty
-from decimal import Decimal, getcontext
-from math import floor, ceil
-import functools
-import operator
-import re
-from packaging import version
+import time
+from globals import __version__
+from logger import log_and_raise
+# import multiprocessing as mp
+# from mmap import mmap
+# from functools import reduce
+# from collections import deque
+# from queue import Queue, Empty
+# from decimal import Decimal, getcontext
+# from math import floor, ceil
+# import functools
+# import operator
+# import re
+# from packaging import version
 import connection as c
 
 # Cython IS NOT SUPPORTED
@@ -22,227 +25,227 @@ import connection as c
 #     import cython
 #     CYTHON = True
 # except:
-CYTHON = False
+# CYTHON = False
 
 # Pyarrow (Optional fast csv loading) imports
-try:
-    import pyarrow as pa
-    from pyarrow import csv
-    import numpy as np
-    ARROW = True
-except:
-    ARROW = False
-else:
-    sqream_to_pa = {
-        'ftBool':     pa.bool_(),
-        'ftUByte':    pa.uint8(),
-        'ftShort':    pa.int16(),
-        'ftInt':      pa.int32(),
-        'ftLong':     pa.int64(),
-        'ftFloat':    pa.float32(),
-        'ftDouble':   pa.float64(),
-        'ftDate':     pa.timestamp('ns'),
-        'ftDateTime': pa.timestamp('ns'),
-        'ftVarchar':  pa.string(),
-        'ftBlob':     pa.utf8(),
-        'ftNumeric':  pa.decimal128(38, 11)
-    }
-
-__version__ = '3.1.8'
-
-WIN = True if sys.platform in ('win32', 'cygwin') else False
-PROTOCOL_VERSION = 8
-SUPPORTED_PROTOCOLS = 6, 7, 8
-BUFFER_SIZE = 100 * int(1e6)  # For setting auto-flushing on netrwork insert
-ROWS_PER_FLUSH = 100000
-DEFAULT_CHUNKSIZE = 0  # Dummy variable for some jsons
-FETCH_MANY_DEFAULT = 1  # default parameter for fetchmany()
-VARCHAR_ENCODING = 'ascii'
-
-clean_sqream_errors = True
-support_pandas = False
-
-# For encoding data to be sent to SQream using struct.pack() and for type checking by _set_val()
-type_to_letter = {
-    'ftBool': '?',
-    'ftUByte': 'B',
-    'ftShort': 'h',
-    'ftInt': 'i',
-    'ftLong': 'q',
-    'ftFloat': 'f',
-    'ftDouble': 'd',
-    'ftDate': 'i',
-    'ftDateTime': 'q',
-    'ftVarchar': 's',
-    'ftBlob': 's',
-    'ftNumeric': '4i'
-}
-
-## Setup Logging and debug prints
-## ------------------------------
-dbg = False
-
-def printdbg(*debug_print):
-    if dbg:
-        print(*debug_print)
-
-class SQreamDbapiException(Exception):
-    pass
-
-
-logger  = logging.getLogger("dbapi_logger")
-logger.setLevel(logging.DEBUG)
-logger.disabled = True
-
-
-def start_logging(log_path=None):
-
-    log_path = log_path or '/tmp/sqream_dbapi.log'
-    # logging.disable(logging.NOTSET)
-    logger.disabled = False
-    try:
-        handler = logging.FileHandler(log_path)
-    except Exception as e:
-        raise Exception("Bad log path was given, please verify path is valid and no forbidden characters were used")
-
-    handler.setLevel(logging.DEBUG)
-    handler.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
-    logger.addHandler(handler)
-
-    return logger
-
-
-def stop_logging():
-
-    # logging.disable(logging.CRITICAL)
-    logger.handlers = []
-    logger.disabled = True
-
-
-def log_and_raise(exception_type, error_msg):
-
-    if logger.isEnabledFor(logging.ERROR):
-        logger.error(error_msg, exc_info=True)
-    
-    raise exception_type(error_msg)
-
-
-## --- To allow adaptive ROWS_PER_FLUSH ---
-##
-
-def get_ram_linux():
-
-    vmstat, err = Popen('vmstat -s'.split(), stdout=PIPE, stderr=PIPE).communicate() 
-    
-    return int(vmstat.splitlines()[0].split()[0]) 
-     
-
-def get_ram_windows():
-
-    pass
-
-get_ram = get_ram_windows if WIN else get_ram_linux
+# try:
+#     import pyarrow as pa
+#     from pyarrow import csv
+#     import numpy as np
+#     ARROW = True
+# except:
+#     ARROW = False
+# else:
+#     sqream_to_pa = {
+#         'ftBool':     pa.bool_(),
+#         'ftUByte':    pa.uint8(),
+#         'ftShort':    pa.int16(),
+#         'ftInt':      pa.int32(),
+#         'ftLong':     pa.int64(),
+#         'ftFloat':    pa.float32(),
+#         'ftDouble':   pa.float64(),
+#         'ftDate':     pa.timestamp('ns'),
+#         'ftDateTime': pa.timestamp('ns'),
+#         'ftVarchar':  pa.string(),
+#         'ftBlob':     pa.utf8(),
+#         'ftNumeric':  pa.decimal128(38, 11)
+#     }
+#
+# __version__ = '3.1.8'
+#
+# WIN = True if sys.platform in ('win32', 'cygwin') else False
+# PROTOCOL_VERSION = 8
+# SUPPORTED_PROTOCOLS = 6, 7, 8
+# BUFFER_SIZE = 100 * int(1e6)  # For setting auto-flushing on netrwork insert
+# ROWS_PER_FLUSH = 100000
+# DEFAULT_CHUNKSIZE = 0  # Dummy variable for some jsons
+# FETCH_MANY_DEFAULT = 1  # default parameter for fetchmany()
+# VARCHAR_ENCODING = 'ascii'
+#
+# clean_sqream_errors = True
+# support_pandas = False
+#
+# # For encoding data to be sent to SQream using struct.pack() and for type checking by _set_val()
+# type_to_letter = {
+#     'ftBool': '?',
+#     'ftUByte': 'B',
+#     'ftShort': 'h',
+#     'ftInt': 'i',
+#     'ftLong': 'q',
+#     'ftFloat': 'f',
+#     'ftDouble': 'd',
+#     'ftDate': 'i',
+#     'ftDateTime': 'q',
+#     'ftVarchar': 's',
+#     'ftBlob': 's',
+#     'ftNumeric': '4i'
+# }
+#
+# ## Setup Logging and debug prints
+# ## ------------------------------
+# dbg = False
+#
+# def printdbg(*debug_print):
+#     if dbg:
+#         print(*debug_print)
+#
+# class SQreamDbapiException(Exception):
+#     pass
+#
+#
+# logger  = logging.getLogger("dbapi_logger")
+# logger.setLevel(logging.DEBUG)
+# logger.disabled = True
+#
+#
+# def start_logging(log_path=None):
+#
+#     log_path = log_path or '/tmp/sqream_dbapi.log'
+#     # logging.disable(logging.NOTSET)
+#     logger.disabled = False
+#     try:
+#         handler = logging.FileHandler(log_path)
+#     except Exception as e:
+#         raise Exception("Bad log path was given, please verify path is valid and no forbidden characters were used")
+#
+#     handler.setLevel(logging.DEBUG)
+#     handler.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
+#     logger.addHandler(handler)
+#
+#     return logger
+#
+#
+# def stop_logging():
+#
+#     # logging.disable(logging.CRITICAL)
+#     logger.handlers = []
+#     logger.disabled = True
+#
+#
+# def log_and_raise(exception_type, error_msg):
+#
+#     if logger.isEnabledFor(logging.ERROR):
+#         logger.error(error_msg, exc_info=True)
+#
+#     raise exception_type(error_msg)
+#
+#
+# ## --- To allow adaptive ROWS_PER_FLUSH ---
+# ##
+#
+# def get_ram_linux():
+#
+#     vmstat, err = Popen('vmstat -s'.split(), stdout=PIPE, stderr=PIPE).communicate()
+#
+#     return int(vmstat.splitlines()[0].split()[0])
+#
+#
+# def get_ram_windows():
+#
+#     pass
+#
+# get_ram = get_ram_windows if WIN else get_ram_linux
 
 ## Date and Datetime conversion functions
-#  --------------------------------------
-'''
-  SQream uses a dedicated algorithm to store dates as ints and datetimes as longs. The algorithm is depicted here:
-  https://alcor.concordia.ca/~gpkatch/gdate-algorithm.html
-  The logic behind it is explained here:
-  https:#alcor.concordia.ca/~gpkatch/gdate-method.html   
-'''
-
-def pad_dates(num):
-    return ('0' if num < 10 else '') + str(num)
-
-
-def sq_date_to_py_date(sqream_date, date_convert_func=date):
-
-    if sqream_date is None or sqream_date == 0:
-        return None
-
-    year = (10000 * sqream_date + 14780) // 3652425
-    intermed_1 = 365 * year + year // 4 - year // 100 + year // 400
-    intermed_2 = sqream_date - intermed_1
-    if intermed_2 < 0:
-        year = year - 1
-        intermed_2 = sqream_date - (365 * year + year // 4 - year // 100 +
-                                    year // 400)
-    intermed_3 = (100 * intermed_2 + 52) // 3060
-
-    year = year + (intermed_3 + 2) // 12
-    month = int((intermed_3 + 2) % 12) + 1
-    day = int(intermed_2 - (intermed_3 * 306 + 5) // 10 + 1)
-
-    return date_convert_func(year, month, day)
-
-
-def sq_datetime_to_py_datetime(sqream_datetime, dt_convert_func=datetime):
-    ''' Getting the datetime items involves breaking the long into the date int and time it holds
-        The date is extracted in the above, while the time is extracted here  '''
-
-    if sqream_datetime is None or sqream_datetime == 0:
-        return None
-
-    date_part = sqream_datetime >> 32
-    time_part = sqream_datetime & 0xffffffff
-    date_part = sq_date_to_py_date(date_part)
-
-    if date_part is None:
-        return None
-
-    msec = time_part % 1000
-    sec = (time_part // 1000) % 60
-    mins = (time_part // 1000 // 60) % 60
-    hour = time_part // 1000 // 60 // 60
-
-    return dt_convert_func(date_part.year, date_part.month, date_part.day,
-                           hour, mins, sec, msec)
-
-
-def date_to_int(d: date) -> int:
-
-    year, month, day = d.timetuple()[:3]
-    mth: int         = (month + 9) % 12
-    yr: int          = year - mth // 10
-    
-    return 365 * yr + yr // 4 - yr // 100 + yr // 400 + (mth * 306 + 5) // 10 + (day - 1)
-
-
-def datetime_to_long(dt: datetime) -> int:
-    ''' self contained to avoid function calling overhead '''
-
-    year, month, day, hour, minute, second = dt.timetuple()[:6]
-    msecond = dt.microsecond
-
-    mth: int = (month + 9) % 12
-    yr: int = year - mth // 10
-    date_int: int = 365 * yr + yr // 4 - yr // 100 + yr // 400 + (
-        mth * 306 + 5) // 10 + (day - 1)
-    time_int: int = hour * 3600 * 1000 + minute * 60 * 1000 + second * 1000 + msecond // 1000
-
-    return (date_int << 32) + time_int
-
-
-tenth = Decimal("0.1")
-if getcontext().prec < 38:
-    getcontext().prec = 38
-
-
-def sq_numeric_to_decimal(bigint_as_bytes: bytes, scale: int) -> Decimal:
-    
-    getcontext().prec = 38
-    c = memoryview(bigint_as_bytes).cast('i')
-    bigint = ((c[3] << 96) + ((c[2] & 0xffffffff) << 64) + ((c[1] & 0xffffffff) << 32) + (c[0] & 0xffffffff))
-
-    return Decimal(bigint) * (tenth ** scale)
-
-
-def decimal_to_sq_numeric(dec: Decimal, scale: int) -> int: # returns bigint
-    if getcontext().prec < 38:
-        getcontext().prec = 38
-    res = dec * (10 ** scale)
-    return ceil(res) if res > 0 else floor(res)
+# #  --------------------------------------
+# '''
+#   SQream uses a dedicated algorithm to store dates as ints and datetimes as longs. The algorithm is depicted here:
+#   https://alcor.concordia.ca/~gpkatch/gdate-algorithm.html
+#   The logic behind it is explained here:
+#   https:#alcor.concordia.ca/~gpkatch/gdate-method.html
+# '''
+#
+# def pad_dates(num):
+#     return ('0' if num < 10 else '') + str(num)
+#
+#
+# def sq_date_to_py_date(sqream_date, date_convert_func=date):
+#
+#     if sqream_date is None or sqream_date == 0:
+#         return None
+#
+#     year = (10000 * sqream_date + 14780) // 3652425
+#     intermed_1 = 365 * year + year // 4 - year // 100 + year // 400
+#     intermed_2 = sqream_date - intermed_1
+#     if intermed_2 < 0:
+#         year = year - 1
+#         intermed_2 = sqream_date - (365 * year + year // 4 - year // 100 +
+#                                     year // 400)
+#     intermed_3 = (100 * intermed_2 + 52) // 3060
+#
+#     year = year + (intermed_3 + 2) // 12
+#     month = int((intermed_3 + 2) % 12) + 1
+#     day = int(intermed_2 - (intermed_3 * 306 + 5) // 10 + 1)
+#
+#     return date_convert_func(year, month, day)
+#
+#
+# def sq_datetime_to_py_datetime(sqream_datetime, dt_convert_func=datetime):
+#     ''' Getting the datetime items involves breaking the long into the date int and time it holds
+#         The date is extracted in the above, while the time is extracted here  '''
+#
+#     if sqream_datetime is None or sqream_datetime == 0:
+#         return None
+#
+#     date_part = sqream_datetime >> 32
+#     time_part = sqream_datetime & 0xffffffff
+#     date_part = sq_date_to_py_date(date_part)
+#
+#     if date_part is None:
+#         return None
+#
+#     msec = time_part % 1000
+#     sec = (time_part // 1000) % 60
+#     mins = (time_part // 1000 // 60) % 60
+#     hour = time_part // 1000 // 60 // 60
+#
+#     return dt_convert_func(date_part.year, date_part.month, date_part.day,
+#                            hour, mins, sec, msec)
+#
+#
+# def date_to_int(d: date) -> int:
+#
+#     year, month, day = d.timetuple()[:3]
+#     mth: int         = (month + 9) % 12
+#     yr: int          = year - mth // 10
+#
+#     return 365 * yr + yr // 4 - yr // 100 + yr // 400 + (mth * 306 + 5) // 10 + (day - 1)
+#
+#
+# def datetime_to_long(dt: datetime) -> int:
+#     ''' self contained to avoid function calling overhead '''
+#
+#     year, month, day, hour, minute, second = dt.timetuple()[:6]
+#     msecond = dt.microsecond
+#
+#     mth: int = (month + 9) % 12
+#     yr: int = year - mth // 10
+#     date_int: int = 365 * yr + yr // 4 - yr // 100 + yr // 400 + (
+#         mth * 306 + 5) // 10 + (day - 1)
+#     time_int: int = hour * 3600 * 1000 + minute * 60 * 1000 + second * 1000 + msecond // 1000
+#
+#     return (date_int << 32) + time_int
+#
+#
+# tenth = Decimal("0.1")
+# if getcontext().prec < 38:
+#     getcontext().prec = 38
+#
+#
+# def sq_numeric_to_decimal(bigint_as_bytes: bytes, scale: int) -> Decimal:
+#
+#     getcontext().prec = 38
+#     c = memoryview(bigint_as_bytes).cast('i')
+#     bigint = ((c[3] << 96) + ((c[2] & 0xffffffff) << 64) + ((c[1] & 0xffffffff) << 32) + (c[0] & 0xffffffff))
+#
+#     return Decimal(bigint) * (tenth ** scale)
+#
+#
+# def decimal_to_sq_numeric(dec: Decimal, scale: int) -> int: # returns bigint
+#     if getcontext().prec < 38:
+#         getcontext().prec = 38
+#     res = dec * (10 ** scale)
+#     return ceil(res) if res > 0 else floor(res)
 
 
 # def bytes_to_bigint(bytes) -> int:
@@ -269,499 +272,499 @@ def decimal_to_sq_numeric(dec: Decimal, scale: int) -> int: # returns bigint
 #                 logger.debug("Cython is not installed and can't uninstall pyximport")
 
 
-def lengths_to_pairs(nvarc_lengths):
-    ''' Accumulative sum generator, used for parsing nvarchar columns '''
-
-    idx = new_idx = 0
-    for length in nvarc_lengths:
-        new_idx += length
-        yield idx, new_idx
-        idx = new_idx
-
-
-def numpy_datetime_str_to_tup(numpy_dt):
-    ''' '1970-01-01T00:00:00.699148800' '''
-
-    numpy_dt = repr(numpy_dt).split("'")[1]
-    date_part, time_part = numpy_dt.split('T')
-    year, month, day = date_part.split('-')
-    hms, ns = time_part.split('.')
-    hour, mins, sec = hms.split(':')
-    return year, month, day, hour, mins, sec, ns
-
-
-def numpy_datetime_str_to_tup2(numpy_dt):
-    ''' '1970-01-01T00:00:00.699148800' '''
-
-    ts = (numpy_dt - np.datetime64('1970-01-01T00:00:00Z')) / np.timedelta64(1, 's') 
-    dt = datetime.utcfromtimestamp(ts) 
-
-    return dt.year, dt.month, dt.day
-
-
-## Version compare
-def version_compare(v1, v2) :
-    if (v2 is None or v1 is None):
-        return None
-    r1 = re.search("\\d{4}(\\.\\d+)+", v1)
-    r2 = re.search("\\d{4}(\\.\\d+)+", v2)
-    if (r2 is None or r1 is None):
-        return None
-    v1 = version.parse(r1.group(0))
-    v2 = version.parse(r2.group(0))
-    return -1 if v1 < v2 else 1 if v1 > v2 else 0
-
-
-## Socket related
-#  --------------
-
-
-class SQSocket:
-    ''' Extended socket class with some'''
-    
-    def __init__(self, ip, port, use_ssl=False):
-        self.ip, self.port, self.use_ssl = ip, port, use_ssl
-        self._setup_socket(ip, port)
-   
-    
-    def _setup_socket(self, ip, port):
-
-        self.s = socket.socket()
-        if self.use_ssl:
-            # Python 3.10 SSL fix
-            # 3.10 has increased the defulat TLS security settings, need to downgrade to be compatible with current versions of sqream
-            if sys.version_info.minor >=10: 
-                self.ssl_context = ssl._create_unverified_context()
-                self.ssl_context.set_ciphers('DEFAULT')  #'AES256-SHA', 'RSA'
-                # self.ssl_context.verify_mode = ssl.VerifyMode.CERT_NONE
-                # self.ssl_context.options &= ~ssl.OP_NO_SSLv3 
-                self.s = self.ssl_context.wrap_socket(self.s, server_hostname=ip)
-            else:
-                self.s = ssl.wrap_socket(self.s)
-        try:
-            self.timeout(10)
-            self.s.connect((ip, port))
-        except ConnectionRefusedError as e:
-            log_and_raise(ConnectionRefusedError, "Connection refused, perhaps wrong IP?")
-        except ConnectionResetError:
-            log_and_raise(Exception, 'Trying to connect to an SSL port with use_ssl = False')
-        except Exception as e:
-            if 'timeout' in repr(e):
-                log_and_raise(Exception, "Timeout when connecting to SQream, perhaps wrong IP?")
-            elif '[SSL: UNKNOWN_PROTOCOL] unknown protocol' in repr(e) or '[SSL: WRONG_VERSION_NUMBER]' in repr(e):
-                 log_and_raise(Exception, 'Using use_ssl=True but connected to non ssl sqreamd port')
-            elif 'EOF occurred in violation of protocol (_ssl.c:' in repr(e):
-                 log_and_raise(Exception, 'Using use_ssl=True but connected to non ssl sqreamd port') 
-            else:
-                log_and_raise(Exception, e)
-        else:
-            self.timeout(None)
-
-    # General socket / tls socket functionality
-    #
-
-    def _check_server_up(self, ip = None, port = None, use_ssl = None):
-
-        try:
-            SQSocket(ip or self.ip, port or self.port, use_ssl or self.use_ssl)
-        except ConnectionRefusedError:
-            log_and_raise(ConnectionRefusedError, f"Connection to SQream interrupted")
-
-    def send(self, data):
-
-        # print ("sending: ", data)
-        #try:
-        return self.s.send(data)
-        
-        #except BrokenPipeError:
-        #    raise BrokenPipeError('No connection to SQream. Try reconnecting')
-
-
-    def close(self):
-
-        return self.s.close()
-
-
-    def timeout(self, timeout = 'not passed'):
-
-        if timeout == 'not passed':
-            return self.s.gettimeout()
-
-        self.s.settimeout(timeout)
-
-
-    # Extended functionality
-    #
-
-    def reconnect(self, ip = None, port = None):
-
-        self.s.close()
-        self._setup_socket(ip or self.ip, port or self.port)
-
-
-    def receive(self, byte_num, timeout=None):
-        ''' Read a specific amount of bytes from a given socket '''
-
-        data = bytearray(byte_num)
-        view = memoryview(data)
-        total = 0
-
-        if timeout:
-            self.s.settimeout(timeout)
-        
-        while view:
-            # Get whatever the socket gives and put it inside the bytearray
-            received = self.s.recv_into(view)
-            if received == 0:
-                log_and_raise(ConnectionRefusedError, f'SQreamd connection interrupted - 0 returned by socket')
-            view = view[received:]
-            total += received
-
-        if timeout:
-            self.s.settimeout(None)
-            
-        
-        return data
-
-
-    def get_response(self, is_text_msg=True):
-        ''' Get answer JSON string from SQream after sending a relevant message '''
-
-        # Getting 10-byte response header back
-        header = self.receive(10)
-        server_protocol = header[0]
-        if server_protocol not in SUPPORTED_PROTOCOLS:
-            log_and_raise(Exception, f'Protocol mismatch, client version - {PROTOCOL_VERSION}, server version - {server_protocol}')
-        # bytes_or_text =  header[1]
-        message_len = unpack('q', header[2:10])[0]
-
-        return self.receive(message_len).decode(
-            'utf8') if is_text_msg else self.receive(message_len)
-
-    
-    # Non socket aux. functionality
-    #
-
-    def generate_message_header(self, data_length, is_text_msg=True, protocol_version=PROTOCOL_VERSION):
-        ''' Generate SQream's 10 byte header prepended to any message '''
-
-        return pack('bb', protocol_version, 1 if is_text_msg else 2) + pack(
-            'q', data_length)
-
-
-    def validate_response(self, response, expected):
-
-        if expected not in response:
-            # Color first line of SQream error (before the haskell thingy starts) in Red
-            response = '\033[31m' + (response.split('\\n')[0] if clean_sqream_errors else response) + '\033[0m' 
-            log_and_raise(Exception, f'\nexpected response {expected} but got:\n\n {response}')
-
-
-## Buffer setup and functionality
-#  ------------------------------
-
-buf_maps, buf_views = [], []
-
-def init_lock(l):
-    ''' To pass a lock to mp.Pool() '''
-
-    global lock
-    lock = l
-
-class ColumnBuffer:
-    ''' Buffer holding packed columns to be sent to SQream '''
-
-    def __init__(self, size=BUFFER_SIZE):
-        global buf_maps, buf_views
-
-
-
-
-    def clear(self):
-        if buf_maps:
-            [buf_map.close() for buf_map in buf_maps[0]]
-
-
-    def init_buffers(self, col_sizes, col_nul):
-        if not WIN:
-            try:
-                self.pool.close()
-                self.pool.join()
-            except Exception as e:
-                pass
-            
-            l = mp.Lock()
-            self.pool = mp.Pool(initializer=init_lock, initargs=(l,))
-        self.clear()
-        buf_maps = [mmap(-1, ((1 if col_nul else 0)+(size if size!=0 else 104)) * ROWS_PER_FLUSH) for size in col_sizes]
-        buf_views = [memoryview(buf_map) for buf_map in buf_maps]
-        
-    
-    def pack_columns(self, cols, capacity, col_types, col_sizes, col_nul, col_tvc, col_scales):
-        ''' Packs the buffer starting a given index with the column. 
-            Returns number of bytes packed '''
-
-        pool_params = zip(cols, range(len(col_types)), col_types,
-                          col_sizes, col_nul, col_tvc, col_scales)
-        if WIN:
-            packed_cols = []
-            for param_tup in pool_params:
-                packed_cols.append(_pack_column(param_tup))
-            
-        else:
-            # self.pool = mp.Pool()
-            # To use multiprocess type packing, we call a top level function with a single tuple parameter
-            try:
-                packed_cols = self.pool.map(_pack_column, pool_params, chunksize = 2)  # buf_end_indices
-            except Exception as e:
-                printdbg("Original error from pool.map: ", e)
-                if logger.isEnabledFor(logging.ERROR):
-                    logger.error("Original error from pool.map: ", e)
-                log_and_raise(ProgrammingError, "Error packing columns. Check that all types match the respective column types")
-
-        return list(packed_cols)
-
-
-    def close(self):
-        self.clear()
-        try:
-            self.pool.close()
-            self.pool.join()
-        except Exception as e:
-            # print (f'testing pool closing, got: {e}')
-            pass # no pool was initiated
-
-
-## A top level packing function for Python's MP compatibility
-def _pack_column(col_tup, return_actual_data = True):
-    ''' Packs the buffer starting a given index with the column. 
-        Returns number of bytes packed '''
-
-    global CYTHON
-    col, col_idx, col_type, size, nullable, tvc, scale = col_tup
-    col = list(col)
-    capacity = len(col)
-    buf_idx = 0
-    buf_map =  mmap(-1, ((1 if nullable else 0)+(size if size!=0 else 104)) * ROWS_PER_FLUSH)
-    buf_view = memoryview(buf_map) 
-
-    def pack_exception(e):
-        ''' Allowing to return traceback info from parent process when using mp.Pool on _pack_column
-            [add link]
-        '''
-
-        e.traceback = traceback.format_exc()
-        error_msg =  f'Trying to insert unsuitable types to column number {col_idx + 1} of type {col_type}'
-        with lock:
-            logger.error(error_msg, exc_info=True)
-        raise ProgrammingError(error_msg)
-        
-
-    # Numpy array for column
-    if ARROW and isinstance(col, np.ndarray):
-        # Pack null column if applicable
-        if nullable:
-            pack_into(f'{capacity}b', buf_view, buf_idx,
-                      *[1 if item in (np.nan, b'') else 0 for item in col])
-            buf_idx += capacity
-
-            # Replace Nones with appropriate placeholder
-            if 'S' in repr(col.dtype):    # already b''?
-                pass
-            elif 'U' in repr(col.dtype):
-                pass
-            else:
-                # Swap out the nans
-                col[col == np.nan] = 0
-
-        # Pack nvarchar length column if applicable
-        if tvc:
-            buf_map.seek(buf_idx)
-            lengths_as_bytes = np.vectorize(len)(col).astype('int32').tobytes()
-            buf_map.write(lengths_as_bytes)
-            buf_idx += len(lengths_as_bytes)
-
-        # Pack the actual data
-        if 'U' in repr(col.dtype):
-            packed_strings = ''.join(col).encode('utf8')
-            buf_map.seek(buf_idx)
-            buf_map.write(packed_strings)
-            buf_idx += len(packed_strings)
-            print (f'unicode strings: {packed_strings}')
-        else:
-            packed_np = col.tobytes()
-            buf_map.seek(buf_idx)
-            buf_map.write(packed_np)
-            buf_idx += len(packed_np)
-
-
-        return buf_map[0:buf_idx] if return_actual_data else (0, buf_idx)
-
-
-    # Pack null column if applicable
-    type_code = type_to_letter[col_type]
-
-    # Pack null column and replace None with appropriate placeholder
-    col_placeholder = {
-        'ftBool': 0,
-        'ftUByte': 0,
-        'ftShort': 0,
-        'ftInt': 0,
-        'ftLong': 0,
-        'ftFloat': 0,
-        'ftDouble': 0,
-        'ftDate': None,     #updated separately
-        'ftDateTime': None, #updated separately
-        'ftVarchar': ''.ljust(size, ' '),
-        'ftBlob': '',
-        'ftNumeric': 0
-    }
-
-    if nullable:
-        idx = -1
-        while True:
-            try:
-                idx = col.index(None, idx+1)
-            except ValueError:
-                break
-            else:
-                buf_map.seek(buf_idx + idx)
-                buf_map.write(b'\x01')
-                col[idx] = col_placeholder[col_type]
-        # buf_map.seek(buf_idx)
-        # buf_map.write(nulls)
-        buf_idx += capacity
-
-    # If a text column, replace and pack in adavnce to see if the buffer is sufficient
-    if col_type == 'ftBlob':
-        try:
-            encoded_col = [strn.encode('utf8') for strn in col]
-        except AttributeError as e:  # Non strings will not have .encode()
-            pack_exception(e)
-        else:
-            packed_strings = b''.join(encoded_col)
-
-        needed_buf_size = len(packed_strings) + 5* capacity
-        
-        # Resize the buffer if not enough space for the current strings
-        if needed_buf_size > len(buf_map):
-            buf_view.release()
-            buf_map.resize(needed_buf_size)
-            buf_view = memoryview(buf_map)
-
-        # Pack nvarchar length column 
-        pack_into(f'{capacity}i', buf_view, buf_idx, *[len(string) for string in encoded_col])
-
-        buf_idx += 4 * capacity
-
-
-    # Replace Nones with appropriate placeholder - this affects the data itself
-    if col_type == 'ftBlob':
-        pass     # Handled preemptively due to allow possible buffer resizing
-
-    elif col_type == 'ftVarchar':
-        try:
-            col = (strn.encode(VARCHAR_ENCODING)[:size].ljust(size, b' ') for strn in col)
-        except AttributeError as e:  # Non strings will not have .encode()
-            pack_exception(e)
-        else:
-            packed_strings = b''.join(col)
-
-    elif col_type == 'ftDate':   
-        # date_tuple_to_int(1900, 1, 1) = 693901
-        pass
-        # '''
-        try:
-            col = (date_to_int(deit) if deit is not None else 693901 for deit in col)
-        except AttributeError as e:  # Non date/times will not have .timetuple()
-            pack_exception(e)
-        # '''
-
-    elif col_type == 'ftDateTime':
-        # datetime_tuple_to_long(1900, 1, 1, 0, 0, 0) = 2980282101661696
-        try:
-            col = (datetime_to_long(dt) if dt is not None else 2980282101661696 for dt in col)
-        except AttributeError as e:
-            pack_exception(e)
-
-    elif col_type == 'ftNumeric':
-        try:
-            col = (decimal_to_sq_numeric(Decimal(num), scale) for num in col)
-        except AttributeError as e:
-            pack_exception(e)
-
-    elif col_type in ('ftBool', 'ftUByte', 'ftShort', 'ftInt', 'ftLong','ftFloat', 'ftDouble'):
-        pass
-    else:
-        error_msg = f'Bad column type passed: {col_type}'
-        with lock:
-            logger.error(error_msg, exc_info=True)
-        raise ProgrammingError(error_msg)
-
-    CYTHON = False
-    # Done preceding column handling, pack the actual data
-    if col_type in ('ftVarchar', 'ftBlob'):
-        buf_map.seek(buf_idx)
-        buf_map.write(packed_strings)
-        buf_idx += len(packed_strings)
-    elif col_type == 'ftNumeric':
-        buf_map.seek(buf_idx)
-        all = functools.reduce(operator.iconcat, (num.to_bytes(16, byteorder='little', signed=True) for num in col), [])
-        buf_map.write(bytearray(all))
-        buf_idx += len(all)
-    else:
-        try:
-            if CYTHON:
-                buf_map.seek(buf_idx)
-                type_packer[col_type](col, size, buf_map, buf_idx)
-            else:
-                pack_into(f'{capacity}{type_code}', buf_view, buf_idx, *col)
-        except struct_error as e:
-            pack_exception(e)
-
-        buf_idx += capacity * size
-
-    return buf_map[0:buf_idx] if return_actual_data else (0, buf_idx)
-
-class PingLoop(threading.Thread):
-    def __init__(self, conn):
-        self.conn = conn
-        super(PingLoop, self).__init__()
-        self.done = False
-
-    def run(self):
-        json_cmd = '{"ping":"ping"}'
-        binary = self.conn.s.generate_message_header(len(json_cmd)) + json_cmd.encode('utf8');
-        while self.sleep():
-            conn = self.conn
-            try:
-                conn.s.send(binary)
-            except:
-                self.done = True
-
-    def halt(self):
-        self.done = True
-
-    def sleep(self):
-        if self.done:
-            return False
-        count = 0
-        while (count < 100):
-            count = count + 1
-            time.sleep(.1)
-            if self.done:
-                return False
-        return True
-
-def _start_ping_loop(self):
-    self.ping_loop = PingLoop(self)
-    self.ping_loop.start()
-
-def _end_ping_loop(self):
-    if (self.ping_loop is not None):
-        self.ping_loop.halt()
-        self.ping_loop.join()
-    self.ping_loop = None
+# def lengths_to_pairs(nvarc_lengths):
+#     ''' Accumulative sum generator, used for parsing nvarchar columns '''
+#
+#     idx = new_idx = 0
+#     for length in nvarc_lengths:
+#         new_idx += length
+#         yield idx, new_idx
+#         idx = new_idx
+#
+#
+# def numpy_datetime_str_to_tup(numpy_dt):
+#     ''' '1970-01-01T00:00:00.699148800' '''
+#
+#     numpy_dt = repr(numpy_dt).split("'")[1]
+#     date_part, time_part = numpy_dt.split('T')
+#     year, month, day = date_part.split('-')
+#     hms, ns = time_part.split('.')
+#     hour, mins, sec = hms.split(':')
+#     return year, month, day, hour, mins, sec, ns
+#
+#
+# def numpy_datetime_str_to_tup2(numpy_dt):
+#     ''' '1970-01-01T00:00:00.699148800' '''
+#
+#     ts = (numpy_dt - np.datetime64('1970-01-01T00:00:00Z')) / np.timedelta64(1, 's')
+#     dt = datetime.utcfromtimestamp(ts)
+#
+#     return dt.year, dt.month, dt.day
+#
+#
+# ## Version compare
+# def version_compare(v1, v2) :
+#     if (v2 is None or v1 is None):
+#         return None
+#     r1 = re.search("\\d{4}(\\.\\d+)+", v1)
+#     r2 = re.search("\\d{4}(\\.\\d+)+", v2)
+#     if (r2 is None or r1 is None):
+#         return None
+#     v1 = version.parse(r1.group(0))
+#     v2 = version.parse(r2.group(0))
+#     return -1 if v1 < v2 else 1 if v1 > v2 else 0
+#
+#
+# ## Socket related
+# #  --------------
+#
+#
+# class SQSocket:
+#     ''' Extended socket class with some'''
+#
+#     def __init__(self, ip, port, use_ssl=False):
+#         self.ip, self.port, self.use_ssl = ip, port, use_ssl
+#         self._setup_socket(ip, port)
+#
+#
+#     def _setup_socket(self, ip, port):
+#
+#         self.s = socket.socket()
+#         if self.use_ssl:
+#             # Python 3.10 SSL fix
+#             # 3.10 has increased the defulat TLS security settings, need to downgrade to be compatible with current versions of sqream
+#             if sys.version_info.minor >=10:
+#                 self.ssl_context = ssl._create_unverified_context()
+#                 self.ssl_context.set_ciphers('DEFAULT')  #'AES256-SHA', 'RSA'
+#                 # self.ssl_context.verify_mode = ssl.VerifyMode.CERT_NONE
+#                 # self.ssl_context.options &= ~ssl.OP_NO_SSLv3
+#                 self.s = self.ssl_context.wrap_socket(self.s, server_hostname=ip)
+#             else:
+#                 self.s = ssl.wrap_socket(self.s)
+#         try:
+#             self.timeout(10)
+#             self.s.connect((ip, port))
+#         except ConnectionRefusedError as e:
+#             log_and_raise(ConnectionRefusedError, "Connection refused, perhaps wrong IP?")
+#         except ConnectionResetError:
+#             log_and_raise(Exception, 'Trying to connect to an SSL port with use_ssl = False')
+#         except Exception as e:
+#             if 'timeout' in repr(e):
+#                 log_and_raise(Exception, "Timeout when connecting to SQream, perhaps wrong IP?")
+#             elif '[SSL: UNKNOWN_PROTOCOL] unknown protocol' in repr(e) or '[SSL: WRONG_VERSION_NUMBER]' in repr(e):
+#                  log_and_raise(Exception, 'Using use_ssl=True but connected to non ssl sqreamd port')
+#             elif 'EOF occurred in violation of protocol (_ssl.c:' in repr(e):
+#                  log_and_raise(Exception, 'Using use_ssl=True but connected to non ssl sqreamd port')
+#             else:
+#                 log_and_raise(Exception, e)
+#         else:
+#             self.timeout(None)
+#
+#     # General socket / tls socket functionality
+#     #
+#
+#     def _check_server_up(self, ip = None, port = None, use_ssl = None):
+#
+#         try:
+#             SQSocket(ip or self.ip, port or self.port, use_ssl or self.use_ssl)
+#         except ConnectionRefusedError:
+#             log_and_raise(ConnectionRefusedError, f"Connection to SQream interrupted")
+#
+#     def send(self, data):
+#
+#         # print ("sending: ", data)
+#         #try:
+#         return self.s.send(data)
+#
+#         #except BrokenPipeError:
+#         #    raise BrokenPipeError('No connection to SQream. Try reconnecting')
+#
+#
+#     def close(self):
+#
+#         return self.s.close()
+#
+#
+#     def timeout(self, timeout = 'not passed'):
+#
+#         if timeout == 'not passed':
+#             return self.s.gettimeout()
+#
+#         self.s.settimeout(timeout)
+#
+#
+#     # Extended functionality
+#     #
+#
+#     def reconnect(self, ip = None, port = None):
+#
+#         self.s.close()
+#         self._setup_socket(ip or self.ip, port or self.port)
+#
+#
+#     def receive(self, byte_num, timeout=None):
+#         ''' Read a specific amount of bytes from a given socket '''
+#
+#         data = bytearray(byte_num)
+#         view = memoryview(data)
+#         total = 0
+#
+#         if timeout:
+#             self.s.settimeout(timeout)
+#
+#         while view:
+#             # Get whatever the socket gives and put it inside the bytearray
+#             received = self.s.recv_into(view)
+#             if received == 0:
+#                 log_and_raise(ConnectionRefusedError, f'SQreamd connection interrupted - 0 returned by socket')
+#             view = view[received:]
+#             total += received
+#
+#         if timeout:
+#             self.s.settimeout(None)
+#
+#
+#         return data
+#
+#
+#     def get_response(self, is_text_msg=True):
+#         ''' Get answer JSON string from SQream after sending a relevant message '''
+#
+#         # Getting 10-byte response header back
+#         header = self.receive(10)
+#         server_protocol = header[0]
+#         if server_protocol not in SUPPORTED_PROTOCOLS:
+#             log_and_raise(Exception, f'Protocol mismatch, client version - {PROTOCOL_VERSION}, server version - {server_protocol}')
+#         # bytes_or_text =  header[1]
+#         message_len = unpack('q', header[2:10])[0]
+#
+#         return self.receive(message_len).decode(
+#             'utf8') if is_text_msg else self.receive(message_len)
+#
+#
+#     # Non socket aux. functionality
+#     #
+#
+#     def generate_message_header(self, data_length, is_text_msg=True, protocol_version=PROTOCOL_VERSION):
+#         ''' Generate SQream's 10 byte header prepended to any message '''
+#
+#         return pack('bb', protocol_version, 1 if is_text_msg else 2) + pack(
+#             'q', data_length)
+#
+#
+#     def validate_response(self, response, expected):
+#
+#         if expected not in response:
+#             # Color first line of SQream error (before the haskell thingy starts) in Red
+#             response = '\033[31m' + (response.split('\\n')[0] if clean_sqream_errors else response) + '\033[0m'
+#             log_and_raise(Exception, f'\nexpected response {expected} but got:\n\n {response}')
+#
+#
+# ## Buffer setup and functionality
+# #  ------------------------------
+#
+# buf_maps, buf_views = [], []
+#
+# def init_lock(l):
+#     ''' To pass a lock to mp.Pool() '''
+#
+#     global lock
+#     lock = l
+#
+# class ColumnBuffer:
+#     ''' Buffer holding packed columns to be sent to SQream '''
+#
+#     def __init__(self, size=BUFFER_SIZE):
+#         global buf_maps, buf_views
+#
+#
+#
+#
+#     def clear(self):
+#         if buf_maps:
+#             [buf_map.close() for buf_map in buf_maps[0]]
+#
+#
+#     def init_buffers(self, col_sizes, col_nul):
+#         if not WIN:
+#             try:
+#                 self.pool.close()
+#                 self.pool.join()
+#             except Exception as e:
+#                 pass
+#
+#             l = mp.Lock()
+#             self.pool = mp.Pool(initializer=init_lock, initargs=(l,))
+#         self.clear()
+#         buf_maps = [mmap(-1, ((1 if col_nul else 0)+(size if size!=0 else 104)) * ROWS_PER_FLUSH) for size in col_sizes]
+#         buf_views = [memoryview(buf_map) for buf_map in buf_maps]
+#
+#
+#     def pack_columns(self, cols, capacity, col_types, col_sizes, col_nul, col_tvc, col_scales):
+#         ''' Packs the buffer starting a given index with the column.
+#             Returns number of bytes packed '''
+#
+#         pool_params = zip(cols, range(len(col_types)), col_types,
+#                           col_sizes, col_nul, col_tvc, col_scales)
+#         if WIN:
+#             packed_cols = []
+#             for param_tup in pool_params:
+#                 packed_cols.append(_pack_column(param_tup))
+#
+#         else:
+#             # self.pool = mp.Pool()
+#             # To use multiprocess type packing, we call a top level function with a single tuple parameter
+#             try:
+#                 packed_cols = self.pool.map(_pack_column, pool_params, chunksize = 2)  # buf_end_indices
+#             except Exception as e:
+#                 printdbg("Original error from pool.map: ", e)
+#                 if logger.isEnabledFor(logging.ERROR):
+#                     logger.error("Original error from pool.map: ", e)
+#                 log_and_raise(ProgrammingError, "Error packing columns. Check that all types match the respective column types")
+#
+#         return list(packed_cols)
+#
+#
+#     def close(self):
+#         self.clear()
+#         try:
+#             self.pool.close()
+#             self.pool.join()
+#         except Exception as e:
+#             # print (f'testing pool closing, got: {e}')
+#             pass # no pool was initiated
+#
+#
+# ## A top level packing function for Python's MP compatibility
+# def _pack_column(col_tup, return_actual_data = True):
+#     ''' Packs the buffer starting a given index with the column.
+#         Returns number of bytes packed '''
+#
+#     global CYTHON
+#     col, col_idx, col_type, size, nullable, tvc, scale = col_tup
+#     col = list(col)
+#     capacity = len(col)
+#     buf_idx = 0
+#     buf_map =  mmap(-1, ((1 if nullable else 0)+(size if size!=0 else 104)) * ROWS_PER_FLUSH)
+#     buf_view = memoryview(buf_map)
+#
+#     def pack_exception(e):
+#         ''' Allowing to return traceback info from parent process when using mp.Pool on _pack_column
+#             [add link]
+#         '''
+#
+#         e.traceback = traceback.format_exc()
+#         error_msg =  f'Trying to insert unsuitable types to column number {col_idx + 1} of type {col_type}'
+#         with lock:
+#             logger.error(error_msg, exc_info=True)
+#         raise ProgrammingError(error_msg)
+#
+#
+#     # Numpy array for column
+#     if ARROW and isinstance(col, np.ndarray):
+#         # Pack null column if applicable
+#         if nullable:
+#             pack_into(f'{capacity}b', buf_view, buf_idx,
+#                       *[1 if item in (np.nan, b'') else 0 for item in col])
+#             buf_idx += capacity
+#
+#             # Replace Nones with appropriate placeholder
+#             if 'S' in repr(col.dtype):    # already b''?
+#                 pass
+#             elif 'U' in repr(col.dtype):
+#                 pass
+#             else:
+#                 # Swap out the nans
+#                 col[col == np.nan] = 0
+#
+#         # Pack nvarchar length column if applicable
+#         if tvc:
+#             buf_map.seek(buf_idx)
+#             lengths_as_bytes = np.vectorize(len)(col).astype('int32').tobytes()
+#             buf_map.write(lengths_as_bytes)
+#             buf_idx += len(lengths_as_bytes)
+#
+#         # Pack the actual data
+#         if 'U' in repr(col.dtype):
+#             packed_strings = ''.join(col).encode('utf8')
+#             buf_map.seek(buf_idx)
+#             buf_map.write(packed_strings)
+#             buf_idx += len(packed_strings)
+#             print (f'unicode strings: {packed_strings}')
+#         else:
+#             packed_np = col.tobytes()
+#             buf_map.seek(buf_idx)
+#             buf_map.write(packed_np)
+#             buf_idx += len(packed_np)
+#
+#
+#         return buf_map[0:buf_idx] if return_actual_data else (0, buf_idx)
+#
+#
+#     # Pack null column if applicable
+#     type_code = type_to_letter[col_type]
+#
+#     # Pack null column and replace None with appropriate placeholder
+#     col_placeholder = {
+#         'ftBool': 0,
+#         'ftUByte': 0,
+#         'ftShort': 0,
+#         'ftInt': 0,
+#         'ftLong': 0,
+#         'ftFloat': 0,
+#         'ftDouble': 0,
+#         'ftDate': None,     #updated separately
+#         'ftDateTime': None, #updated separately
+#         'ftVarchar': ''.ljust(size, ' '),
+#         'ftBlob': '',
+#         'ftNumeric': 0
+#     }
+#
+#     if nullable:
+#         idx = -1
+#         while True:
+#             try:
+#                 idx = col.index(None, idx+1)
+#             except ValueError:
+#                 break
+#             else:
+#                 buf_map.seek(buf_idx + idx)
+#                 buf_map.write(b'\x01')
+#                 col[idx] = col_placeholder[col_type]
+#         # buf_map.seek(buf_idx)
+#         # buf_map.write(nulls)
+#         buf_idx += capacity
+#
+#     # If a text column, replace and pack in adavnce to see if the buffer is sufficient
+#     if col_type == 'ftBlob':
+#         try:
+#             encoded_col = [strn.encode('utf8') for strn in col]
+#         except AttributeError as e:  # Non strings will not have .encode()
+#             pack_exception(e)
+#         else:
+#             packed_strings = b''.join(encoded_col)
+#
+#         needed_buf_size = len(packed_strings) + 5* capacity
+#
+#         # Resize the buffer if not enough space for the current strings
+#         if needed_buf_size > len(buf_map):
+#             buf_view.release()
+#             buf_map.resize(needed_buf_size)
+#             buf_view = memoryview(buf_map)
+#
+#         # Pack nvarchar length column
+#         pack_into(f'{capacity}i', buf_view, buf_idx, *[len(string) for string in encoded_col])
+#
+#         buf_idx += 4 * capacity
+#
+#
+#     # Replace Nones with appropriate placeholder - this affects the data itself
+#     if col_type == 'ftBlob':
+#         pass     # Handled preemptively due to allow possible buffer resizing
+#
+#     elif col_type == 'ftVarchar':
+#         try:
+#             col = (strn.encode(VARCHAR_ENCODING)[:size].ljust(size, b' ') for strn in col)
+#         except AttributeError as e:  # Non strings will not have .encode()
+#             pack_exception(e)
+#         else:
+#             packed_strings = b''.join(col)
+#
+#     elif col_type == 'ftDate':
+#         # date_tuple_to_int(1900, 1, 1) = 693901
+#         pass
+#         # '''
+#         try:
+#             col = (date_to_int(deit) if deit is not None else 693901 for deit in col)
+#         except AttributeError as e:  # Non date/times will not have .timetuple()
+#             pack_exception(e)
+#         # '''
+#
+#     elif col_type == 'ftDateTime':
+#         # datetime_tuple_to_long(1900, 1, 1, 0, 0, 0) = 2980282101661696
+#         try:
+#             col = (datetime_to_long(dt) if dt is not None else 2980282101661696 for dt in col)
+#         except AttributeError as e:
+#             pack_exception(e)
+#
+#     elif col_type == 'ftNumeric':
+#         try:
+#             col = (decimal_to_sq_numeric(Decimal(num), scale) for num in col)
+#         except AttributeError as e:
+#             pack_exception(e)
+#
+#     elif col_type in ('ftBool', 'ftUByte', 'ftShort', 'ftInt', 'ftLong','ftFloat', 'ftDouble'):
+#         pass
+#     else:
+#         error_msg = f'Bad column type passed: {col_type}'
+#         with lock:
+#             logger.error(error_msg, exc_info=True)
+#         raise ProgrammingError(error_msg)
+#
+#     CYTHON = False
+#     # Done preceding column handling, pack the actual data
+#     if col_type in ('ftVarchar', 'ftBlob'):
+#         buf_map.seek(buf_idx)
+#         buf_map.write(packed_strings)
+#         buf_idx += len(packed_strings)
+#     elif col_type == 'ftNumeric':
+#         buf_map.seek(buf_idx)
+#         all = functools.reduce(operator.iconcat, (num.to_bytes(16, byteorder='little', signed=True) for num in col), [])
+#         buf_map.write(bytearray(all))
+#         buf_idx += len(all)
+#     else:
+#         try:
+#             if CYTHON:
+#                 buf_map.seek(buf_idx)
+#                 type_packer[col_type](col, size, buf_map, buf_idx)
+#             else:
+#                 pack_into(f'{capacity}{type_code}', buf_view, buf_idx, *col)
+#         except struct_error as e:
+#             pack_exception(e)
+#
+#         buf_idx += capacity * size
+#
+#     return buf_map[0:buf_idx] if return_actual_data else (0, buf_idx)
+#
+# class PingLoop(threading.Thread):
+#     def __init__(self, conn):
+#         self.conn = conn
+#         super(PingLoop, self).__init__()
+#         self.done = False
+#
+#     def run(self):
+#         json_cmd = '{"ping":"ping"}'
+#         binary = self.conn.s.generate_message_header(len(json_cmd)) + json_cmd.encode('utf8');
+#         while self.sleep():
+#             conn = self.conn
+#             try:
+#                 conn.s.send(binary)
+#             except:
+#                 self.done = True
+#
+#     def halt(self):
+#         self.done = True
+#
+#     def sleep(self):
+#         if self.done:
+#             return False
+#         count = 0
+#         while (count < 100):
+#             count = count + 1
+#             time.sleep(.1)
+#             if self.done:
+#                 return False
+#         return True
+#
+# def _start_ping_loop(self):
+#     self.ping_loop = PingLoop(self)
+#     self.ping_loop.start()
+#
+# def _end_ping_loop(self):
+#     if (self.ping_loop is not None):
+#         self.ping_loop.halt()
+#         self.ping_loop.join()
+#     self.ping_loop = None
 
 
 # class Connection:
@@ -1452,8 +1455,8 @@ def connect(host, port, database, username, password, clustered = False, use_ssl
     if not isinstance(reconnect_interval, int) or reconnect_attempts < 0:
         log_and_raise(Exception, f'reconnect interval should be a positive integer, got : {reconnect_interval}')
 
-
-    conn = c.Connection(host, port, clustered, use_ssl, log=log, base_connection=True, reconnect_attempts=reconnect_attempts, reconnect_interval=reconnect_interval)
+    conn = c.Connection(host, port, clustered, use_ssl, log=log, base_connection=True,
+                        reconnect_attempts=reconnect_attempts, reconnect_interval=reconnect_interval)
     conn.connect_database(database, username, password, service)
 
     return conn
@@ -1566,3 +1569,18 @@ paramstyle = 'qmark'
 if __name__ == '__main__':
 
     print('PySqream DB-API connector, version ', __version__)
+    conn = connect("192.168.0.35", 5000, "master", "sqream", "sqream")
+    time.sleep(10)
+    print("query")
+    cur = conn.cursor()
+    cur.execute("select 1")
+    res = cur.fetchall()
+    print(res)
+    cur.close()
+    # print("query2")
+    # cur.execute("select 2")
+    # res = cur.fetchall()
+    # print(res)
+    # cur.close()
+    conn.close()
+
