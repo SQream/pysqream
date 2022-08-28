@@ -67,6 +67,7 @@ class Connection:
         self.base_connection = base_connection
         self.ping_loop = None
 
+        print("Open connection")
         self._open_connection(clustered, use_ssl)
         self.arraysize = FETCH_MANY_DEFAULT
         self.rowcount = -1    # DB-API property

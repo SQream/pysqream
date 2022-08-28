@@ -1576,11 +1576,10 @@ if __name__ == '__main__':
     cur.execute("select 1")
     res = cur.fetchall()
     print(res)
-    cur.close()
     # print("query2")
     # cur.execute("select 2")
     # res = cur.fetchall()
     # print(res)
-    # cur.close()
+    cur.close()
     conn.close()
 
