@@ -6,6 +6,7 @@ import ssl
 import sys
 import array
 from struct import pack, unpack
+from threading import Lock
 
 
 class SQSocket:
@@ -14,13 +15,15 @@ class SQSocket:
     def __init__(self, ip, port, use_ssl=False):
         self.ip, self.port, self.use_ssl = ip, port, use_ssl
         self._setup_socket(ip, port)
+        print("open connection")
 
     def _setup_socket(self, ip, port):
 
         self.s = socket.socket()
         if self.use_ssl:
             # Python 3.10 SSL fix
-            # 3.10 has increased the defulat TLS security settings, need to downgrade to be compatible with current versions of sqream
+            # 3.10 has increased the default TLS security settings,
+            # need to downgrade to be compatible with current versions of sqream
             if sys.version_info.minor >= 10:
                 self.ssl_context = ssl._create_unverified_context()
                 self.ssl_context.set_ciphers('DEFAULT')  # 'AES256-SHA', 'RSA'
@@ -68,7 +71,7 @@ class SQSocket:
         #    raise BrokenPipeError('No connection to SQream. Try reconnecting')
 
     def close(self):
-
+        print("close connection")
         return self.s.close()
 
     def timeout(self, timeout='not passed'):
@@ -86,6 +89,12 @@ class SQSocket:
         self.s.close()
         self._setup_socket(ip or self.ip, port or self.port)
 
+
+class Client:
+
+    def __init__(self, socket):
+        self.socket = socket
+
     def receive(self, byte_num, timeout=None):
         ''' Read a specific amount of bytes from a given socket '''
 
@@ -94,26 +103,28 @@ class SQSocket:
         total = 0
 
         if timeout:
-            self.s.settimeout(timeout)
+            self.socket.settimeout(timeout)
 
         while view:
             # Get whatever the socket gives and put it inside the bytearray
-            received = self.s.recv_into(view)
+            received = self.socket.s.recv_into(view)
             if received == 0:
                 log_and_raise(ConnectionRefusedError, f'SQreamd connection interrupted - 0 returned by socket')
             view = view[received:]
             total += received
 
         if timeout:
-            self.s.settimeout(None)
+            self.socket.settimeout(None)
 
         return data
 
     def get_response(self, is_text_msg=True):
         ''' Get answer JSON string from SQream after sending a relevant message '''
+        lock = Lock()
 
         # Getting 10-byte response header back
-        header = self.receive(10)
+        with lock:
+            header = self.receive(10)
         server_protocol = header[0]
         if server_protocol not in SUPPORTED_PROTOCOLS:
             log_and_raise(Exception,
@@ -121,14 +132,16 @@ class SQSocket:
         # bytes_or_text =  header[1]
         message_len = unpack('q', header[2:10])[0]
 
-        return self.receive(message_len).decode(
-            'utf8') if is_text_msg else self.receive(message_len)
+        with lock:
+            receive = self.receive(message_len).decode(
+                'utf8') if is_text_msg else self.receive(message_len)
+
+        return receive
 
     # Non socket aux. functionality
     #
-
     def generate_message_header(self, data_length, is_text_msg=True, protocol_version=PROTOCOL_VERSION):
-        ''' Generate SQream's 10 byte header prepended to any message '''
+        """Generate SQream's 10 byte header prepended to any message"""
 
         return pack('bb', protocol_version, 1 if is_text_msg else 2) + pack(
             'q', data_length)
@@ -145,7 +158,7 @@ class SQSocket:
 
         # Generating the message header, and sending both over the socket
         printdbg(f'string sent: {json_cmd}')
-        self.send(self.generate_message_header(len(json_cmd)) + json_cmd.encode('utf8'))
+        self.socket.send(self.generate_message_header(len(json_cmd)) + json_cmd.encode('utf8'))
 
         if get_response:
             return self.get_response(is_text_msg)

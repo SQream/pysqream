@@ -6,15 +6,16 @@ import column_buffer as cb
 import ping as p
 from logger import *
 import casting as c
+import SQSocket as sqs
 
 
 class Cursor:
 
     def __init__(self, conn):
 
-        super(Cursor, self).__init__()
         self.conn = conn
         self.s = self.conn.s
+        self.client = sqs.Client(self.s)
         self.version = self.conn.version
         self.open_statement = False
         self.buffer = cb.ColumnBuffer(BUFFER_SIZE)  # flushing buffer every BUFFER_SIZE bytes
@@ -35,14 +36,14 @@ class Cursor:
 
         self.more_to_fetch = True
 
-        self.stmt_id = json.loads(self.s.send_string('{"getStatementId" : "getStatementId"}'))["statementId"]
+        self.stmt_id = json.loads(self.client.send_string('{"getStatementId" : "getStatementId"}'))["statementId"]
         comp = utils.version_compare(self.version, "2020.3.1")
         if (comp is not None and comp > -1):
             self._start_ping_loop()
         stmt_json = json.dumps({"prepareStatement": stmt, "chunkSize": DEFAULT_CHUNKSIZE})
-        res = self.s.send_string(stmt_json)
+        res = self.client.send_string(stmt_json)
 
-        self.s.validate_response(res, "statementPrepared")
+        self.client.validate_response(res, "statementPrepared")
         self.lb_params = json.loads(res)
         if self.lb_params.get('reconnect'):  # Reconnect exists and issued, otherwise False / None
 
@@ -55,20 +56,20 @@ class Cursor:
             reconnect_str = '{{"service": "{}", "reconnectDatabase":"{}", "connectionId":{}, "listenerId":{},"username":"{}", "password":"{}"}}'.format(
                 self.conn.service, self.conn.database, self.conn.connection_id,
                 self.lb_params['listener_id'], self.conn.username, self.conn.password)
-            self.s.send_string(reconnect_str)
-            self.s.send_string('{{"reconstructStatement": {}}}'.format(
+            self.client.send_string(reconnect_str)
+            self.client.send_string('{{"reconstructStatement": {}}}'.format(
                 self.stmt_id))
 
         # Reconnected/reconstructed if needed,  send  execute command
-        self.s.validate_response(self.s.send_string('{"execute" : "execute"}'), 'executed')
+        self.client.validate_response(self.client.send_string('{"execute" : "execute"}'), 'executed')
 
         # Send queryType message/s
-        res = json.loads(self.s.send_string('{"queryTypeIn": "queryTypeIn"}'))
+        res = json.loads(self.client.send_string('{"queryTypeIn": "queryTypeIn"}'))
         self.column_list = res.get('queryType', '')
 
         if not self.column_list:
             res = json.loads(
-                self.s.send_string('{"queryTypeOut" : "queryTypeOut"}'))
+                self.client.send_string('{"queryTypeOut" : "queryTypeOut"}'))
             self.column_list = res.get('queryTypeNamed', '')
             if not self.column_list:
                 self.statement_type = 'DML'
@@ -148,22 +149,22 @@ class Cursor:
         byte_count = sum(len(packed_col) for packed_col in packed_cols)
 
         # Sending put message and binary header
-        self.s.send_string(f'{{"put":{capacity}}}', False)
-        self.s.send((self.s.generate_message_header(byte_count, False)))
+        self.client.send_string(f'{{"put":{capacity}}}', False)
+        self.conn.send((self.client.generate_message_header(byte_count, False)))
 
         # Sending packed data (binary buffer)
         for packed_col in packed_cols:
-            self.s.send((packed_col))
+            self.conn.send((packed_col))
 
-        self.s.validate_response(self.s.get_response(), '{"putted":"putted"}')
+        self.client.validate_response(self.client.get_response(), '{"putted":"putted"}')
         del packed_cols
 
     def _fetch(self, sock=None):
 
         sock = sock or self.s
         # JSON correspondence
-        res = self.s.send_string('{"fetch" : "fetch"}')
-        self.s.validate_response(res, "colSzs")
+        res = self.client.send_string('{"fetch" : "fetch"}')
+        self.client.validate_response(res, "colSzs")
         fetch_meta = json.loads(res)
         num_rows_fetched, column_sizes = fetch_meta['rows'], fetch_meta['colSzs']
         if num_rows_fetched == 0:
@@ -171,10 +172,10 @@ class Cursor:
             return num_rows_fetched
 
         # Get preceding header
-        self.s.receive(10)
+        self.client.receive(10)
 
         # Get data as memoryviews of bytearrays.
-        unsorted_data_columns = [memoryview(self.s.receive(size)) for idx, size in enumerate(column_sizes)]
+        unsorted_data_columns = [memoryview(self.client.receive(size)) for idx, size in enumerate(column_sizes)]
 
         # Sort by columns, taking a memoryview and casting to the proper type
         self.data_columns = []
@@ -379,7 +380,8 @@ class Cursor:
 
         if self.open_statement:
             sock = sock or self.s
-            self.s.send_string('{"closeStatement": "closeStatement"}')
+            self.client.send_string('{"closeStatement": "closeStatement"}')
+            self.s.close()
             self.open_statement = False
             self.buffer.close()
             self._end_ping_loop()

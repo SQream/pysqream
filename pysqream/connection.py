@@ -66,8 +66,8 @@ class Connection:
         self.reconnect_attempts, self.reconnect_interval = reconnect_attempts, reconnect_interval
         self.base_connection = base_connection
         self.ping_loop = None
+        self.client = None
 
-        print("Open connection")
         self._open_connection(clustered, use_ssl)
         self.arraysize = FETCH_MANY_DEFAULT
         self.rowcount = -1    # DB-API property
@@ -97,11 +97,12 @@ class Connection:
 
             # Create non SSL socket for picker communication
             picker_socket = sqs.SQSocket(self.orig_ip, self.orig_port, False)
+            self.client = sqs.Client(picker_socket)
             # Parse picker response to get ip and port
             # Read 4 bytes to find length of how much to read
             picker_socket.timeout(5)
             try:
-                read_len = unpack('i', picker_socket.receive(4))[0]
+                read_len = unpack('i', self.client.receive(4))[0]
             except socket.timeout:
 
                 log_and_raise(ProgrammingError, f'Connected with clustered=True, but apparently not a server picker port')
@@ -109,16 +110,17 @@ class Connection:
 
             # Read the number of bytes, which is the IP in string format
             # Using a nonblocking socket in case clustered = True was passed but not connected to picker
-            self.ip = picker_socket.receive(read_len)
+            self.ip = self.client.receive(read_len)
 
             # Now read port
-            self.port = unpack('i', picker_socket.receive(4))[0]
+            self.port = unpack('i', self.client.receive(4))[0]
             picker_socket.close()
         else:
             self.ip, self.port = self.orig_ip, self.orig_port
 
         # Create socket and connect to actual SQreamd server
         self.s = sqs.SQSocket(self.ip, self.port, use_ssl)
+        self.client = sqs.Client(self.s)
         if self.base_connection:
             self.base_conn_open[0] = True
 
@@ -126,7 +128,7 @@ class Connection:
         ''' Handle connection to database, with or without server picker '''
 
         self.database, self.username, self.password, self.service = database, username, password, service
-        res = self.s.send_string(
+        res = self.client.send_string(
             f'{{"username":"{username}", "password":"{password}", "connectDatabase":"{database}", "service":"{service}"}}'
         )
         res = json.loads(res)
@@ -157,251 +159,12 @@ class Connection:
         # Attempts failed
         log_and_raise(ConnectionRefusedError, 'Reconnection attempts to sqreamd failed')
 
-    # def execute_sqream_statement(self, stmt):
-    #     ''' '''
-    #
-    #     self.latest_stmt = stmt
-    #
-    #     if self.open_statement:
-    #         self.close_statement()
-    #     self.open_statement = True
-    #
-    #     self.more_to_fetch = True
-    #
-    #     self.stmt_id = json.loads(self.s.send_string('{"getStatementId" : "getStatementId"}'))["statementId"]
-    #     comp = utils.version_compare(self.version, "2020.3.1")
-    #     if (comp is not None and comp > -1):
-    #         _start_ping_loop(self)
-    #     stmt_json = json.dumps({"prepareStatement": stmt, "chunkSize": DEFAULT_CHUNKSIZE})
-    #     res = self.s.send_string(stmt_json)
-    #
-    #     self.s.validate_response(res, "statementPrepared")
-    #     self.lb_params = json.loads(res)
-    #     if self.lb_params.get('reconnect'):  # Reconnect exists and issued, otherwise False / None
-    #
-    #         # Close socket, open a new socket with new port/ip sent be the reconnect response
-    #         self.s.reconnect(
-    #             self.lb_params['ip'], self.lb_params['port_ssl']
-    #             if self.use_ssl else self.lb_params['port'])
-    #
-    #         # Send reconnect and reconstruct messages
-    #         reconnect_str = '{{"service": "{}", "reconnectDatabase":"{}", "connectionId":{}, "listenerId":{},"username":"{}", "password":"{}"}}'.format(
-    #             self.service, self.database, self.connection_id,
-    #             self.lb_params['listener_id'], self.username, self.password)
-    #         self.s.send_string(reconnect_str)
-    #         self.s.send_string('{{"reconstructStatement": {}}}'.format(
-    #             self.stmt_id))
-    #
-    #     # Reconnected/reconstructed if needed,  send  execute command
-    #     self.s.validate_response(self.s.send_string('{"execute" : "execute"}'), 'executed')
-    #
-    #     # Send queryType message/s
-    #     res = json.loads(self.s.send_string('{"queryTypeIn": "queryTypeIn"}'))
-    #     self.column_list = res.get('queryType', '')
-    #
-    #     if not self.column_list:
-    #         res = json.loads(
-    #             self.s.send_string('{"queryTypeOut" : "queryTypeOut"}'))
-    #         self.column_list = res.get('queryTypeNamed', '')
-    #         if not self.column_list:
-    #             self.statement_type = 'DML'
-    #             self.close_statement()
-    #             return
-    #
-    #         self.statement_type = 'SELECT' if self.column_list else 'DML'
-    #         self.result_rows = []
-    #         self.unparsed_row_amount = 0
-    #         self.data_columns = []
-    #     else:
-    #         self.statement_type = 'INSERT'
-    #
-    #     # {"isTrueVarChar":false,"nullable":true,"type":["ftInt",4,0]}
-    #     self.col_names, self.col_tvc, self.col_nul, self.col_type_tups = \
-    #         list(zip(*[(col.get("name", ""), col["isTrueVarChar"], col["nullable"], col["type"]) for col in self.column_list]))
-    #     self.col_names_map = {
-    #         name: idx
-    #         for idx, name in enumerate(self.col_names)
-    #     }
-    #
-    #     if self.statement_type == 'INSERT':
-    #         self.col_types = [type_tup[0] for type_tup in self.col_type_tups]
-    #         self.col_sizes = [type_tup[1] for type_tup in self.col_type_tups]
-    #         self.col_scales = [type_tup[2] for type_tup in self.col_type_tups]
-    #         self.row_size = sum(self.col_sizes) + sum(
-    #             self.col_nul) + 4 * sum(self.col_tvc)
-    #         self.rows_per_flush = ROWS_PER_FLUSH
-    #         self.buffer.init_buffers(self.col_sizes, self.col_nul)
-    #
-    #     # if self.statement_type == 'SELECT':
-    #     self.parsed_rows = []
-    #     self.parsed_row_amount = 0
-    #
-    #     if logger.isEnabledFor(logging.INFO):
-    #         logger.info \
-    #             (f'Executing statement over connection {self.connection_id} with statement id {self.stmt_id}:\n{stmt}')
-
-
-    ## Select
-
-    # def _fetch(self, sock=None):
-    #
-    #     sock = sock or self.s
-    #     # JSON correspondence
-    #     res = self.s.send_string('{"fetch" : "fetch"}')
-    #     self.s.validate_response(res, "colSzs")
-    #     fetch_meta = json.loads(res)
-    #     num_rows_fetched, column_sizes = fetch_meta['rows'], fetch_meta['colSzs']
-    #     if num_rows_fetched == 0:
-    #         self.close_statement()
-    #         return num_rows_fetched
-    #
-    #     # Get preceding header
-    #     self.s.receive(10)
-    #
-    #     # Get data as memoryviews of bytearrays.
-    #     unsorted_data_columns = [memoryview(self.s.receive(size)) for idx, size in enumerate(column_sizes)]
-    #
-    #     # Sort by columns, taking a memoryview and casting to the proper type
-    #     self.data_columns = []
-    #
-    #     for type_tup, nullable, tvc in zip(self.col_type_tups, self.col_nul,
-    #                                        self.col_tvc):
-    #         column = []
-    #         if nullable:
-    #             column.append(unsorted_data_columns.pop(0))
-    #         if tvc:
-    #             column.append(unsorted_data_columns.pop(0).cast('i'))
-    #
-    #         column.append(unsorted_data_columns.pop(0))
-    #         if type_tup[0] not in ('ftVarchar', 'ftBlob', 'ftNumeric'):
-    #             column[-1] = column[-1].cast(type_to_letter[type_tup[0]])
-    #         else:
-    #             column[-1] = column[-1].tobytes()
-    #         self.data_columns.append(column)
-    #
-    #     self.unparsed_row_amount = num_rows_fetched
-    #
-    #     return num_rows_fetched
-
-
-    # def _parse_fetched_cols(self, queue = None):
-    #     ''' Used by _fetch_and_parse ()  '''
-    #
-    #     self.extracted_cols = []
-    #
-    #     if not self.data_columns:
-    #         return self.extracted_cols
-    #
-    #     for idx, raw_col_data in enumerate(self.data_columns):
-    #         # Extract data according to column type
-    #         if self.col_tvc[idx]:  # nvarchar
-    #             nvarc_sizes = raw_col_data[1 if self.col_nul[idx] else 0]
-    #             col = [
-    #                 raw_col_data[-1][start:end].decode('utf8')
-    #                 for (start, end) in c.lengths_to_pairs(nvarc_sizes)
-    #             ]
-    #         elif self.col_type_tups[idx][0] == "ftVarchar":
-    #             varchar_size = self.col_type_tups[idx][1]
-    #             col = [
-    #                 raw_col_data[-1][idx:idx + varchar_size].decode(
-    #                     self.varchar_enc, "ignore").replace('\x00', '').rstrip()
-    #                 for idx in range(0, len(raw_col_data[-1]), varchar_size)
-    #             ]
-    #         elif self.col_type_tups[idx][0] == "ftDate":
-    #             col = [c.sq_date_to_py_date(d) for d in raw_col_data[-1]]
-    #         elif self.col_type_tups[idx][0] == "ftDateTime":
-    #             col = [c.sq_datetime_to_py_datetime(d) for d in raw_col_data[-1]]
-    #         elif self.col_type_tups[idx][0] == "ftNumeric":
-    #             scale = self.col_type_tups[idx][2]
-    #             col = [
-    #                 # sq_numeric_to_decimal(bytes_to_bigint(raw_col_data[-1][idx:idx + 16]), scale)
-    #                 c.sq_numeric_to_decimal(raw_col_data[-1][idx:idx + 16], scale)
-    #                 for idx in range(0, len(raw_col_data[-1]), 16)
-    #             ]
-    #
-    #         else:
-    #             col = raw_col_data[-1]
-    #
-    #         # Fill Nones if / where needed
-    #         if self.col_nul[idx]:
-    #             nulls = raw_col_data[0]  # .tolist()
-    #             col = [
-    #                 item if not null else None
-    #                 for item, null in zip(col, nulls)
-    #             ]
-    #         else:
-    #             pass
-    #
-    #         self.extracted_cols.append(col)
-    #
-    #     # Done with the raw data buffers
-    #     self.unparsed_row_amount = 0
-    #     self.data_columns = []
-    #
-    #     return self.extracted_cols
-
-
-    # def _fetch_and_parse(self, requested_row_amount, data_as='rows'):
-    #     ''' See if this amount of data is available or a fetch from sqream is required
-    #         -1 - fetch all available data. Used by fetchmany() '''
-    #
-    #     if data_as == 'rows':
-    #         while (requested_row_amount > len(self.parsed_rows)
-    #                or requested_row_amount == -1) and self.more_to_fetch:
-    #             self.more_to_fetch = bool(self._fetch())  # _fetch() updates self.unparsed_row_amount
-    #
-    #             self.parsed_rows.extend(zip(*self._parse_fetched_cols()))
-
-
-    ## Insert
-
-    # def _send_columns(self, cols=None, capacity=None):
-    #     ''' Perform network insert - "put" json, header, binarized columns. Used by executemany() '''
-    #
-    #     cols = cols or self.cols
-    #     cols = cols if isinstance(cols, (list, tuple, set, dict)) else list(cols)
-    #
-    #     capacity = capacity or self.capacity
-    #
-    #     # Send columns and metadata to be packed into our buffer
-    #     packed_cols = self.buffer.pack_columns(cols, capacity, self.col_types,
-    #                                            self.col_sizes, self.col_nul,
-    #                                            self.col_tvc, self.col_scales)
-    #     del cols
-    #     byte_count = sum(len(packed_col) for packed_col in packed_cols)
-    #
-    #     # Sending put message and binary header
-    #     self.s.send_string(f'{{"put":{capacity}}}', False)
-    #     self.s.send((self.s.generate_message_header(byte_count, False)))
-    #
-    #     # Sending packed data (binary buffer)
-    #     for packed_col in packed_cols:
-    #         self.s.send((packed_col))
-    #
-    #     self.s.validate_response(self.s.get_response(), '{"putted":"putted"}')
-    #     del packed_cols
-
-    ## Closing
-
-    # def close_statement(self, sock=None):
-    #
-    #     if self.open_statement:
-    #         sock = sock or self.s
-    #         self.s.send_string('{"closeStatement": "closeStatement"}')
-    #         self.open_statement = False
-    #         self.buffer.close()
-    #         _end_ping_loop(self)
-    #
-    #     if logger.isEnabledFor(logging.INFO):
-    #         logger.info(f'Done executing statement {self.stmt_id} over connection {self.connection_id}')
-
-
     def close_connection(self, sock=None):
 
         if self.closed:
             log_and_raise(ProgrammingError, "Trying to close a connection that's already closed")
 
-        self.s.send_string('{"closeConnection":  "closeConnection"}')
+        self.client.send_string('{"closeConnection":  "closeConnection"}')
         self.s.close()
         self.buffer.close()
         self._end_ping_loop()
@@ -411,8 +174,6 @@ class Connection:
         if logger.isEnabledFor(logging.INFO):
             logger.info(f'Connection closed to database {self.database}. Connection ID: {self.connection_id}')
 
-
-    # '''
     def csv_to_table(self, csv_path, table_name, read = None, parse = None, convert = None, con = None, auto_infer = False):
         ' Pyarrow CSV reader documentation: https://arrow.apache.org/docs/python/generated/pyarrow.csv.read_csv.html '
 
@@ -462,17 +223,13 @@ class Connection:
 
             numpy_cols.append(col)
 
-        print (f'total loading csv: {time.time( ) -start}')
+        print(f'total loading csv: {time.time( ) -start}')
         start = time.time()
 
         # Insert columns into SQream
         col_num = csv_arrow.shape[1]
         con.executemany(f'insert into {table_name} values ({"?, " *(col_num-1)}?)', numpy_cols)
-        print (f'total inserting csv: {time.time( ) -start}')
-
-    # '''
-
-
+        print(f'total inserting csv: {time.time( ) -start}')
 
     '''  -- Metadata  --
          ---------------   '''
@@ -496,145 +253,6 @@ class Connection:
         if self.closed:
             log_and_raise(ProgrammingError, 'Cursor has been closed')
 
-    # def fetchmany(self, size=None, data_as='rows', fetchone=False):
-    #     ''' Fetch an amount of result rows '''
-    #
-    #     size = size or self.arraysize
-    #     self._verify_open()
-    #     if self.statement_type not in (None, 'SELECT'):
-    #         log_and_raise(ProgrammingError ,'No open statement while attempting fetch operation')
-    #
-    #     if self.more_to_fetch is False:
-    #         # All data from server for this select statement was fetched
-    #         if len(self.parsed_rows) == 0:
-    #             # Nothing
-    #             return [] if not fetchone else None
-    #     else:
-    #         self._fetch_and_parse(size, data_as)
-    #
-    #     # Get relevant part of parsed rows and reduce storage and counter
-    #     if data_as == 'rows':
-    #         res = self.parsed_rows[0:size if size != -1 else None]
-    #         del self.parsed_rows[:size if size != -1 else None]
-    #
-    #     if logger.isEnabledFor(logging.INFO):
-    #         logger.info(f'Fetched {size} rows')
-    #
-    #     return (res if res else []) if not fetchone else (res[0] if res else None)
-    #
-    #
-    # def fetchone(self, data_as='rows'):
-    #     ''' Fetch one result row '''
-    #
-    #     if data_as not in ('rows',):
-    #         log_and_raise(ProgrammingError, "Bad argument to fetchone()")
-    #
-    #     return self.fetchmany(1, data_as, fetchone=True)
-    #
-    # def fetchall(self, data_as='rows'):
-    #     ''' Fetch all result rows '''
-    #
-    #     if data_as not in ('rows',):
-    #         log_and_raise(ProgrammingError, "Bad argument to fetchall()")
-    #
-    #     return self.fetchmany(-1, data_as)
-
-
-    # def _fill_description(self):
-    #     '''Getting parameters for the cursor's 'description' attribute, even for
-    #        a query that returns no rows. For each column, this includes:
-    #        (name, type_code, display_size, internal_size, precision, scale, null_ok) '''
-    #
-    #     if self.statement_type != 'SELECT':
-    #         self.description = None
-    #         return self.description
-    #
-    #     self.description = []
-    #     for col_name, col_nullalbe, col_type_tup in zip(
-    #             self.col_names, self.col_nul, self.col_type_tups):
-    #         type_code = typecodes[
-    #             col_type_tup[0]]  # Convert SQream type to DBAPI identifier
-    #         display_size = internal_size = col_type_tup[
-    #             1]  # Check if other size is available from API
-    #         precision = 38
-    #         scale = col_type_tup[2]
-    #
-    #         self.description.append(
-    #             (col_name, type_code, display_size, internal_size, precision,
-    #              scale, col_nullalbe))
-    #
-    #     return self.description
-
-    # def execute(self, query, params=None):
-    #     ''' Execute a statement. Parameters are not supported '''
-    #
-    #     self._verify_open()
-    #     if params:
-    #
-    #         log_and_raise(ProgrammingError, "Parametered queries not supported. \
-    #             If this is an insert query, use executemany() with the data rows as the parameter")
-    #
-    #     else:
-    #         self.execute_sqream_statement(query)
-    #
-    #     self._fill_description()
-    #     self.rows_fetched = 0
-    #     self.rows_returned = 0
-    #
-    #
-    #     return self
-
-    # def executemany(self, query, rows_or_cols=None, data_as='rows', amount=None):
-    #     ''' Execute a statement, including parametered data insert '''
-    #
-    #     self._verify_open()
-    #     self.execute(query)
-    #
-    #     if rows_or_cols is None:
-    #         return self
-    #
-    #     if data_as =='alchemy_flat_list':
-    #         # Unflatten SQLalchemy data list
-    #         row_len = len(self.column_list)
-    #         rows_or_cols = [rows_or_cols[i: i +row_len] for i in range(0, len(rows_or_cols), row_len)]
-    #         data_as = 'rows'
-    #
-    #     if 'numpy' in repr(type(rows_or_cols[0])):
-    #         data_as = 'numpy'
-    #
-    #     # Network insert starts here if data was passed
-    #     column_lengths = [len(row_or_col) for row_or_col in rows_or_cols]
-    #     if column_lengths.count(column_lengths[0]) != len(column_lengths):
-    #         log_and_raise(ProgrammingError,
-    #                       "Incosistent data sequences passed for inserting. Please use rows/columns of consistent length"
-    #                       )
-    #     if data_as == 'rows':
-    #         self.capacity = amount or len(rows_or_cols)
-    #         self.cols = list(zip(*rows_or_cols))
-    #     else:
-    #         self.cols = rows_or_cols
-    #         self.capacity = len(self.cols)
-    #
-    #     # Slice a chunk of columns and pass to _send_columns()
-    #     start_idx = 0
-    #     while self.cols != [()]:
-    #         col_chunk = [col[start_idx:start_idx + self.rows_per_flush] for col in self.cols]
-    #         chunk_len = len(col_chunk[0])
-    #         if chunk_len == 0:
-    #             break
-    #         self._send_columns(col_chunk, chunk_len)
-    #         start_idx += self.rows_per_flush
-    #         del col_chunk
-    #
-    #         if logger.isEnabledFor(logging.INFO):
-    #             logger.info(f'Sent {chunk_len} rows of data')
-    #
-    #
-    #     self.close_statement()
-    #
-    #     return self
-
-
     def _verify_query_type(self, query_type):
 
         if not self.open_statement:
@@ -644,20 +262,17 @@ class Connection:
         ''' Return a new connection with the same parameters.
             We use a connection as the equivalent of a 'cursor' '''
 
-        # cur = Connection(
-        #     self.orig_ip if self.clustered is True else self.ip,
-        #     self.orig_port if self.clustered is True else self.port,
-        #     self.clustered,
-        #     self.use_ssl,
-        #     base_connection=False
-        # )  # self is the calling connection instance, so cursor can trace back to pysqream
-        # cur.connect_database(self.database, self.username, self.password, self.service)
-        #
-        # self.cursors.append(cur)
+        conn = Connection(
+            self.orig_ip if self.clustered is True else self.ip,
+            self.orig_port if self.clustered is True else self.port,
+            self.clustered,
+            self.use_ssl,
+            base_connection=False
+        )  # self is the calling connection instance, so cursor can trace back to pysqream
+        conn.connect_database(self.database, self.username, self.password, self.service)
 
-        # return cur
         self._verify_open()
-        cur = _cursor.Cursor(self)
+        cur = _cursor.Cursor(conn)
         self.cursors.append(cur)
         return cur
 
@@ -679,7 +294,6 @@ class Connection:
                 except:
                     pass
 
-        # self.close_statement()
         self.close_connection()
         self.closed = True
 
