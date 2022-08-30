@@ -5,12 +5,14 @@ from queue import Queue
 from subprocess import Popen
 from time import sleep
 from decimal import Decimal, getcontext
-
+import pytest
 import threading, sys, os
 
 sys.path.append(os.path.abspath(__file__).rsplit('tests/', 1)[0] + '/pysqream/')
 import pysqream
-import pytest
+sys.path.append(os.path.abspath(__file__).rsplit('tests/', 1)[0] + '/tests/')
+from base import TestBase, TestBaseWithoutBeforeAfter, Logger, connect_dbapi
+
 
 q = Queue()
 varchar_length = 10
@@ -24,11 +26,8 @@ def generate_varchar(length):
     return ''.join(chr(num) for num in randint(32, 128, length))
 
 
-def print_test(test_desc):
-    print(f'\033[94mTest: {test_desc}\033[0m')
-
-
 getcontext().prec = 38
+
 
 col_types = ['bool', 'tinyint', 'smallint', 'int', 'bigint', 'real', 'double', 'date', 'datetime',
              'varchar({})'.format(varchar_length), 'nvarchar({})'.format(varchar_length),
@@ -69,27 +68,16 @@ neg_test_vals = {'tinyint': (258, 3.6, 'test', (1997, 5, 9), (1997, 12, 12, 10, 
                  'numeric': ('a')}
 
 
-# @pytest.fixture(scope = 'module')
-def connect_dbapi(ip, clustered=False, use_ssl=False):
-    args = sys.argv
-    port = (3109 if use_ssl else 3108) if clustered else (5001 if use_ssl else 5000)
-    return pysqream.connect(ip, port, 'master', 'sqream', 'sqream', clustered, use_ssl)
-
-
-ip = '192.168.0.35'
-
-
-class TestPositive:
+class TestPositive(TestBase):
 
     def test_positive(self):
 
-        con = connect_dbapi(ip)
-        cur = con.cursor()
-        print('positive tests')
+        cur = self.con.cursor()
+        Logger().info('positive tests')
         for col_type in col_types:
             trimmed_col_type = col_type.split('(')[0]
 
-            print(f'Inserted values test for column type {col_type}')
+            Logger().info(f'Inserted values test for column type {col_type}')
             cur.execute(f"create or replace table test (t_{trimmed_col_type} {col_type})")
             for val in pos_test_vals[trimmed_col_type]:
                 cur.execute('truncate table test')
@@ -105,20 +93,18 @@ class TestPositive:
                         (val != res and trimmed_col_type == 'real' and val != 0 and abs(res - val) <= 0.1)
                 )
 
-            print(f'Null test for column type: {col_type}')
+            Logger().info(f'Null test for column type: {col_type}')
             cur.execute("create or replace table test (t_{} {})".format(trimmed_col_type, col_type))
             cur.executemany('insert into test values (?)', [(None,)])
             res = cur.execute('select * from test').fetchall()[0][0]
             assert res == None
 
         cur.close()
-        con.close()
 
     def test_nulls(self):
 
-        con = connect_dbapi(ip)
-        cur = con.cursor()
-        print_test("Case statement with nulls")
+        cur = self.con.cursor()
+        Logger().info("Case statement with nulls")
         cur.execute("create or replace table test (xint int)")
         cur.executemany('insert into test values (?)', [(5,), (None,), (6,), (7,), (None,), (8,), (None,)])
         cur.executemany("select case when xint is null then 1 else 0 end from test")
@@ -126,14 +112,12 @@ class TestPositive:
         res_list = []
         res_list += [x[0] for x in cur.fetchall()]
         cur.close()
-        con.close()
         assert expected_list == res_list
 
     def test_bool(self):
 
-        con = connect_dbapi(ip)
-        cur = con.cursor()
-        print_test("Testing select true/false")
+        cur = self.con.cursor()
+        Logger().info("Testing select true/false")
         cur.execute("select false")
         res = cur.fetchall()[0][0]
         assert res == 0
@@ -141,30 +125,26 @@ class TestPositive:
         cur.execute("select true")
         res = cur.fetchall()[0][0]
         cur.close()
-        con.close()
         assert res == 1
 
     def test_when_running(self):
 
-        con = connect_dbapi(ip)
-        cur = con.cursor()
-        print_test("Running a statement when there is an open statement")
+        cur = self.con.cursor()
+        Logger().info("Running a statement when there is an open statement")
         cur.execute("select 1")
         sleep(10)
         res = cur.execute("select 1").fetchall()[0][0]
         cur.close()
-        con.close()
         assert res == 1
 
 
-class TestNegative:
+class TestNegative(TestBase):
     ''' Negative Set/Get tests '''
 
     def test_negative(self):
 
-        con = connect_dbapi(ip)
-        cur = con.cursor()
-        print_test('Negative tests')
+        cur = self.con.cursor()
+        Logger().info('Negative tests')
         for col_type in col_types:
             if col_type == 'bool':
                 continue
@@ -176,128 +156,108 @@ class TestNegative:
                     cur.executemany("insert into test values (?)", rows)
                 assert "Error packing columns. Check that all types match the respective column types" in str(e.value)
         cur.close()
-        con.close()
 
     def test_incosistent_sizes(self):
 
-        con = connect_dbapi(ip)
-        cur = con.cursor()
-        print_test("Inconsistent sizes test")
+        cur = self.con.cursor()
+        Logger().info("Inconsistent sizes test")
         cur.execute("create or replace table test (xint int, yint int)")
         with pytest.raises(Exception) as e:
             cur.executemany('insert into test values (?, ?)', [(5,), (6, 9), (7, 8)])
         cur.close()
-        con.close()
         assert "Incosistent data sequences passed for inserting. Please use rows/columns of consistent length" in str(
             e.value)
 
     def test_varchar_conversion(self):
 
-        con = connect_dbapi(ip)
-        cur = con.cursor()
-        print_test("Varchar - Conversion of a varchar to a smaller length")
+        cur = self.con.cursor()
+        Logger().info("Varchar - Conversion of a varchar to a smaller length")
         cur.execute("create or replace table test (test varchar(10))")
         with pytest.raises(Exception) as e:
             cur.executemany("insert into test values ('aa12345678910')")
         cur.close()
-        con.close()
         assert "expected response statementPrepared but got" in str(e.value)
 
     def test_nvarchar_conversion(self):
 
-        con = connect_dbapi(ip)
-        cur = con.cursor()
-        print_test("Nvarchar - Conversion of a varchar to a smaller length")
+        cur = self.con.cursor()
+        Logger().info("Nvarchar - Conversion of a varchar to a smaller length")
         cur.execute("create or replace table test (test nvarchar(10))")
         with pytest.raises(Exception) as e:
             cur.executemany("insert into test values ('aa12345678910')")
         cur.close()
-        con.close()
         assert "expected response executed but got" in str(e.value)
 
     def test_incorrect_fetchmany(self):
 
-        con = connect_dbapi(ip)
-        cur = con.cursor()
-        print_test("Incorrect usage of fetchmany - fetch without a statement")
+        cur = self.con.cursor()
+        Logger().info("Incorrect usage of fetchmany - fetch without a statement")
         cur.execute("create or replace table test (xint int)")
         with pytest.raises(Exception) as e:
             cur.fetchmany(2)
         cur.close()
-        con.close()
         assert "No open statement while attempting fetch operation" in str(e.value)
 
     def test_incorrect_fetchall(self):
 
-        con = connect_dbapi(ip)
-        cur = con.cursor()
-        print_test("Incorrect usage of fetchall")
+        cur = self.con.cursor()
+        Logger().info("Incorrect usage of fetchall")
         cur.execute("create or replace table test (xint int)")
         cur.executemany("select * from test")
         with pytest.raises(Exception) as e:
             cur.fetchall(5)
         cur.close()
-        con.close()
         assert "Bad argument to fetchall" in str(e.value)
 
     def test_incorrect_fetchone(self):
 
-        con = connect_dbapi(ip)
-        cur = con.cursor()
-        print_test("Incorrect usage of fetchone")
+        cur = self.con.cursor()
+        Logger().info("Incorrect usage of fetchone")
         cur.execute("create or replace table test (xint int)")
         cur.executemany("select * from test")
         with pytest.raises(Exception) as e:
             cur.fetchone(5)
         cur.close()
-        con.close()
         assert "Bad argument to fetchone" in str(e.value)
 
     def test_multi_statement(self):
 
-        con = connect_dbapi(ip)
-        cur = con.cursor()
-        print_test("Multi statements test")
+        cur = self.con.cursor()
+        Logger().info("Multi statements test")
         with pytest.raises(Exception) as e:
             cur.execute("select 1; select 1;")
         cur.close()
-        con.close()
         assert "expected one statement, got" in str(e.value)
 
     def test_parametered_query(self):
 
-        con = connect_dbapi(ip)
-        cur = con.cursor()
-        print_test("Parametered query tests")
+        cur = self.con.cursor()
+        Logger().info("Parametered query tests")
         params = 6
         cur.execute("create or replace table test (xint int)")
         cur.executemany('insert into test values (?)', [(5,), (6,), (7,)])
         with pytest.raises(Exception) as e:
             cur.execute('select * from test where xint > ?', str(params))
         cur.close()
-        con.close()
         assert "Parametered queries not supported" in str(e.value)
 
     def test_execute_closed_cursor(self):
 
-        con = connect_dbapi(ip)
-        cur = con.cursor()
-        print_test("running execute on a closed cursor")
+        cur = self.con.cursor()
+        Logger().info("running execute on a closed cursor")
         cur.close()
         try:
             cur.execute("select 1")
         except Exception as e:
             if "Cursor has been closed" not in repr(e):
                 raise Exception(f'bad error message')
-        finally:
-            con.close()
 
 
-class TestFetch:
+class TestFetch(TestBase):
 
     def test_fetch(self):
-        con = connect_dbapi(ip)
-        cur = con.cursor()
+
+        cur = self.con.cursor()
         cur.execute("create or replace table test (xint int)")
         cur.executemany('insert into test values (?)', [(1,), (2,), (3,), (4,), (5,), (6,), (7,), (8,), (9,), (10,)])
         # fetchmany(1) vs fetchone()
@@ -309,7 +269,7 @@ class TestFetch:
         assert res == res2
 
         # fetchmany(-1) vs fetchall()
-        cur = con.cursor()
+        cur = self.con.cursor()
         cur.execute("select * from test")
         res3 = cur.fetchmany(-1)
         cur.execute("select * from test")
@@ -318,17 +278,16 @@ class TestFetch:
         assert res3 == res4
 
         # fetchone() loop
-        cur = con.cursor()
+        cur = self.con.cursor()
         cur.execute("select * from test")
         for i in range(1, 11):
             x = cur.fetchone()[0]
             assert x == i
         cur.close()
-        con.close()
 
     def test_combined_fetch(self):
-        con = connect_dbapi(ip)
-        cur = con.cursor()
+
+        cur = self.con.cursor()
         cur.execute("create or replace table test (xint int)")
         cur.executemany('insert into test values (?)', [(1,), (2,), (3,), (4,), (5,), (6,), (7,), (8,), (9,), (10,)])
         cur.execute("select * from test")
@@ -339,12 +298,11 @@ class TestFetch:
         res_list.append(cur.fetchone()[0])
         res_list += [x[0] for x in cur.fetchall()]
         cur.close()
-        con.close()
         assert expected_list == res_list
 
     def test_fetch_after_data_read(self):
-        con = connect_dbapi(ip)
-        cur = con.cursor()
+
+        cur = self.con.cursor()
         cur.execute("create or replace table test (xint int)")
         cur.executemany('insert into test values (?)', [(1,)])
         cur.execute("select * from test")
@@ -359,20 +317,19 @@ class TestFetch:
         assert res == []
 
         cur.close()
-        con.close()
 
 
-class TestCursor:
+class TestCursor(TestBaseWithoutBeforeAfter):
 
     def test_cursor_through_clustered(self):
-        con_clustered = pysqream.connect(ip, 3108, 'master', 'sqream', 'sqream', clustered=True)
+        con_clustered = pysqream.connect(self.ip, 3108, 'master', 'sqream', 'sqream', clustered=True)
         cur = con_clustered.cursor()
         assert cur.execute("select 1").fetchall()[0][0] == 1
         cur.close()
 
     def test_two_statements_same_cursor(self):
         vals = [1]
-        con = connect_dbapi(ip)
+        con = connect_dbapi(self.ip)
         cur = con.cursor()
         cur.execute("select 1")
         res1 = cur.fetchall()[0][0]
@@ -385,7 +342,7 @@ class TestCursor:
         assert all(x == vals[0] for x in vals)
 
     def test_cursor_when_open_statement(self):
-        con = connect_dbapi(ip)
+        con = connect_dbapi(self.ip)
         cur = con.cursor()
         cur.execute("select 1")
         sleep(10)
@@ -396,7 +353,7 @@ class TestCursor:
         assert res == 1
 
     def test_fetch_after_all_read(self):
-        con = connect_dbapi(ip)
+        con = connect_dbapi(self.ip)
         cur = con.cursor()
         cur.execute("create or replace table test (xint int)")
         cur.executemany('insert into test values (?)', [(1,)])
@@ -414,22 +371,19 @@ class TestCursor:
         con.close()
 
 
-class TestString:
+class TestString(TestBase):
 
     def test_insert_return_utf8(self):
-        con = connect_dbapi(ip)
-        cur = con.cursor()
+        cur = self.con.cursor()
         cur.execute("create or replace table test (xvarchar varchar(20))")
         cur.executemany('insert into test values (?)', [(u"hello world",), ("hello world",)])
         cur.execute("select * from test")
         res = cur.fetchall()
         cur.close()
-        con.close()
         assert res[0][0] == res[1][0]
 
     def test_strings_with_escaped_chars(self):
-        con = connect_dbapi(ip)
-        cur = con.cursor()
+        cur = self.con.cursor()
         cur.execute("create or replace table test (xvarchar varchar(20))")
         values = [("\t",), ("\n",), ("\\n",), ("\\\n",), (" \\",), ("\\\\",), (" \nt",), ("'abd''ef'",), ("abd""ef",),
                   ("abd\"ef",)]
@@ -439,5 +393,4 @@ class TestString:
         res_list = []
         res_list += [x[0] for x in cur.fetchall()]
         cur.close()
-        con.close()
         assert expected_list == res_list
