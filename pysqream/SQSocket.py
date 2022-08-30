@@ -15,7 +15,6 @@ class SQSocket:
     def __init__(self, ip, port, use_ssl=False):
         self.ip, self.port, self.use_ssl = ip, port, use_ssl
         self._setup_socket(ip, port)
-        print("open connection")
 
     def _setup_socket(self, ip, port):
 
@@ -71,7 +70,6 @@ class SQSocket:
         #    raise BrokenPipeError('No connection to SQream. Try reconnecting')
 
     def close(self):
-        print("close connection")
         return self.s.close()
 
     def timeout(self, timeout='not passed'):

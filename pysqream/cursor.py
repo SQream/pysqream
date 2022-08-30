@@ -1,12 +1,14 @@
 from logger import log_and_raise
 import utils
 import json
-from globals import BUFFER_SIZE, ROWS_PER_FLUSH, DEFAULT_CHUNKSIZE, FETCH_MANY_DEFAULT, typecodes, type_to_letter
+from globals import BUFFER_SIZE, ROWS_PER_FLUSH, DEFAULT_CHUNKSIZE, FETCH_MANY_DEFAULT, typecodes, type_to_letter, \
+    ARROW, pa, csv
 import column_buffer as cb
 import ping as p
 from logger import *
 import casting as c
 import SQSocket as sqs
+import time
 
 
 class Cursor:
@@ -18,6 +20,7 @@ class Cursor:
         self.client = sqs.Client(self.s)
         self.version = self.conn.version
         self.open_statement = False
+        self.closed = False
         self.buffer = cb.ColumnBuffer(BUFFER_SIZE)  # flushing buffer every BUFFER_SIZE bytes
         self.ping_loop = None
         self.stmt_id = None  # For error handling when called out of order
@@ -150,11 +153,11 @@ class Cursor:
 
         # Sending put message and binary header
         self.client.send_string(f'{{"put":{capacity}}}', False)
-        self.conn.send((self.client.generate_message_header(byte_count, False)))
+        self.s.send((self.client.generate_message_header(byte_count, False)))
 
         # Sending packed data (binary buffer)
         for packed_col in packed_cols:
-            self.conn.send((packed_col))
+            self.s.send((packed_col))
 
         self.client.validate_response(self.client.get_response(), '{"putted":"putted"}')
         del packed_cols
@@ -374,6 +377,65 @@ class Cursor:
 
         return self.fetchmany(-1, data_as)
 
+    # def csv_to_table(self, csv_path, table_name, read=None, parse=None, convert=None, con=None, auto_infer=False,
+    #                  delimiter="|"):
+    #     ' Pyarrow CSV reader documentation: https://arrow.apache.org/docs/python/generated/pyarrow.csv.read_csv.html '
+    #
+    #     if not ARROW:
+    #         return "Optional pyarrow dependency not found. To install: pip3 install pyarrow"
+    #
+    #     sqream_to_pa = {
+    #         'ftBool':     pa.bool_(),
+    #         'ftUByte':    pa.uint8(),
+    #         'ftShort':    pa.int16(),
+    #         'ftInt':      pa.int32(),
+    #         'ftLong':     pa.int64(),
+    #         'ftFloat':    pa.float32(),
+    #         'ftDouble':   pa.float64(),
+    #         'ftDate':     pa.timestamp('ns'),
+    #         'ftDateTime': pa.timestamp('ns'),
+    #         'ftVarchar':  pa.string(),
+    #         'ftBlob':     pa.utf8(),
+    #         'ftNumeric':  pa.decimal128(28, 11)
+    #     }
+    #
+    #     start = time.time()
+    #     # Get table metadata
+    #     self.execute(f'select * from {table_name} where 1=0')
+    #
+    #     # Map column names to pyarrow types and set Arrow's CSV parameters
+    #     sqream_col_types = [col_type[0] for col_type in self.col_type_tups]
+    #     column_types = zip(self.col_names, [sqream_to_pa[col_type[0]] for col_type in self.col_type_tups])
+    #     read = read or csv.ReadOptions(column_names=self.col_names)
+    #     parse = parse or csv.ParseOptions(delimiter=delimiter)
+    #     convert = convert or csv.ConvertOptions(column_types=None if auto_infer else column_types,
+    #                                             null_values=["\\N"])
+    #
+    #     # Read CSV to in-memory arrow format
+    #     csv_arrow = csv.read_csv(csv_path, read_options=read, parse_options=parse, convert_options=convert).\
+    #         combine_chunks()
+    #     num_chunks = len(csv_arrow[0].chunks)
+    #     numpy_cols = []
+    #
+    #     # For each column, get the numpy representation for quick packing
+    #     for col_type, col in zip(sqream_col_types, csv_arrow):
+    #         # Only one chunk after combine_chunks()
+    #         col = col.chunks[0]
+    #         if col_type in  ('ftVarchar', 'ftBlob', 'ftDate', 'ftDateTime', 'ftNumeric'):
+    #             col = col.to_pandas()
+    #         else:
+    #             col = col.to_numpy()
+    #
+    #         numpy_cols.append(col)
+    #
+    #     print(f'total loading csv: {time.time( ) -start}')
+    #     start = time.time()
+    #
+    #     # Insert columns into SQream
+    #     col_num = csv_arrow.shape[1]
+    #     self.executemany(f'insert into {table_name} values ({"?, " *(col_num-1)}?)', numpy_cols)
+    #     print(f'total inserting csv: {time.time( ) -start}')
+
     ## Closing
 
     def close(self, sock=None):
@@ -381,8 +443,8 @@ class Cursor:
         if self.open_statement:
             sock = sock or self.s
             self.client.send_string('{"closeStatement": "closeStatement"}')
-            self.s.close()
             self.open_statement = False
+            self.closed = True
             self.buffer.close()
             self._end_ping_loop()
 

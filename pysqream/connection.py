@@ -1,49 +1,15 @@
 import column_buffer as cb
 import SQSocket as sqs
 import ping as p
-import casting as c
-from globals import BUFFER_SIZE, ROWS_PER_FLUSH, DEFAULT_CHUNKSIZE, FETCH_MANY_DEFAULT, type_to_letter, typecodes
+from globals import BUFFER_SIZE, FETCH_MANY_DEFAULT, CYTHON
 from logger import *
 import json
 import time
 from queue import Queue, Empty
-import utils
-from struct import pack, pack_into, unpack, error as struct_error
+from struct import unpack
 import socket
 from casting import date_to_int as pydate_to_int, datetime_to_long as pydt_to_long, sq_date_to_py_date as date_to_py, sq_datetime_to_py_datetime as dt_to_py
 import cursor as _cursor
-
-
-# Cython IS NOT SUPPORTED
-# Cython (Optional optimization) imports
-# try:
-#     import cython
-#     CYTHON = True
-# except:
-CYTHON = False
-# Pyarrow (Optional fast csv loading) imports
-try:
-    import pyarrow as pa
-    from pyarrow import csv
-    import numpy as np
-    ARROW = True
-except:
-    ARROW = False
-else:
-    sqream_to_pa = {
-        'ftBool':     pa.bool_(),
-        'ftUByte':    pa.uint8(),
-        'ftShort':    pa.int16(),
-        'ftInt':      pa.int32(),
-        'ftLong':     pa.int64(),
-        'ftFloat':    pa.float32(),
-        'ftDouble':   pa.float64(),
-        'ftDate':     pa.timestamp('ns'),
-        'ftDateTime': pa.timestamp('ns'),
-        'ftVarchar':  pa.string(),
-        'ftBlob':     pa.utf8(),
-        'ftNumeric':  pa.decimal128(38, 11)
-    }
 
 
 class Connection:
@@ -62,20 +28,21 @@ class Connection:
         self.statement_type = None
         self.open_statement = False
         self.closed = False
+        self.opened = False
         self.orig_ip, self.orig_port, self.clustered, self.use_ssl = ip, port, clustered, use_ssl
         self.reconnect_attempts, self.reconnect_interval = reconnect_attempts, reconnect_interval
         self.base_connection = base_connection
         self.ping_loop = None
         self.client = None
 
+        if self.base_connection:
+            self.cursors = []
+
         self._open_connection(clustered, use_ssl)
         self.arraysize = FETCH_MANY_DEFAULT
         self.rowcount = -1    # DB-API property
         self.more_to_fetch = False
         self.parsed_rows = []
-
-        if self.base_connection:
-            self.cursors = []
 
         self.lastrowid = None
         self.unpack_q = Queue()
@@ -88,6 +55,12 @@ class Connection:
         # Thread for unpacking fetched socket data
         # thread.start_new_thread(self._parse_fetched_cols, (self.unpack_q,))
 
+    def __del__(self):
+        try:
+            self.close()
+        except Exception as e:
+            if "Trying to close a connection that's already closed" not in repr(e):
+                log_and_raise(ProgrammingError, e)
 
     ## SQream mechanisms
 
@@ -143,6 +116,7 @@ class Connection:
 
         if logger.isEnabledFor(logging.INFO):
             logger.info(f'Connection opened to database {database}. Connection ID: {self.connection_id}')
+        self.opened = True
 
     def _attempt_reconnect(self):
 
@@ -173,63 +147,6 @@ class Connection:
 
         if logger.isEnabledFor(logging.INFO):
             logger.info(f'Connection closed to database {self.database}. Connection ID: {self.connection_id}')
-
-    def csv_to_table(self, csv_path, table_name, read = None, parse = None, convert = None, con = None, auto_infer = False):
-        ' Pyarrow CSV reader documentation: https://arrow.apache.org/docs/python/generated/pyarrow.csv.read_csv.html '
-
-        if not ARROW:
-            return "Optional pyarrow dependency not found. To install: pip3 install pyarrow"
-
-        sqream_to_pa = {
-            'ftBool':     pa.bool_(),
-            'ftUByte':    pa.uint8(),
-            'ftShort':    pa.int16(),
-            'ftInt':      pa.int32(),
-            'ftLong':     pa.int64(),
-            'ftFloat':    pa.float32(),
-            'ftDouble':   pa.float64(),
-            'ftDate':     pa.timestamp('ns'),
-            'ftDateTime': pa.timestamp('ns'),
-            'ftVarchar':  pa.string(),
-            'ftBlob':     pa.utf8(),
-            'ftNumeric':  pa.decimal128(28, 11)
-        }
-
-        start = time.time()
-        # Get table metadata
-        con = con or self
-        con.execute(f'select * from {table_name} where 1=0')
-
-        # Map column names to pyarrow types and set Arrow's CSV parameters
-        sqream_col_types = [col_type[0] for col_type in con.col_type_tups]
-        column_types = zip(con.col_names, [sqream_to_pa[col_type[0]] for col_type in con.col_type_tups])
-        read = read or csv.ReadOptions(column_names=con.col_names)
-        parse = parse or csv.ParseOptions(delimiter='|')
-        convert = convert or csv.ConvertOptions(column_types = None if auto_infer else column_types)
-
-        # Read CSV to in-memory arrow format
-        csv_arrow = csv.read_csv(csv_path, read_options=read, parse_options=parse, convert_options=convert).combine_chunks()
-        num_chunks = len(csv_arrow[0].chunks)
-        numpy_cols = []
-
-        # For each column, get the numpy representation for quick packing
-        for col_type, col in zip(sqream_col_types, csv_arrow):
-            # Only one chunk after combine_chunks()
-            col = col.chunks[0]
-            if col_type in  ('ftVarchar', 'ftBlob', 'ftDate', 'ftDateTime', 'ftNumeric'):
-                col = col.to_pandas()
-            else:
-                col = col.to_numpy()
-
-            numpy_cols.append(col)
-
-        print(f'total loading csv: {time.time( ) -start}')
-        start = time.time()
-
-        # Insert columns into SQream
-        col_num = csv_arrow.shape[1]
-        con.executemany(f'insert into {table_name} values ({"?, " *(col_num-1)}?)', numpy_cols)
-        print(f'total inserting csv: {time.time( ) -start}')
 
     '''  -- Metadata  --
          ---------------   '''
@@ -284,18 +201,19 @@ class Connection:
 
     def close(self):
 
-        if self.closed:
-            log_and_raise(ProgrammingError, "Trying to close a connection that's already closed")
+        if self.opened:
+            if self.closed:
+                log_and_raise(ProgrammingError, "Trying to close a connection that's already closed")
 
-        if self.base_connection:
-            for cursor in self.cursors:
-                try:
-                    cursor.close()
-                except:
-                    pass
+            if self.base_connection:
+                for cursor in self.cursors:
+                    try:
+                        cursor.close()
+                    except:
+                        pass
 
-        self.close_connection()
-        self.closed = True
+            self.close_connection()
+            self.closed = True
 
     def nextset(self):
         ''' No multiple result sets so currently always returns None '''

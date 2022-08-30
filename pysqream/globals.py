@@ -13,6 +13,7 @@ DEFAULT_CHUNKSIZE = 0  # Dummy variable for some jsons
 FETCH_MANY_DEFAULT = 1  # default parameter for fetchmany()
 VARCHAR_ENCODING = 'ascii'
 
+CYTHON = False # Cython IS NOT SUPPORTED
 clean_sqream_errors = True
 support_pandas = False
 dbg = False
