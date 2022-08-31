@@ -135,7 +135,7 @@ def _pack_column(col_tup, return_actual_data=True):
             buf_map.seek(buf_idx)
             buf_map.write(packed_strings)
             buf_idx += len(packed_strings)
-            print(f'unicode strings: {packed_strings}')
+            # print(f'unicode strings: {packed_strings}')
         else:
             packed_np = col.tobytes()
             buf_map.seek(buf_idx)
