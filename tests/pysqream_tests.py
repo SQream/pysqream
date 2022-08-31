@@ -8,7 +8,8 @@ from time import sleep
 import threading, sys, os
 import pytest
 import pysqream
-from .base import TestBase, TestBaseWithoutBeforeAfter, Logger, connect_dbapi
+sys.path.append(os.path.abspath(__file__).rsplit('tests/', 1)[0] + '/tests/')
+from base import TestBase, TestBaseWithoutBeforeAfter, Logger, connect_dbapi
 
 
 q = Queue()

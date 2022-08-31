@@ -1,12 +1,12 @@
-from .utils import version_compare
+from utils import version_compare
 import json
-from .globals import BUFFER_SIZE, ROWS_PER_FLUSH, DEFAULT_CHUNKSIZE, FETCH_MANY_DEFAULT, typecodes, type_to_letter, \
+from globals import BUFFER_SIZE, ROWS_PER_FLUSH, DEFAULT_CHUNKSIZE, FETCH_MANY_DEFAULT, typecodes, type_to_letter, \
     ARROW, pa, csv
-from .column_buffer import ColumnBuffer
-from .ping import PingLoop
-from .logger import *
-from .casting import lengths_to_pairs, sq_date_to_py_date, sq_datetime_to_py_datetime, sq_numeric_to_decimal
-from .SQSocket import Client
+from column_buffer import ColumnBuffer
+from ping import PingLoop
+from logger import *
+from casting import lengths_to_pairs, sq_date_to_py_date, sq_datetime_to_py_datetime, sq_numeric_to_decimal
+from SQSocket import Client
 import time
 
 

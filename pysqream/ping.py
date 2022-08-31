@@ -1,6 +1,6 @@
 import time
 import threading
-from .SQSocket import Client
+from SQSocket import Client
 
 
 class PingLoop(threading.Thread):

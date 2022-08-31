@@ -1,4 +1,4 @@
-from .utils import get_ram_windows, get_ram_linux
+from utils import get_ram_windows, get_ram_linux
 import sys
 
 __version__ = '3.1.9'

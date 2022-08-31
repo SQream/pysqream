@@ -1,15 +1,15 @@
-from .column_buffer import ColumnBuffer
-from .SQSocket import SQSocket, Client
-from .ping import PingLoop
-from .globals import BUFFER_SIZE, FETCH_MANY_DEFAULT, CYTHON
-from .logger import *
+from column_buffer import ColumnBuffer
+from SQSocket import SQSocket, Client
+from ping import PingLoop
+from globals import BUFFER_SIZE, FETCH_MANY_DEFAULT, CYTHON
+from logger import *
 import json
 import time
 from queue import Queue, Empty
 from struct import unpack
 import socket
-from .casting import date_to_int as pydate_to_int, datetime_to_long as pydt_to_long, sq_date_to_py_date as date_to_py, sq_datetime_to_py_datetime as dt_to_py
-from .cursor import Cursor
+from casting import date_to_int as pydate_to_int, datetime_to_long as pydt_to_long, sq_date_to_py_date as date_to_py, sq_datetime_to_py_datetime as dt_to_py
+from cursor import Cursor
 
 
 class Connection:

@@ -2,9 +2,9 @@
 
 from datetime import datetime, date, time as t
 import time
-from .globals import __version__
-from .logger import log_and_raise
-from .connection import Connection
+from globals import __version__
+from logger import log_and_raise
+from connection import Connection
 
 
 def connect(host, port, database, username, password, clustered = False, use_ssl = False, service='sqream', log=False, reconnect_attempts=3, reconnect_interval=10):

@@ -1,4 +1,4 @@
-from .globals import dbg
+from globals import dbg
 import logging
 
 
