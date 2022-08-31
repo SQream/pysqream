@@ -1,6 +1,6 @@
 from column_buffer import ColumnBuffer
 from SQSocket import SQSocket, Client
-from ping import PingLoop
+from ping import PingLoop, _end_ping_loop
 from globals import BUFFER_SIZE, FETCH_MANY_DEFAULT, CYTHON
 from logger import *
 import json
@@ -131,7 +131,7 @@ class Connection:
         self.client.send_string('{"closeConnection":  "closeConnection"}')
         self.s.close()
         self.buffer.close()
-        self._end_ping_loop()
+        # self._end_ping_loop()
         self.closed = True
         self.base_conn_open[0] = False if self.base_connection else True
 
@@ -189,21 +189,6 @@ class Connection:
             self.close_connection()
             self.closed = True
 
-    def nextset(self):
-        ''' No multiple result sets so currently always returns None '''
-
-        return None
-
-    # DB-API Do nothing (for now) methods
-    # -----------------------------------
-
-    def setinputsizes(self, sizes):
-
-        self._verify_open()
-
-    def setoutputsize(self, size, column=None):
-
-        self._verify_open()
 
     # Internal Methods
     # ----------------
@@ -216,15 +201,15 @@ class Connection:
     def __exit__(self, exc_type, exc_value, exc_traceback):
         self.close()
 
-    def _start_ping_loop(self):
-        self.ping_loop = PingLoop(self)
-        self.ping_loop.start()
-
-    def _end_ping_loop(self):
-        if self.ping_loop is not None:
-            self.ping_loop.halt()
-            self.ping_loop.join()
-        self.ping_loop = None
+    # def _start_ping_loop(self):
+    #     self.ping_loop = PingLoop(self)
+    #     self.ping_loop.start()
+    #
+    # def _end_ping_loop(self):
+    #     if self.ping_loop is not None:
+    #         self.ping_loop.halt()
+    #         self.ping_loop.join()
+    #     self.ping_loop = None
 
 
 class Error(Exception):

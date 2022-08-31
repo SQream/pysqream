@@ -131,15 +131,15 @@ class TestConnection(TestBaseWithoutBeforeAfter):
             if "Trying to close a connection that's already closed" not in repr(e):
                 raise Exception("bad error message")
         #
-        Logger().info("Connection tests - negative test for use_ssl=True")
-        try:
-            pysqream.connect(self.ip, 5000, 'master', 'sqream', 'sqream', False, True)
-        except Exception as e:
-            if "Using use_ssl=True but connected to non ssl sqreamd port" not in repr(e):
-                raise Exception("bad error message")
+        # Logger().info("Connection tests - negative test for use_ssl=True")
+        # try:
+        #     pysqream.connect(self.ip, 5000, 'master', 'sqream', 'sqream', False, True)
+        # except Exception as e:
+        #     if "Using use_ssl=True but connected to non ssl sqreamd port" not in repr(e):
+        #         raise Exception("bad error message")
 
         # Logger().info("Connection tests - positive test for use_ssl=True")
-        # con = connect_dbapi(ip, False, True)
+        # con = connect_dbapi(self.ip, False, True)
         # cur = con.cursor()
         # res = cur.execute('select 1').fetchall()[0][0]
         # if res != 1:

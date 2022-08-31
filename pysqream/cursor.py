@@ -3,7 +3,7 @@ import json
 from globals import BUFFER_SIZE, ROWS_PER_FLUSH, DEFAULT_CHUNKSIZE, FETCH_MANY_DEFAULT, typecodes, type_to_letter, \
     ARROW, pa, csv
 from column_buffer import ColumnBuffer
-from ping import PingLoop
+from ping import PingLoop, _start_ping_loop, _end_ping_loop
 from logger import *
 from casting import lengths_to_pairs, sq_date_to_py_date, sq_datetime_to_py_datetime, sq_numeric_to_decimal
 from SQSocket import Client
@@ -43,7 +43,7 @@ class Cursor:
         self.stmt_id = json.loads(self.client.send_string('{"getStatementId" : "getStatementId"}'))["statementId"]
         comp = version_compare(self.version, "2020.3.1")
         if (comp is not None and comp > -1):
-            self._start_ping_loop()
+            self.ping_loop = _start_ping_loop(self.conn)
         stmt_json = json.dumps({"prepareStatement": stmt, "chunkSize": DEFAULT_CHUNKSIZE})
         res = self.client.send_string(stmt_json)
 
@@ -378,6 +378,19 @@ class Cursor:
 
         return self.fetchmany(-1, data_as)
 
+    # DB-API Do nothing (for now) methods
+    # -----------------------------------
+
+    def nextset(self):
+        """No multiple result sets so currently always returns None"""
+        log_and_raise(NotSupportedError, "Nextset is not supported")
+
+    def setinputsizes(self, sizes):
+        log_and_raise(NotSupportedError, "Setinputsizes is not supported")
+
+    def setoutputsize(self, size, column=None):
+        log_and_raise(NotSupportedError, "Setoutputsize is not supported")
+
     # def csv_to_table(self, csv_path, table_name, read=None, parse=None, convert=None, con=None, auto_infer=False,
     #                  delimiter="|"):
     #     ' Pyarrow CSV reader documentation: https://arrow.apache.org/docs/python/generated/pyarrow.csv.read_csv.html '
@@ -447,20 +460,20 @@ class Cursor:
             self.open_statement = False
             self.closed = True
             self.buffer.close()
-            self._end_ping_loop()
+            _end_ping_loop(self.ping_loop)
 
         if logger.isEnabledFor(logging.INFO):
             logger.info(f'Done executing statement {self.stmt_id} over connection {self.conn.connection_id}')
 
-    def _start_ping_loop(self):
-        self.ping_loop = PingLoop(self.conn)
-        self.ping_loop.start()
-
-    def _end_ping_loop(self):
-        if self.ping_loop is not None:
-            self.ping_loop.halt()
-            self.ping_loop.join()
-        self.ping_loop = None
+    # def _start_ping_loop(self):
+    #     self.ping_loop = PingLoop(self.conn)
+    #     self.ping_loop.start()
+    #
+    # def _end_ping_loop(self):
+    #     if self.ping_loop is not None:
+    #         self.ping_loop.halt()
+    #         self.ping_loop.join()
+    #     self.ping_loop = None
 
     def __enter__(self):
         return self

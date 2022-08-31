@@ -33,3 +33,15 @@ class PingLoop(threading.Thread):
             if self.done:
                 return False
         return True
+
+
+def _start_ping_loop(conn):
+    ping_loop = PingLoop(conn)
+    ping_loop.start()
+    return ping_loop
+
+
+def _end_ping_loop(ping_loop):
+    if ping_loop is not None:
+        ping_loop.halt()
+        ping_loop.join()
