@@ -2,9 +2,9 @@
 
 from datetime import datetime, date, time as t
 import time
-from globals import __version__
-from logger import log_and_raise
-import connection as c
+from .globals import __version__
+from .logger import log_and_raise
+from .connection import Connection
 
 
 def connect(host, port, database, username, password, clustered = False, use_ssl = False, service='sqream', log=False, reconnect_attempts=3, reconnect_interval=10):
@@ -14,7 +14,7 @@ def connect(host, port, database, username, password, clustered = False, use_ssl
     if not isinstance(reconnect_interval, int) or reconnect_attempts < 0:
         log_and_raise(Exception, f'reconnect interval should be a positive integer, got : {reconnect_interval}')
 
-    conn = c.Connection(host, port, clustered, use_ssl, log=log, base_connection=True,
+    conn = Connection(host, port, clustered, use_ssl, log=log, base_connection=True,
                         reconnect_attempts=reconnect_attempts, reconnect_interval=reconnect_interval)
     conn.connect_database(database, username, password, service)
 

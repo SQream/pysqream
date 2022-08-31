@@ -1,6 +1,6 @@
-import casting as c
-from globals import buf_maps, buf_views, WIN, BUFFER_SIZE, ROWS_PER_FLUSH, VARCHAR_ENCODING, type_to_letter, ARROW
-from logger import *
+from .casting import *
+from .globals import WIN, BUFFER_SIZE, ROWS_PER_FLUSH, VARCHAR_ENCODING, type_to_letter, ARROW, buf_maps, buf_views
+from .logger import *
 from decimal import Decimal
 import traceback
 import array
@@ -217,7 +217,7 @@ def _pack_column(col_tup, return_actual_data=True):
         pass
         # '''
         try:
-            col = (c.date_to_int(deit) if deit is not None else 693901 for deit in col)
+            col = (date_to_int(deit) if deit is not None else 693901 for deit in col)
         except AttributeError as e:  # Non date/times will not have .timetuple()
             pack_exception(e)
         # '''
@@ -225,13 +225,13 @@ def _pack_column(col_tup, return_actual_data=True):
     elif col_type == 'ftDateTime':
         # datetime_tuple_to_long(1900, 1, 1, 0, 0, 0) = 2980282101661696
         try:
-            col = (c.datetime_to_long(dt) if dt is not None else 2980282101661696 for dt in col)
+            col = (datetime_to_long(dt) if dt is not None else 2980282101661696 for dt in col)
         except AttributeError as e:
             pack_exception(e)
 
     elif col_type == 'ftNumeric':
         try:
-            col = (c.decimal_to_sq_numeric(Decimal(num), scale) for num in col)
+            col = (decimal_to_sq_numeric(Decimal(num), scale) for num in col)
         except AttributeError as e:
             pack_exception(e)
 
@@ -258,7 +258,7 @@ def _pack_column(col_tup, return_actual_data=True):
         try:
             if CYTHON:
                 buf_map.seek(buf_idx)
-                type_packer[col_type](col, size, buf_map, buf_idx)
+                # type_packer[col_type](col, size, buf_map, buf_idx)
             else:
                 pack_into(f'{capacity}{type_code}', buf_view, buf_idx, *col)
         except struct_error as e:

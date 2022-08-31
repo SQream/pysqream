@@ -1,15 +1,15 @@
-import column_buffer as cb
-import SQSocket as sqs
-import ping as p
-from globals import BUFFER_SIZE, FETCH_MANY_DEFAULT, CYTHON
-from logger import *
+from .column_buffer import ColumnBuffer
+from .SQSocket import SQSocket, Client
+from .ping import PingLoop
+from .globals import BUFFER_SIZE, FETCH_MANY_DEFAULT, CYTHON
+from .logger import *
 import json
 import time
 from queue import Queue, Empty
 from struct import unpack
 import socket
-from casting import date_to_int as pydate_to_int, datetime_to_long as pydt_to_long, sq_date_to_py_date as date_to_py, sq_datetime_to_py_datetime as dt_to_py
-import cursor as _cursor
+from .casting import date_to_int as pydate_to_int, datetime_to_long as pydt_to_long, sq_date_to_py_date as date_to_py, sq_datetime_to_py_datetime as dt_to_py
+from .cursor import Cursor
 
 
 class Connection:
@@ -20,7 +20,7 @@ class Connection:
     def __init__(self, ip, port, clustered, use_ssl=False, log=False, base_connection=True,
                  reconnect_attempts=3, reconnect_interval=10):
 
-        self.buffer = cb.ColumnBuffer(BUFFER_SIZE)  # flushing buffer every BUFFER_SIZE bytes
+        self.buffer = ColumnBuffer(BUFFER_SIZE)  # flushing buffer every BUFFER_SIZE bytes
         self.row_size = 0
         self.rows_per_flush = 0
         self.version = None
@@ -69,8 +69,8 @@ class Connection:
         if clustered is True:
 
             # Create non SSL socket for picker communication
-            picker_socket = sqs.SQSocket(self.orig_ip, self.orig_port, False)
-            self.client = sqs.Client(picker_socket)
+            picker_socket = SQSocket(self.orig_ip, self.orig_port, False)
+            self.client = Client(picker_socket)
             # Parse picker response to get ip and port
             # Read 4 bytes to find length of how much to read
             picker_socket.timeout(5)
@@ -92,8 +92,8 @@ class Connection:
             self.ip, self.port = self.orig_ip, self.orig_port
 
         # Create socket and connect to actual SQreamd server
-        self.s = sqs.SQSocket(self.ip, self.port, use_ssl)
-        self.client = sqs.Client(self.s)
+        self.s = SQSocket(self.ip, self.port, use_ssl)
+        self.client = Client(self.s)
         if self.base_connection:
             self.base_conn_open[0] = True
 
@@ -189,7 +189,7 @@ class Connection:
         conn.connect_database(self.database, self.username, self.password, self.service)
 
         self._verify_open()
-        cur = _cursor.Cursor(conn)
+        cur = Cursor(conn)
         self.cursors.append(cur)
         return cur
 
@@ -243,7 +243,7 @@ class Connection:
         self.close()
 
     def _start_ping_loop(self):
-        self.ping_loop = p.PingLoop(self)
+        self.ping_loop = PingLoop(self)
         self.ping_loop.start()
 
     def _end_ping_loop(self):

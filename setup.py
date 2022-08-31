@@ -1,5 +1,5 @@
 from setuptools import setup, find_packages
-from pysqream.globals import __version__
+from .pysqream.globals import __version__
 
 with open("README.rst", "r", encoding="utf-8") as fh:
     long_description = fh.read()

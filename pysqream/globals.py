@@ -1,4 +1,4 @@
-import utils
+from .utils import get_ram_windows, get_ram_linux
 import sys
 
 __version__ = '3.1.9'
@@ -19,11 +19,11 @@ support_pandas = False
 dbg = False
 
 if WIN:
-    get_ram = utils.get_ram_windows()
+    get_ram = get_ram_windows()
 elif MAC:
     get_ram = None
 else:
-    get_ram = utils.get_ram_linux()
+    get_ram = get_ram_linux()
 
 try:
     import pyarrow as pa

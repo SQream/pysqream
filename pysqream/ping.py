@@ -1,12 +1,12 @@
 import time
 import threading
-import SQSocket as sqs
+from .SQSocket import Client
 
 
 class PingLoop(threading.Thread):
     def __init__(self, conn):
         self.conn = conn
-        self.client = sqs.Client(self.conn)
+        self.client = Client(self.conn)
         super(PingLoop, self).__init__()
         self.done = False
 

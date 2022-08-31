@@ -1,13 +1,12 @@
-from logger import log_and_raise
-import utils
+from .utils import version_compare
 import json
-from globals import BUFFER_SIZE, ROWS_PER_FLUSH, DEFAULT_CHUNKSIZE, FETCH_MANY_DEFAULT, typecodes, type_to_letter, \
+from .globals import BUFFER_SIZE, ROWS_PER_FLUSH, DEFAULT_CHUNKSIZE, FETCH_MANY_DEFAULT, typecodes, type_to_letter, \
     ARROW, pa, csv
-import column_buffer as cb
-import ping as p
-from logger import *
-import casting as c
-import SQSocket as sqs
+from .column_buffer import ColumnBuffer
+from .ping import PingLoop
+from .logger import *
+from .casting import lengths_to_pairs, sq_date_to_py_date, sq_datetime_to_py_datetime, sq_numeric_to_decimal
+from .SQSocket import Client
 import time
 
 
@@ -17,11 +16,11 @@ class Cursor:
 
         self.conn = conn
         self.s = self.conn.s
-        self.client = sqs.Client(self.s)
+        self.client = Client(self.s)
         self.version = self.conn.version
         self.open_statement = False
         self.closed = False
-        self.buffer = cb.ColumnBuffer(BUFFER_SIZE)  # flushing buffer every BUFFER_SIZE bytes
+        self.buffer = ColumnBuffer(BUFFER_SIZE)  # flushing buffer every BUFFER_SIZE bytes
         self.ping_loop = None
         self.stmt_id = None  # For error handling when called out of order
         self.statement_type = None
@@ -40,7 +39,7 @@ class Cursor:
         self.more_to_fetch = True
 
         self.stmt_id = json.loads(self.client.send_string('{"getStatementId" : "getStatementId"}'))["statementId"]
-        comp = utils.version_compare(self.version, "2020.3.1")
+        comp = version_compare(self.version, "2020.3.1")
         if (comp is not None and comp > -1):
             self._start_ping_loop()
         stmt_json = json.dumps({"prepareStatement": stmt, "chunkSize": DEFAULT_CHUNKSIZE})
@@ -216,7 +215,7 @@ class Cursor:
                 nvarc_sizes = raw_col_data[1 if self.col_nul[idx] else 0]
                 col = [
                     raw_col_data[-1][start:end].decode('utf8')
-                    for (start, end) in c.lengths_to_pairs(nvarc_sizes)
+                    for (start, end) in lengths_to_pairs(nvarc_sizes)
                 ]
             elif self.col_type_tups[idx][0] == "ftVarchar":
                 varchar_size = self.col_type_tups[idx][1]
@@ -226,14 +225,14 @@ class Cursor:
                     for idx in range(0, len(raw_col_data[-1]), varchar_size)
                 ]
             elif self.col_type_tups[idx][0] == "ftDate":
-                col = [c.sq_date_to_py_date(d) for d in raw_col_data[-1]]
+                col = [sq_date_to_py_date(d) for d in raw_col_data[-1]]
             elif self.col_type_tups[idx][0] == "ftDateTime":
-                col = [c.sq_datetime_to_py_datetime(d) for d in raw_col_data[-1]]
+                col = [sq_datetime_to_py_datetime(d) for d in raw_col_data[-1]]
             elif self.col_type_tups[idx][0] == "ftNumeric":
                 scale = self.col_type_tups[idx][2]
                 col = [
                     # sq_numeric_to_decimal(bytes_to_bigint(raw_col_data[-1][idx:idx + 16]), scale)
-                    c.sq_numeric_to_decimal(raw_col_data[-1][idx:idx + 16], scale)
+                    sq_numeric_to_decimal(raw_col_data[-1][idx:idx + 16], scale)
                     for idx in range(0, len(raw_col_data[-1]), 16)
                 ]
 
@@ -452,7 +451,7 @@ class Cursor:
             logger.info(f'Done executing statement {self.stmt_id} over connection {self.conn.connection_id}')
 
     def _start_ping_loop(self):
-        self.ping_loop = p.PingLoop(self.conn)
+        self.ping_loop = PingLoop(self.conn)
         self.ping_loop.start()
 
     def _end_ping_loop(self):

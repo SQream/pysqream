@@ -1,6 +1,6 @@
 
-from logger import *
-from globals import PROTOCOL_VERSION, SUPPORTED_PROTOCOLS, clean_sqream_errors
+from .logger import *
+from .globals import PROTOCOL_VERSION, SUPPORTED_PROTOCOLS, clean_sqream_errors
 import socket
 import ssl
 import sys
