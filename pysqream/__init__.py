@@ -1,3 +1,3 @@
-from .pysqream import connect, __version__, paramstyle, threadsafety, apilevel, TimeFromTicks, TimeFromTicks, TimestampFromTicks
+from .pysqream import connect, paramstyle, threadsafety, apilevel, TimeFromTicks, TimeFromTicks, TimestampFromTicks
+from .globals import __version__
 from .connection import Connection
-import globals

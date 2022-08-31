@@ -1,7 +1,7 @@
 import utils
 import sys
 
-__version__ = '3.1.8'
+__version__ = '3.1.9'
 buf_maps, buf_views = [], []
 WIN = True if sys.platform in ('win32', 'cygwin') else False
 MAC = True if sys.platform in ('darwin') else False
