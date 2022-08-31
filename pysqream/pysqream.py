@@ -32,44 +32,6 @@ Time = t
 Timestamp = datetime
 
 
-class Error(Exception):
-    pass
-
-class Warning(Exception):
-    pass
-
-class InterfaceError(Error):
-    pass
-
-
-class DatabaseError(Error):
-    pass
-
-
-class DataError(DatabaseError):
-    pass
-
-
-class OperationalError(DatabaseError):
-    pass
-
-
-class IntegrityError(DatabaseError):
-    pass
-
-
-class InternalError(DatabaseError):
-    pass
-
-
-class ProgrammingError(DatabaseError):
-    pass
-
-
-class NotSupportedError(DatabaseError):
-    pass
-
-
 class _DBAPITypeObject:
     """DB-API type object which compares equal to all values passed to the constructor.
         https://www.python.org/dev/peps/pep-0249/#implementation-hints-for-module-authors

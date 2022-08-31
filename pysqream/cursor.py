@@ -5,6 +5,8 @@ from globals import BUFFER_SIZE, ROWS_PER_FLUSH, DEFAULT_CHUNKSIZE, FETCH_MANY_D
 from column_buffer import ColumnBuffer
 from ping import PingLoop, _start_ping_loop, _end_ping_loop
 from logger import *
+from utils import NotSupportedError, ProgrammingError, InternalError, IntegrityError, OperationalError, DataError, \
+    DatabaseError, InterfaceError, Warning, Error
 from casting import lengths_to_pairs, sq_date_to_py_date, sq_datetime_to_py_datetime, sq_numeric_to_decimal
 from SQSocket import Client
 import time
@@ -465,16 +467,6 @@ class Cursor:
         if logger.isEnabledFor(logging.INFO):
             logger.info(f'Done executing statement {self.stmt_id} over connection {self.conn.connection_id}')
 
-    # def _start_ping_loop(self):
-    #     self.ping_loop = PingLoop(self.conn)
-    #     self.ping_loop.start()
-    #
-    # def _end_ping_loop(self):
-    #     if self.ping_loop is not None:
-    #         self.ping_loop.halt()
-    #         self.ping_loop.join()
-    #     self.ping_loop = None
-
     def __enter__(self):
         return self
 
@@ -484,43 +476,3 @@ class Cursor:
     def __iter__(self):
         for item in self.fetchall():
             yield item
-
-
-class Error(Exception):
-    pass
-
-
-class Warning(Exception):
-    pass
-
-
-class InterfaceError(Error):
-    pass
-
-
-class DatabaseError(Error):
-    pass
-
-
-class DataError(DatabaseError):
-    pass
-
-
-class OperationalError(DatabaseError):
-    pass
-
-
-class IntegrityError(DatabaseError):
-    pass
-
-
-class InternalError(DatabaseError):
-    pass
-
-
-class ProgrammingError(DatabaseError):
-    pass
-
-
-class NotSupportedError(DatabaseError):
-    pass

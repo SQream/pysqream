@@ -1,5 +1,8 @@
 from casting import *
 from globals import WIN, BUFFER_SIZE, ROWS_PER_FLUSH, VARCHAR_ENCODING, type_to_letter, ARROW, buf_maps, buf_views
+from utils import NotSupportedError, ProgrammingError, InternalError, IntegrityError, OperationalError, DataError, \
+    DatabaseError, InterfaceError, Warning, Error
+
 from logger import *
 from decimal import Decimal
 import traceback
@@ -267,12 +270,3 @@ def _pack_column(col_tup, return_actual_data=True):
         buf_idx += capacity * size
 
     return buf_map[0:buf_idx] if return_actual_data else (0, buf_idx)
-
-class Error(Exception):
-    pass
-
-class DatabaseError(Error):
-    pass
-
-class ProgrammingError(DatabaseError):
-    pass
