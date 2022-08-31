@@ -28,8 +28,10 @@ class Cursor:
         self.rowcount = -1  # DB-API property
         self.more_to_fetch = False
         self.parsed_rows = []
+        self.row_size = 0
+        self.rows_per_flush = 0
 
-    def execute_sqream_statement(self, stmt):
+    def _execute_sqream_statement(self, stmt):
         self.latest_stmt = stmt
 
         if self.open_statement:
@@ -201,7 +203,7 @@ class Cursor:
 
         return num_rows_fetched
 
-    def _parse_fetched_cols(self, queue = None):
+    def _parse_fetched_cols(self, queue=None):
         """Used by _fetch_and_parse"""
 
         self.extracted_cols = []
@@ -278,7 +280,7 @@ class Cursor:
                 If this is an insert query, use executemany() with the data rows as the parameter")
 
         else:
-            self.execute_sqream_statement(query)
+            self._execute_sqream_statement(query)
 
         self._fill_description()
         self.rows_fetched = 0

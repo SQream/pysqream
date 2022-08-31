@@ -24,4 +24,3 @@ def version_compare(v1, v2) :
     v1 = version.parse(r1.group(0))
     v2 = version.parse(r2.group(0))
     return -1 if v1 < v2 else 1 if v1 > v2 else 0
-

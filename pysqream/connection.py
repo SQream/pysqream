@@ -21,12 +21,7 @@ class Connection:
                  reconnect_attempts=3, reconnect_interval=10):
 
         self.buffer = ColumnBuffer(BUFFER_SIZE)  # flushing buffer every BUFFER_SIZE bytes
-        self.row_size = 0
-        self.rows_per_flush = 0
         self.version = None
-        self.stmt_id = None  # For error handling when called out of order
-        self.statement_type = None
-        self.open_statement = False
         self.closed = False
         self.opened = False
         self.orig_ip, self.orig_port, self.clustered, self.use_ssl = ip, port, clustered, use_ssl
@@ -39,12 +34,7 @@ class Connection:
             self.cursors = []
 
         self._open_connection(clustered, use_ssl)
-        self.arraysize = FETCH_MANY_DEFAULT
-        self.rowcount = -1    # DB-API property
-        self.more_to_fetch = False
-        self.parsed_rows = []
 
-        self.lastrowid = None
         self.unpack_q = Queue()
         if CYTHON:
             # To allow hot swapping for testing
@@ -148,17 +138,6 @@ class Connection:
         if logger.isEnabledFor(logging.INFO):
             logger.info(f'Connection closed to database {self.database}. Connection ID: {self.connection_id}')
 
-    '''  -- Metadata  --
-         ---------------   '''
-    def get_statement_type(self):
-
-        return self.statement_type
-
-    def get_statement_id(self):
-
-        return self.stmt_id
-
-
     ## DB-API API
     #  ----------
 
@@ -169,11 +148,6 @@ class Connection:
 
         if self.closed:
             log_and_raise(ProgrammingError, 'Cursor has been closed')
-
-    def _verify_query_type(self, query_type):
-
-        if not self.open_statement:
-            log_and_raise(ProgrammingError, 'No open statement while attempting fetch operation')
 
     def cursor(self):
         ''' Return a new connection with the same parameters.
@@ -194,10 +168,10 @@ class Connection:
         return cur
 
     def commit(self):
-        self._verify_open()
+        log_and_raise(NotSupportedError, "Commit is not supported")
 
     def rollback(self):
-        pass
+        log_and_raise(NotSupportedError, "Rollback is not supported")
 
     def close(self):
 
