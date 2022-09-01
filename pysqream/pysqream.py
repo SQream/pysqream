@@ -1,4 +1,5 @@
-'''               ----  SQream Native Python API  ----              '''
+"""SQream Native Python API"""
+
 
 from datetime import datetime, date, time as t
 import time
@@ -7,11 +8,8 @@ from logger import log_and_raise
 from connection import Connection
 
 
-def version():
-    print(__version__)
-
-
-def connect(host, port, database, username, password, clustered = False, use_ssl = False, service='sqream', log=False, reconnect_attempts=3, reconnect_interval=10):
+def connect(host, port, database, username, password, clustered=False,
+            use_ssl=False, service='sqream', log=False, reconnect_attempts=3, reconnect_interval=10):
     ''' Connect to SQream database '''
     if not isinstance(reconnect_attempts, int) or reconnect_attempts < 0:
         log_and_raise(Exception, f'reconnect attempts should be a positive integer, got : {reconnect_attempts}')
