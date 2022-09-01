@@ -7,6 +7,10 @@ from logger import log_and_raise
 from connection import Connection
 
 
+def version():
+    print(__version__)
+
+
 def connect(host, port, database, username, password, clustered = False, use_ssl = False, service='sqream', log=False, reconnect_attempts=3, reconnect_interval=10):
     ''' Connect to SQream database '''
     if not isinstance(reconnect_attempts, int) or reconnect_attempts < 0:
@@ -86,6 +90,7 @@ apilevel = '2.0'
 threadsafety = 1 # Threads can share the module but not a connection
 
 paramstyle = 'qmark'
+
 
 if __name__ == '__main__':
 
