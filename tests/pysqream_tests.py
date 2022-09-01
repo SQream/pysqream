@@ -124,9 +124,9 @@ class TestConnection(TestBaseWithoutBeforeAfter):
         #
         Logger().info("Connection tests - Trying to close a connection that is already closed with close_connection()")
         con = connect_dbapi(self.ip)
-        con.close_connection()
+        con.close()
         try:
-            con.close_connection()
+            con.close()
         except Exception as e:
             if "Trying to close a connection that's already closed" not in repr(e):
                 raise Exception("bad error message")

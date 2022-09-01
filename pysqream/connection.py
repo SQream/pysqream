@@ -25,7 +25,8 @@ class Connection:
         self.buffer = ColumnBuffer(BUFFER_SIZE)  # flushing buffer every BUFFER_SIZE bytes
         self.version = None
         self.closed = False
-        self.opened = False
+        self.connect_to_socket = False
+        self.connect_to_database = False
         self.orig_ip, self.orig_port, self.clustered, self.use_ssl = ip, port, clustered, use_ssl
         self.reconnect_attempts, self.reconnect_interval = reconnect_attempts, reconnect_interval
         self.base_connection = base_connection
@@ -86,6 +87,7 @@ class Connection:
         # Create socket and connect to actual SQreamd server
         self.s = SQSocket(self.ip, self.port, use_ssl)
         self.client = Client(self.s)
+        self.connect_to_socket = True
         if self.base_connection:
             self.base_conn_open[0] = True
 
@@ -93,22 +95,23 @@ class Connection:
         ''' Handle connection to database, with or without server picker '''
 
         self.database, self.username, self.password, self.service = database, username, password, service
-        res = self.client.send_string(
-            f'{{"username":"{username}", "password":"{password}", "connectDatabase":"{database}", "service":"{service}"}}'
-        )
-        res = json.loads(res)
-        try:
-            self.connection_id = res['connectionId']
-            if 'version' in res:
-                self.version = res['version']
-        except KeyError as e:
-            log_and_raise(ProgrammingError, f"Error connecting to database: {res['error']}")
+        if self.connect_to_socket:
+            res = self.client.send_string(
+                f'{{"username":"{username}", "password":"{password}", "connectDatabase":"{database}", "service":"{service}"}}'
+            )
+            res = json.loads(res)
+            try:
+                self.connection_id = res['connectionId']
+                if 'version' in res:
+                    self.version = res['version']
+            except KeyError as e:
+                log_and_raise(ProgrammingError, f"Error connecting to database: {res['error']}")
 
-        self.varchar_enc = res.get('varcharEncoding', 'ascii')
+            self.varchar_enc = res.get('varcharEncoding', 'ascii')
 
-        if logger.isEnabledFor(logging.INFO):
-            logger.info(f'Connection opened to database {database}. Connection ID: {self.connection_id}')
-        self.opened = True
+            if logger.isEnabledFor(logging.INFO):
+                logger.info(f'Connection opened to database {database}. Connection ID: {self.connection_id}')
+            self.connect_to_database = True
 
     def _attempt_reconnect(self):
 
@@ -125,7 +128,7 @@ class Connection:
         # Attempts failed
         log_and_raise(ConnectionRefusedError, 'Reconnection attempts to sqreamd failed')
 
-    def close_connection(self, sock=None):
+    def _close_connection(self, sock=None):
 
         if self.closed:
             log_and_raise(ProgrammingError, "Trying to close a connection that's already closed")
@@ -133,7 +136,6 @@ class Connection:
         self.client.send_string('{"closeConnection":  "closeConnection"}')
         self.s.close()
         self.buffer.close()
-        # self._end_ping_loop()
         self.closed = True
         self.base_conn_open[0] = False if self.base_connection else True
 
@@ -176,11 +178,7 @@ class Connection:
         log_and_raise(NotSupportedError, "Rollback is not supported")
 
     def close(self):
-
-        if self.opened:
-            if self.closed:
-                log_and_raise(ProgrammingError, "Trying to close a connection that's already closed")
-
+        if self.connect_to_database:
             if self.base_connection:
                 for cursor in self.cursors:
                     try:
@@ -188,8 +186,7 @@ class Connection:
                     except:
                         pass
 
-            self.close_connection()
-            self.closed = True
+            self._close_connection()
 
 
     # Internal Methods
