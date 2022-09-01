@@ -1,1 +1,3 @@
-from .pysqream import connect, Connection, __version__, paramstyle, threadsafety, apilevel, TimeFromTicks, TimeFromTicks, TimestampFromTicks
+import os, sys
+sys.path.append(os.path.dirname(os.path.realpath(__file__)))
+from .pysqream import connect, __version__

@@ -1,5 +1,5 @@
 from setuptools import setup, find_packages
-
+from pysqream.globals import __version__
 
 with open("README.rst", "r", encoding="utf-8") as fh:
     long_description = fh.read()
@@ -7,13 +7,13 @@ with open("README.rst", "r", encoding="utf-8") as fh:
 
 setup_params = dict(
     name =          'pysqream',
-    version =       '3.1.8',
+    version =       __version__,
     description =   'DB-API connector for SQream DB', 
     long_description = long_description,
     url = "https://github.com/SQream/pysqream",
     author = "SQream",
     author_email = "info@sqream.com",
-    packages = ['pysqream'], 
+    packages = find_packages(),
     classifiers = [
         "Programming Language :: Python :: 3.6",
         "License :: OSI Approved :: BSD License",
