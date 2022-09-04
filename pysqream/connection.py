@@ -172,10 +172,12 @@ class Connection:
         return cur
 
     def commit(self):
-        log_and_raise(NotSupportedError, "Commit is not supported")
+        return
+        # log_and_raise(NotSupportedError, "Commit is not supported")
 
     def rollback(self):
-        log_and_raise(NotSupportedError, "Rollback is not supported")
+        return
+        # log_and_raise(NotSupportedError, "Rollback is not supported")
 
     def close(self):
         if self.connect_to_database:

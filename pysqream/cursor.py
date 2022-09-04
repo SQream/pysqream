@@ -32,6 +32,7 @@ class Cursor:
         self.parsed_rows = []
         self.row_size = 0
         self.rows_per_flush = 0
+        self.lastrowid = None
 
     def _execute_sqream_statement(self, stmt):
         self.latest_stmt = stmt
