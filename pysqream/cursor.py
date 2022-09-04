@@ -33,6 +33,14 @@ class Cursor:
         self.row_size = 0
         self.rows_per_flush = 0
         self.lastrowid = None
+    
+    def get_statement_type(self):
+
+        return self.statement_type
+
+    def get_statement_id(self):
+
+        return self.stmt_id
 
     def _execute_sqream_statement(self, stmt):
         self.latest_stmt = stmt
