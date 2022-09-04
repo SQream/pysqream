@@ -20,7 +20,9 @@ setup_params = dict(
         "Operating System :: OS Independent",
     ],
     keywords = 'database db-api sqream sqreamdb',
-    python_requires = '>=3.6.5'
+    python_requires = '>=3.6.5',
+    install_requires=["numpy==1.19.5", "packaging==20.9", "pyarrow==3.0.0",
+                      "pytest==6.2.3", "setuptools==57.4.0"]
 )
 
 if __name__ == '__main__':
