@@ -14,8 +14,9 @@ import time
 
 class Cursor:
 
-    def __init__(self, conn):
+    def __init__(self, conn, cur_index):
 
+        self.cur_index = cur_index
         self.conn = conn
         self.s = self.conn.s
         self.client = Client(self.s)
@@ -468,8 +469,8 @@ class Cursor:
             self.client.send_string('{"closeStatement": "closeStatement"}')
             self.open_statement = False
 
-        if logger.isEnabledFor(logging.INFO):
-            logger.info(f'Done executing statement {self.stmt_id} over connection {self.conn.connection_id}')
+            if logger.isEnabledFor(logging.INFO):
+                logger.info(f'Done executing statement {self.stmt_id} over connection {self.conn.connection_id}')
 
     def close(self, sock=None):
         self.close_stmt()
@@ -478,6 +479,7 @@ class Cursor:
         self.conn.close_connection()
         self.buffer.close()
         _end_ping_loop(self.ping_loop)
+        self.conn.cursors[self.cur_index] = None
 
     def __enter__(self):
         return self

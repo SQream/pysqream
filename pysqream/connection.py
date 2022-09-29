@@ -167,7 +167,8 @@ class Connection:
         conn.connect_database(self.database, self.username, self.password, self.service)
 
         self._verify_open()
-        cur = Cursor(conn)
+        cursor_index = len(self.cursors) + 1
+        cur = Cursor(conn, cursor_index)
         self.cursors.append(cur)
         return cur
 
@@ -184,7 +185,8 @@ class Connection:
             if self.base_connection:
                 for cursor in self.cursors:
                     try:
-                        cursor.close()
+                        if cursor is not None:
+                            cursor.close()
                     except Exception as e:
                         raise Error(f"Can't close connection - {e} for Connection ID {cursor.conn.connection_id}")
 
