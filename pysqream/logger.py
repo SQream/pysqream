@@ -3,6 +3,7 @@ import logging
 
 
 logger = logging.getLogger("dbapi_logger")
+print("Logger")
 logger.setLevel(logging.DEBUG)
 logger.disabled = True
 

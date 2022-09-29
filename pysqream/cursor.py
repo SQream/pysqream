@@ -479,7 +479,6 @@ class Cursor:
         self.conn.close_connection()
         self.buffer.close()
         _end_ping_loop(self.ping_loop)
-        logger.debug(f"self.cursors={self.cursors}")
         self.cursors.pop(self.conn.connection_id)
 
     def __enter__(self):
