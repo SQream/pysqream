@@ -46,7 +46,7 @@ class Cursor:
         self.latest_stmt = stmt
 
         if self.open_statement:
-            self.close()
+            self.close_stmt()
         self.open_statement = True
 
         self.more_to_fetch = True
@@ -88,7 +88,7 @@ class Cursor:
             self.column_list = res.get('queryTypeNamed', '')
             if not self.column_list:
                 self.statement_type = 'DML'
-                self.close()
+                self.close_stmt()
                 return
 
             self.statement_type = 'SELECT' if self.column_list else 'DML'
@@ -183,7 +183,7 @@ class Cursor:
         fetch_meta = json.loads(res)
         num_rows_fetched, column_sizes = fetch_meta['rows'], fetch_meta['colSzs']
         if num_rows_fetched == 0:
-            self.close()
+            self.close_stmt()
             return num_rows_fetched
 
         # Get preceding header
@@ -343,7 +343,7 @@ class Cursor:
             if logger.isEnabledFor(logging.INFO):
                 logger.info(f'Sent {chunk_len} rows of data')
 
-        self.close()
+        self.close_stmt()
 
         return self
 
@@ -463,19 +463,21 @@ class Cursor:
 
     ## Closing
 
-    def close(self, sock=None):
-
+    def close_stmt(self):
         if self.open_statement:
-            sock = sock or self.s
             self.client.send_string('{"closeStatement": "closeStatement"}')
             self.open_statement = False
-            self.closed = True
-            self.conn.close_connection()
-            self.buffer.close()
-            _end_ping_loop(self.ping_loop)
 
         if logger.isEnabledFor(logging.INFO):
             logger.info(f'Done executing statement {self.stmt_id} over connection {self.conn.connection_id}')
+
+    def close(self, sock=None):
+        self.close_stmt()
+        sock = sock or self.s
+        self.closed = True
+        self.conn.close_connection()
+        self.buffer.close()
+        _end_ping_loop(self.ping_loop)
 
     def __enter__(self):
         return self
