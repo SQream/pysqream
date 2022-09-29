@@ -90,13 +90,13 @@ threadsafety = 1 # Threads can share the module but not a connection
 paramstyle = 'qmark'
 
 
-if __name__ == '__main__':
-
-    print('PySqream DB-API connector, version ', __version__)
-
-    conn = connect("192.168.0.35", 5000, "master", "sqream", "sqream")
-    cur = conn.cursor()
-    cur.execute("select 1")
-    res = cur.fetchall()
-    print(res)
-    conn.close()
+# if __name__ == '__main__':
+#
+#     print('PySqream DB-API connector, version ', __version__)
+#
+#     conn = connect("192.168.0.35", 5000, "master", "sqream", "sqream")
+#     cur = conn.cursor()
+#     cur.execute("select 1")
+#     res = cur.fetchall()
+#     print(res)
+#     conn.close()
