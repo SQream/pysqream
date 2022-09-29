@@ -4,8 +4,16 @@
 from datetime import datetime, date, time as t
 import time
 from globals import __version__
-from logger import log_and_raise
+from logger import log_and_raise, start_logging, stop_logging
 from connection import Connection
+
+
+def enable_logs(log_path=None):
+    start_logging(None if log_path is True else log_path)
+
+
+def stop_logs():
+    stop_logging()
 
 
 def connect(host, port, database, username, password, clustered=False,
@@ -90,13 +98,13 @@ threadsafety = 1 # Threads can share the module but not a connection
 paramstyle = 'qmark'
 
 
-if __name__ == '__main__':
-
-    print('PySqream DB-API connector, version ', __version__)
-
-    conn = connect("192.168.0.35", 5000, "master", "sqream", "sqream")
-    cur = conn.cursor()
-    cur.execute("select 1")
-    res = cur.fetchall()
-    print(res)
-    conn.close()
+# if __name__ == '__main__':
+#
+#     print('PySqream DB-API connector, version ', __version__)
+#
+#     conn = connect("192.168.0.35", 5000, "master", "sqream", "sqream")
+    # cur = conn.cursor()
+    # cur.execute("select 1")
+    # res = cur.fetchall()
+    # print(res)
+    # conn.close()

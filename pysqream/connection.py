@@ -1,3 +1,5 @@
+import logging
+
 from column_buffer import ColumnBuffer
 from SQSocket import SQSocket, Client
 from ping import PingLoop, _end_ping_loop
@@ -34,7 +36,7 @@ class Connection:
         self.client = None
 
         if self.base_connection:
-            self.cursors = []
+            self.cursors = {}
 
         self._open_connection(clustered, use_ssl)
 
@@ -44,12 +46,14 @@ class Connection:
             date_to_int, datetime_to_long, sq_date_to_py_date, sq_datetime_to_py_datetime = pydate_to_int, pydt_to_long, date_to_py, dt_to_py
 
         if log is not False:
-            start_logging(None if log is True else log)
+            raise NotSupportedError("Logs per Connection is not supported yet")
+            # start_logging(None if log is True else log)
         # Thread for unpacking fetched socket data
         # thread.start_new_thread(self._parse_fetched_cols, (self.unpack_q,))
 
     def __del__(self):
         try:
+            logger.debug("Try to destroy open connections")
             self.close()
         except Exception as e:
             if "Trying to close a connection that's already closed" not in repr(e):
@@ -92,7 +96,7 @@ class Connection:
             self.base_conn_open[0] = True
 
     def connect_database(self, database, username, password, service='sqream'):
-        ''' Handle connection to database, with or without server picker '''
+        """Handle connection to database, with or without server picker"""
 
         self.database, self.username, self.password, self.service = database, username, password, service
         if self.connect_to_socket:
@@ -118,6 +122,7 @@ class Connection:
         for attempt in range(self.reconnect_attempts):
             time.sleep(self.reconnect_interval)
             try:
+                logger.info(f"attempt to connect numer {attempt}")
                 self._open_connection(self.clustered, self.use_ssl)
                 self.connect_database(self.database, self.username, self.password, self.service)
             except ConnectionRefusedError as e:
@@ -128,11 +133,11 @@ class Connection:
         # Attempts failed
         log_and_raise(ConnectionRefusedError, 'Reconnection attempts to sqreamd failed')
 
-    def _close_connection(self, sock=None):
+    def close_connection(self, sock=None):
 
         if self.closed:
-            log_and_raise(ProgrammingError, "Trying to close a connection that's already closed")
-
+            log_and_raise(ProgrammingError, f"Trying to close a connection that's already closed for database "
+                                            f"{self.database} and Connection ID: {self.connection_id}")
         self.client.send_string('{"closeConnection":  "closeConnection"}')
         self.s.close()
         self.buffer.close()
@@ -157,6 +162,7 @@ class Connection:
         ''' Return a new connection with the same parameters.
             We use a connection as the equivalent of a 'cursor' '''
 
+        logger.debug("Create cursor")
         conn = Connection(
             self.orig_ip if self.clustered is True else self.ip,
             self.orig_port if self.clustered is True else self.port,
@@ -167,8 +173,8 @@ class Connection:
         conn.connect_database(self.database, self.username, self.password, self.service)
 
         self._verify_open()
-        cur = Cursor(conn)
-        self.cursors.append(cur)
+        cur = Cursor(conn, self.cursors)
+        self.cursors[cur.conn.connection_id] = cur
         return cur
 
     def commit(self):
@@ -180,15 +186,18 @@ class Connection:
         # log_and_raise(NotSupportedError, "Rollback is not supported")
 
     def close(self):
-        if self.connect_to_database:
-            if self.base_connection:
-                for cursor in self.cursors:
-                    try:
-                        cursor.close()
-                    except:
-                        pass
+        if not self.connect_to_database:
+            return
 
-            self._close_connection()
+        if self.base_connection:
+            for con_id, cursor in self.cursors.items():
+                try:
+                    cursor.close()
+                except Exception as e:
+                    logger.error(f"Can't close connection - {e} for Connection ID {con_id}")
+                    raise Error(f"Can't close connection - {e} for Connection ID {con_id}")
+
+        self.close_connection()
 
 
     # Internal Methods
