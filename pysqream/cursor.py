@@ -14,9 +14,8 @@ import time
 
 class Cursor:
 
-    def __init__(self, conn, cur_index):
+    def __init__(self, conn):
 
-        self.cur_index = cur_index
         self.conn = conn
         self.s = self.conn.s
         self.client = Client(self.s)
@@ -479,7 +478,9 @@ class Cursor:
         self.conn.close_connection()
         self.buffer.close()
         _end_ping_loop(self.ping_loop)
-        self.conn.cursors[self.cur_index] = None
+        logger.debug(f"self.conn={self.conn}")
+        logger.debug(f"self.conn.connection_id={self.conn.connection_id}")
+        self.conn.cursors.pop(self.conn.connection_id)
 
     def __enter__(self):
         return self

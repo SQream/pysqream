@@ -34,7 +34,7 @@ class Connection:
         self.client = None
 
         if self.base_connection:
-            self.cursors = []
+            self.cursors = {}
 
         self._open_connection(clustered, use_ssl)
 
@@ -167,9 +167,8 @@ class Connection:
         conn.connect_database(self.database, self.username, self.password, self.service)
 
         self._verify_open()
-        cursor_index = len(self.cursors) + 1
-        cur = Cursor(conn, cursor_index)
-        self.cursors.append(cur)
+        cur = Cursor(conn)
+        self.cursors[conn.connection_id] = cur
         return cur
 
     def commit(self):
@@ -183,12 +182,11 @@ class Connection:
     def close(self):
         if self.connect_to_database:
             if self.base_connection:
-                for cursor in self.cursors:
+                for con_id, cursor in self.cursors.items():
                     try:
-                        if cursor is not None:
-                            cursor.close()
+                        cursor.close()
                     except Exception as e:
-                        raise Error(f"Can't close connection - {e} for Connection ID {cursor.conn.connection_id}")
+                        raise Error(f"Can't close connection - {e} for Connection ID {con_id}")
 
             self.close_connection()
 
