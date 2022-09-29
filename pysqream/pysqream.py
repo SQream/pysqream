@@ -8,7 +8,7 @@ from logger import log_and_raise, start_logging
 from connection import Connection
 
 
-def enable_logs(log_path):
+def enable_logs(log_path=None):
     start_logging(None if log_path is True else log_path)
 
 
