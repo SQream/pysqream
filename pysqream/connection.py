@@ -1,3 +1,5 @@
+import logging
+
 from column_buffer import ColumnBuffer
 from SQSocket import SQSocket, Client
 from ping import PingLoop, _end_ping_loop
@@ -166,6 +168,7 @@ class Connection:
 
         self._verify_open()
         cur = Cursor(conn)
+        logger.debug(f"cur.conn.connection_id={cur.conn.connection_id}")
         self.cursors[cur.conn.connection_id] = cur
         return cur
 
