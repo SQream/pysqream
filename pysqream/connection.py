@@ -46,7 +46,8 @@ class Connection:
             date_to_int, datetime_to_long, sq_date_to_py_date, sq_datetime_to_py_datetime = pydate_to_int, pydt_to_long, date_to_py, dt_to_py
 
         if log is not False:
-            start_logging(None if log is True else log)
+            raise NotSupportedError("Logs per Connection is not supported yet")
+            # start_logging(None if log is True else log)
         # Thread for unpacking fetched socket data
         # thread.start_new_thread(self._parse_fetched_cols, (self.unpack_q,))
 
