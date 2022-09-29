@@ -186,15 +186,18 @@ class Connection:
         # log_and_raise(NotSupportedError, "Rollback is not supported")
 
     def close(self):
-        if self.connect_to_database:
-            if self.base_connection:
-                for con_id, cursor in self.cursors.items():
-                    try:
-                        cursor.close()
-                    except Exception as e:
-                        raise Error(f"Can't close connection - {e} for Connection ID {con_id}")
+        if not self.connect_to_database:
+            return
 
-            self.close_connection()
+        if self.base_connection:
+            for con_id, cursor in self.cursors.items():
+                try:
+                    cursor.close()
+                except Exception as e:
+                    logger.error(f"Can't close connection - {e} for Connection ID {con_id}")
+                    raise Error(f"Can't close connection - {e} for Connection ID {con_id}")
+
+        self.close_connection()
 
 
     # Internal Methods
