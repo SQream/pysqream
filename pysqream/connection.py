@@ -34,7 +34,9 @@ class Connection:
         self.base_connection = base_connection
         self.ping_loop = None
         self.client = None
-        self.cursors = {}
+
+        if self.base_connection:
+            self.cursors = {}
 
         self._open_connection(clustered, use_ssl)
 
@@ -167,9 +169,9 @@ class Connection:
         conn.connect_database(self.database, self.username, self.password, self.service)
 
         self._verify_open()
-        cur = Cursor(conn)
-        logger.debug(f"cur.conn.connection_id={cur.conn.connection_id}")
+        cur = Cursor(conn, self.cursors)
         self.cursors[cur.conn.connection_id] = cur
+        logger.debug(f"self.cursors={self.cursors}")
         return cur
 
     def commit(self):
