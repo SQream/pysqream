@@ -128,7 +128,11 @@ class Connection:
         # Attempts failed
         log_and_raise(ConnectionRefusedError, 'Reconnection attempts to sqreamd failed')
 
-    def _close_connection(self, sock=None):
+    def close_connection(self, sock=None):
+
+        logger.info(f"Try to close connection for ip {self.orig_ip}, "
+                    f"port {self.orig_port}, "
+                    f"database {self.database}")
 
         if self.closed:
             log_and_raise(ProgrammingError, "Trying to close a connection that's already closed")
@@ -185,10 +189,10 @@ class Connection:
                 for cursor in self.cursors:
                     try:
                         cursor.close()
-                    except:
-                        pass
+                    except Exception as e:
+                        raise Error(f"Can't close connection - {e}")
 
-            self._close_connection()
+            self.close_connection()
 
 
     # Internal Methods
