@@ -166,7 +166,7 @@ class Connection:
 
         self._verify_open()
         cur = Cursor(conn)
-        self.cursors[conn.connection_id] = cur
+        self.cursors[cur.conn.connection_id] = cur
         return cur
 
     def commit(self):
