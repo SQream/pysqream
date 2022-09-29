@@ -52,7 +52,7 @@ class Connection:
 
     def __del__(self):
         try:
-            logger.debug("del")
+            logger.debug("Try to destroy open connections")
             self.close()
         except Exception as e:
             if "Trying to close a connection that's already closed" not in repr(e):
@@ -114,6 +114,7 @@ class Connection:
 
             if logger.isEnabledFor(logging.INFO):
                 logger.info(f'Connection opened to database {database}. Connection ID: {self.connection_id}')
+                logger.debug(f"Object Connection={self}")
             self.connect_to_database = True
 
     def _attempt_reconnect(self):
