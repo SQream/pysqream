@@ -52,6 +52,7 @@ class Connection:
 
     def __del__(self):
         try:
+            logger.debug("del")
             self.close()
         except Exception as e:
             if "Trying to close a connection that's already closed" not in repr(e):
@@ -94,7 +95,7 @@ class Connection:
             self.base_conn_open[0] = True
 
     def connect_database(self, database, username, password, service='sqream'):
-        ''' Handle connection to database, with or without server picker '''
+        """Handle connection to database, with or without server picker"""
 
         self.database, self.username, self.password, self.service = database, username, password, service
         if self.connect_to_socket:
@@ -120,6 +121,7 @@ class Connection:
         for attempt in range(self.reconnect_attempts):
             time.sleep(self.reconnect_interval)
             try:
+                logger.info(f"attempt to connect numer {attempt}")
                 self._open_connection(self.clustered, self.use_ssl)
                 self.connect_database(self.database, self.username, self.password, self.service)
             except ConnectionRefusedError as e:
@@ -159,6 +161,7 @@ class Connection:
         ''' Return a new connection with the same parameters.
             We use a connection as the equivalent of a 'cursor' '''
 
+        logger.debug("Create cursor")
         conn = Connection(
             self.orig_ip if self.clustered is True else self.ip,
             self.orig_port if self.clustered is True else self.port,
