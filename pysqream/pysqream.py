@@ -4,8 +4,12 @@
 from datetime import datetime, date, time as t
 import time
 from globals import __version__
-from logger import log_and_raise
+from logger import log_and_raise, start_logging
 from connection import Connection
+
+
+def enable_logs(log_path):
+    start_logging(None if log_path is True else log_path)
 
 
 def connect(host, port, database, username, password, clustered=False,
