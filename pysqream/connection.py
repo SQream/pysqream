@@ -50,13 +50,13 @@ class Connection:
         # Thread for unpacking fetched socket data
         # thread.start_new_thread(self._parse_fetched_cols, (self.unpack_q,))
 
-    def __del__(self):
-        try:
-            logger.debug("Try to destroy open connections")
-            self.close()
-        except Exception as e:
-            if "Trying to close a connection that's already closed" not in repr(e):
-                log_and_raise(ProgrammingError, e)
+    # def __del__(self):
+    #     try:
+    #         logger.debug("Try to destroy open connections")
+    #         self.close()
+    #     except Exception as e:
+    #         if "Trying to close a connection that's already closed" not in repr(e):
+    #             log_and_raise(ProgrammingError, e)
 
     ## SQream mechanisms
 
