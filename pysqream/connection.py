@@ -34,7 +34,6 @@ class Connection:
         self.base_connection = base_connection
         self.ping_loop = None
         self.client = None
-        self.logger = None
 
         if self.base_connection:
             self.cursors = {}
@@ -47,7 +46,7 @@ class Connection:
             date_to_int, datetime_to_long, sq_date_to_py_date, sq_datetime_to_py_datetime = pydate_to_int, pydt_to_long, date_to_py, dt_to_py
 
         if log is not False:
-            self.logger = start_logging(None if log is True else log)
+            start_logging(None if log is True else log)
         # Thread for unpacking fetched socket data
         # thread.start_new_thread(self._parse_fetched_cols, (self.unpack_q,))
 
@@ -114,7 +113,7 @@ class Connection:
             self.varchar_enc = res.get('varcharEncoding', 'ascii')
 
             if logger.isEnabledFor(logging.INFO):
-                self.logger.info(f'Connection opened to database {database}. Connection ID: {self.connection_id}')
+                logger.info(f'Connection opened to database {database}. Connection ID: {self.connection_id}')
             self.connect_to_database = True
 
     def _attempt_reconnect(self):
