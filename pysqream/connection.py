@@ -32,9 +32,7 @@ class Connection:
         self.base_connection = base_connection
         self.ping_loop = None
         self.client = None
-
-        if self.base_connection:
-            self.cursors = {}
+        self.cursors = {}
 
         self._open_connection(clustered, use_ssl)
 
