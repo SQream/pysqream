@@ -130,13 +130,9 @@ class Connection:
 
     def close_connection(self, sock=None):
 
-        logger.info(f"Try to close connection for ip {self.orig_ip}, "
-                    f"port {self.orig_port}, "
-                    f"database {self.database}")
-
         if self.closed:
-            log_and_raise(ProgrammingError, "Trying to close a connection that's already closed")
-
+            log_and_raise(ProgrammingError, f"Trying to close a connection that's already closed for database "
+                                            f"{self.database} and Connection ID: {self.connection_id}")
         self.client.send_string('{"closeConnection":  "closeConnection"}')
         self.s.close()
         self.buffer.close()
@@ -190,7 +186,7 @@ class Connection:
                     try:
                         cursor.close()
                     except Exception as e:
-                        raise Error(f"Can't close connection - {e}")
+                        raise Error(f"Can't close connection - {e} for Connection ID {cursor.conn.connection_id}")
 
             self.close_connection()
 

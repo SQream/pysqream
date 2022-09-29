@@ -467,7 +467,6 @@ class Cursor:
 
         if self.open_statement:
             sock = sock or self.s
-            logger.info(f"Close Statement for stmt_id {self.stmt_id}")
             self.client.send_string('{"closeStatement": "closeStatement"}')
             self.open_statement = False
             self.closed = True
