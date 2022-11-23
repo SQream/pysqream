@@ -30,6 +30,9 @@ class ColumnBuffer:
     def __init__(self, size=BUFFER_SIZE):
         global buf_maps, buf_views
 
+    def __del__(self):
+       self.pool.close()
+
     def clear(self):
         if buf_maps:
             [buf_map.close() for buf_map in buf_maps[0]]
