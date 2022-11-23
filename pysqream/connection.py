@@ -27,6 +27,7 @@ class Connection:
         self.buffer = ColumnBuffer(BUFFER_SIZE)  # flushing buffer every BUFFER_SIZE bytes
         self.version = None
         self.closed = False
+        log = True
         self.connect_to_socket = False
         self.connect_to_database = False
         self.orig_ip, self.orig_port, self.clustered, self.use_ssl = ip, port, clustered, use_ssl
