@@ -31,6 +31,7 @@ class ColumnBuffer:
         global buf_maps, buf_views
 
     def __del__(self):
+       print("try close pool")
        self.pool.close()
 
     def clear(self):

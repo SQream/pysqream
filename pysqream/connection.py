@@ -55,7 +55,7 @@ class Connection:
     def __del__(self):
         try:
             logger.debug("Try to destroy open connections")
-            print("try close")
+            print("Try to destroy open connections")
             self.close()
         except Exception as e:
             if "Trying to close a connection that's already closed" not in repr(e):
