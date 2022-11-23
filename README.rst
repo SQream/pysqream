@@ -5,7 +5,7 @@
 Python connector for SQream DB
 ===================================
 
-* **Version:**  3.1.8
+* **Version:**  3.1.9
 
 * **Supported SQream DB versions:** >= 2.13, 2019.2 or newer recommended
 
