@@ -14,7 +14,7 @@ FETCH_MANY_DEFAULT = 1  # default parameter for fetchmany()
 VARCHAR_ENCODING = 'ascii'
 
 CYTHON = False # Cython IS NOT SUPPORTED
-clean_sqream_errors = True
+clean_sqream_errors = False
 support_pandas = False
 dbg = False
 
