@@ -5,7 +5,7 @@ from datetime import datetime, date, time as t
 import time
 from globals import __version__
 from logger import log_and_raise, start_logging, stop_logging
-from connection import Connection
+from pysqream.connection import Connection
 
 
 def enable_logs(log_path=None):

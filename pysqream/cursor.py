@@ -1,14 +1,14 @@
-from utils import version_compare
+from pysqream.utils import version_compare
 import json
-from globals import BUFFER_SIZE, ROWS_PER_FLUSH, DEFAULT_CHUNKSIZE, FETCH_MANY_DEFAULT, typecodes, type_to_letter, \
+from pysqream.globals import BUFFER_SIZE, ROWS_PER_FLUSH, DEFAULT_CHUNKSIZE, FETCH_MANY_DEFAULT, typecodes, type_to_letter, \
     ARROW, pa, csv
-from column_buffer import ColumnBuffer
-from ping import PingLoop, _start_ping_loop, _end_ping_loop
-from logger import *
-from utils import NotSupportedError, ProgrammingError, InternalError, IntegrityError, OperationalError, DataError, \
+from pysqream.column_buffer import ColumnBuffer
+from pysqream.ping import PingLoop, _start_ping_loop, _end_ping_loop
+from pysqream.logger import *
+from pysqream.utils import NotSupportedError, ProgrammingError, InternalError, IntegrityError, OperationalError, DataError, \
     DatabaseError, InterfaceError, Warning, Error
-from casting import lengths_to_pairs, sq_date_to_py_date, sq_datetime_to_py_datetime, sq_numeric_to_decimal
-from SQSocket import Client
+from pysqream.casting import lengths_to_pairs, sq_date_to_py_date, sq_datetime_to_py_datetime, sq_numeric_to_decimal
+from pysqream.SQSocket import Client
 import time
 
 

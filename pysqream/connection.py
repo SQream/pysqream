@@ -1,19 +1,19 @@
 import logging
 
-from column_buffer import ColumnBuffer
-from SQSocket import SQSocket, Client
+from pysqream.column_buffer import ColumnBuffer
+from pysqream.SQSocket import SQSocket, Client
 from ping import PingLoop, _end_ping_loop
-from globals import BUFFER_SIZE, FETCH_MANY_DEFAULT, CYTHON
+from pysqream.globals import BUFFER_SIZE, FETCH_MANY_DEFAULT, CYTHON
 from logger import *
 import json
 import time
 from queue import Queue, Empty
 from struct import unpack
 import socket
-from utils import NotSupportedError, ProgrammingError, InternalError, IntegrityError, OperationalError, DataError, \
+from pysqream.utils import NotSupportedError, ProgrammingError, InternalError, IntegrityError, OperationalError, DataError, \
     DatabaseError, InterfaceError, Warning, Error
-from casting import date_to_int as pydate_to_int, datetime_to_long as pydt_to_long, sq_date_to_py_date as date_to_py, sq_datetime_to_py_datetime as dt_to_py
-from cursor import Cursor
+from pysqream.casting import date_to_int as pydate_to_int, datetime_to_long as pydt_to_long, sq_date_to_py_date as date_to_py, sq_datetime_to_py_datetime as dt_to_py
+from pysqream.cursor import Cursor
 
 
 class Connection:

@@ -1,4 +1,4 @@
-from globals import dbg
+from pysqream.globals import dbg
 import logging
 
 

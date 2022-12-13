@@ -1,9 +1,9 @@
-from casting import *
-from globals import WIN, BUFFER_SIZE, ROWS_PER_FLUSH, VARCHAR_ENCODING, type_to_letter, ARROW, buf_maps, buf_views
-from utils import NotSupportedError, ProgrammingError, InternalError, IntegrityError, OperationalError, DataError, \
+from pysqream.casting import *
+from pysqream.globals import WIN, BUFFER_SIZE, ROWS_PER_FLUSH, VARCHAR_ENCODING, type_to_letter, ARROW, buf_maps, buf_views
+from pysqream.utils import NotSupportedError, ProgrammingError, InternalError, IntegrityError, OperationalError, DataError, \
     DatabaseError, InterfaceError, Warning, Error
 
-from logger import *
+from pysqream.logger import *
 from decimal import Decimal
 import traceback
 import array
