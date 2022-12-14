@@ -11,7 +11,7 @@ import pysqream
 sys.path.append(os.path.abspath(__file__).rsplit('tests/', 1)[0] + '/tests/')
 from base import TestBase, TestBaseWithoutBeforeAfter, Logger, connect_dbapi
 
-
+# maske this to work
 q = Queue()
 varchar_length = 10
 nvarchar_length = 10
