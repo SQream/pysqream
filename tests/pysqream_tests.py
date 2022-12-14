@@ -7,7 +7,7 @@ from subprocess import Popen
 from time import sleep
 import threading, sys, os
 import pytest
-import pysqream
+from pysqream import connect
 sys.path.append(os.path.abspath(__file__).rsplit('tests/', 1)[0] + '/tests/')
 from base import TestBase, TestBaseWithoutBeforeAfter, Logger, connect_dbapi
 
@@ -56,7 +56,7 @@ class TestConnection(TestBaseWithoutBeforeAfter):
 
         Logger().info("Connection tests - wrong ip")
         try:
-            pysqream.connect('123.4.5.6', 5000, 'master', 'sqream', 'sqream', False, False)
+            connect('123.4.5.6', 5000, 'master', 'sqream', 'sqream', False, False)
         except Exception as e:
             if "perhaps wrong IP?" not in repr(e):
                 raise Exception("bad error message")
@@ -70,21 +70,21 @@ class TestConnection(TestBaseWithoutBeforeAfter):
 
         Logger().info("Connection tests - wrong database")
         try:
-            pysqream.connect(self.ip, 5000, 'wrong_db', 'sqream', 'sqream', False, False)
+            connect(self.ip, 5000, 'wrong_db', 'sqream', 'sqream', False, False)
         except Exception as e:
             if "Database 'wrong_db' does not exist" not in repr(e):
                 raise Exception("bad error message")
 
         Logger().info("Connection tests - wrong username")
         try:
-            pysqream.connect(self.ip, 5000, 'master', 'wrong_username', 'sqream', False, False)
+            connect(self.ip, 5000, 'master', 'wrong_username', 'sqream', False, False)
         except Exception as e:
             if "role 'wrong_username' doesn't exist" not in repr(e):
                 raise Exception("bad error message")
 
         Logger().info("Connection tests - wrong password")
         try:
-            pysqream.connect(self.ip, 5000, 'master', 'sqream', 'wrong_pw', False, False)
+            connect(self.ip, 5000, 'master', 'sqream', 'wrong_pw', False, False)
         except Exception as e:
             if "wrong password for role 'sqream'" not in repr(e):
                 raise Exception("bad error message")
@@ -148,13 +148,13 @@ class TestConnection(TestBaseWithoutBeforeAfter):
 
         Logger().info("Connection tests - negative test for clustered=True")
         try:
-            pysqream.connect(self.ip, 5000, 'master', 'sqream', 'sqream', True, False)
+            connect(self.ip, 5000, 'master', 'sqream', 'sqream', True, False)
         except Exception as e:
             if "Connected with clustered=True, but apparently not a server picker port" not in repr(e):
                 raise Exception("bad error message")
 
         Logger().info("Connection tests - positive test for clustered=True")
-        con = pysqream.connect(self.ip, 3108, "master", "sqream", "sqream", clustered=True)
+        con = connect(self.ip, 3108, "master", "sqream", "sqream", clustered=True)
         cur = con.cursor()
         cur.execute('select 1')
         res = cur.fetchall()[0][0]

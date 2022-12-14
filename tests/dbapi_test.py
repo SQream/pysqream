@@ -7,7 +7,7 @@ from time import sleep
 from decimal import Decimal, getcontext
 import pytest
 import threading, sys, os
-import pysqream
+from pysqream import connect
 sys.path.append(os.path.abspath(__file__).rsplit('tests/', 1)[0] + '/tests/')
 from base import TestBase, TestBaseWithoutBeforeAfter, Logger, connect_dbapi
 
@@ -320,7 +320,7 @@ class TestFetch(TestBase):
 class TestCursor(TestBaseWithoutBeforeAfter):
 
     def test_cursor_through_clustered(self):
-        con_clustered = pysqream.connect(self.ip, 3108, 'master', 'sqream', 'sqream', clustered=True)
+        con_clustered = connect(self.ip, 3108, 'master', 'sqream', 'sqream', clustered=True)
         cur = con_clustered.cursor()
         assert cur.execute("select 1").fetchall()[0][0] == 1
         cur.close()
