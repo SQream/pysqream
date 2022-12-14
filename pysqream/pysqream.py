@@ -3,8 +3,8 @@
 
 from datetime import datetime, date, time as t
 import time
-from globals import __version__
-from logger import log_and_raise, start_logging, stop_logging
+from pysqream.globals import __version__
+from pysqream.logger import log_and_raise, start_logging, stop_logging
 from pysqream.connection import Connection
 
 

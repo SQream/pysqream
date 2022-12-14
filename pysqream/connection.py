@@ -4,7 +4,7 @@ from pysqream.column_buffer import ColumnBuffer
 from pysqream.SQSocket import SQSocket, Client
 from ping import PingLoop, _end_ping_loop
 from pysqream.globals import BUFFER_SIZE, FETCH_MANY_DEFAULT, CYTHON
-from logger import *
+from pysqream.logger import *
 import json
 import time
 from queue import Queue, Empty
