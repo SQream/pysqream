@@ -7,6 +7,7 @@ from subprocess import Popen
 from time import sleep
 import threading, sys, os
 import pytest
+sys.path.append(os.path.abspath(__file__).rsplit('tests/', 1)[0] + '/pysqream/')
 from pysqream import connect
 sys.path.append(os.path.abspath(__file__).rsplit('tests/', 1)[0] + '/tests/')
 from base import TestBase, TestBaseWithoutBeforeAfter, Logger, connect_dbapi
