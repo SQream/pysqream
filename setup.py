@@ -6,7 +6,7 @@ with open("README.rst", "r", encoding="utf-8") as fh:
 
 setup_params = dict(
     name =          'pysqream',
-    version =       '3.2.1',
+    version =       '3.2.2',
     description =   'DB-API connector for SQream DB', 
     long_description = long_description,
     url = "https://github.com/SQream/pysqream",
@@ -20,7 +20,7 @@ setup_params = dict(
     ],
     keywords = 'database db-api sqream sqreamdb',
     python_requires = '>=3.6.5',
-    install_requires=["numpy==1.19.5", "packaging==20.9", "pyarrow==3.0.0",
+    install_requires=["numpy==1.19.5", "packaging==20.9", "pyarrow==6.0.1",
                       "pytest==6.2.3", "setuptools==57.4.0"]
 )
 
