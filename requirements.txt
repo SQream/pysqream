@@ -1,4 +1,4 @@
-setuptools==57.4.0
+setuptools==65.5.1
 numpy==1.19.5
 packaging==20.9
 pyarrow==6.0.1
