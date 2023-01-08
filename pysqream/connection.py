@@ -196,6 +196,7 @@ class Connection:
                 except Exception as e:
                     logger.error(f"Can't close connection - {e} for Connection ID {con_id}")
                     raise Error(f"Can't close connection - {e} for Connection ID {con_id}")
+            self.cursors = {}
 
         self.close_connection()
 
