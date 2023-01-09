@@ -481,7 +481,7 @@ class Cursor:
         # self.conn.close_connection()
         # self.closed = True
         self.buffer.close()
-        # _end_ping_loop(self.ping_loop)
+        _end_ping_loop(self.ping_loop)
 
     def __enter__(self):
         return self
