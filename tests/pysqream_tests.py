@@ -105,8 +105,6 @@ class TestConnection(TestBaseWithoutBeforeAfter):
         except Exception as e:
             if "Connection has been closed" not in repr(e):
                 raise Exception("bad error message")
-        finally:
-            cur.close()
 
         Logger().info("Connection tests - Trying to close a connection that is already closed with close()")
         con = connect_dbapi(self.ip)
