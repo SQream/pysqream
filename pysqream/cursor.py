@@ -478,8 +478,8 @@ class Cursor:
     def close(self, sock=None):
         self.close_stmt()
         sock = sock or self.s
-        self.conn.close_connection()
-        self.closed = True
+        # self.conn.close_connection()
+        # self.closed = True
         self.buffer.close()
         # _end_ping_loop(self.ping_loop)
 
