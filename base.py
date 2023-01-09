@@ -2,9 +2,9 @@ import pytest
 import socket
 import sys
 import os
-sys.path.append(os.path.abspath(__file__).rsplit('tests/', 1)[0] + '/tests/')
+# sys.path.append(os.path.abspath(__file__).rsplit('tests/', 1)[0] + '/tests/')
 from pysqream.pysqream import connect
-from pytest_logger import Logger
+from tests.pytest_logger import Logger
 
 
 def connect_dbapi(ip, clustered=False, use_ssl=False):

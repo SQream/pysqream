@@ -1,12 +1,10 @@
-from datetime import datetime, date, timezone
+from datetime import datetime, date
 from numpy.random import randint, uniform
-from math import floor
 from queue import Queue
-from subprocess import Popen
 from time import sleep
 from decimal import Decimal, getcontext
 import pytest
-import threading, sys, os
+import sys, os
 import pysqream
 sys.path.append(os.path.abspath(__file__).rsplit('tests/', 1)[0] + '/tests/')
 from base import TestBase, TestBaseWithoutBeforeAfter, Logger, connect_dbapi
