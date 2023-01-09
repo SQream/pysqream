@@ -120,7 +120,6 @@ class Cursor:
         self.parsed_rows = []
         self.parsed_row_amount = 0
 
-        print(f'Executing statement over connection {self.conn.connection_id} with statement id {self.stmt_id}:\n{stmt}')
         if self.ping_loop is not None:
             _end_ping_loop(self.ping_loop)
         if logger.isEnabledFor(logging.INFO):
