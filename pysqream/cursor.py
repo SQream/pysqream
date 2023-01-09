@@ -288,7 +288,7 @@ class Cursor:
     def execute(self, query, params=None):
         """Execute a statement. Parameters are not supported"""
 
-        # self._verify_open()
+        self.conn._verify_open()
         if params:
 
             log_and_raise(ProgrammingError, "Parametered queries not supported. \
