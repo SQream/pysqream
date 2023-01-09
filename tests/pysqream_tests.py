@@ -7,10 +7,9 @@ from subprocess import Popen
 from time import sleep
 import threading, sys, os
 import pytest
-import socket
 import pysqream
-from pytest_logger import Logger
 sys.path.append(os.path.abspath(__file__).rsplit('tests/', 1)[0] + '/tests/')
+from base import TestBase, TestBaseWithoutBeforeAfter, Logger, connect_dbapi
 
 
 q = Queue()
@@ -49,41 +48,6 @@ neg_test_vals = {'tinyint': (258, 3.6, 'test',  (1997, 5, 9), (1997, 12, 12, 10,
                  'datetime': (5, 3.6, (-8, 9, 1, 0, 0, 0), (2012, 15, 6, 0, 0, 0), (2012, 9, 45, 0, 0, 0), (2012, 9, 14, 26, 0, 0), (2012, 9, 14, 13, 89, 0), 'test', False, True),
                  'varchar': (5, 3.6, (1, 2), (1997, 12, 12, 10, 10, 10), False, True),
                  'nvarchar': (5, 3.6, (1, 2), (1997, 12, 12, 10, 10, 10), False, True)}
-
-
-def connect_dbapi(ip, clustered=False, use_ssl=False):
-    port = (3109 if use_ssl else 3108) if clustered else (5001 if use_ssl else 5000)
-    return pysqream.connect(ip, port, 'master', 'sqream', 'sqream', clustered, use_ssl)
-
-
-class TestBase():
-
-    @pytest.fixture()
-    def ip(self, pytestconfig):
-        return pytestconfig.getoption("ip")
-
-    @pytest.fixture(autouse=True)
-    def Test_setup_teardown(self, ip):
-        ip = ip if ip else socket.gethostbyname(socket.gethostname())
-        Logger().info("Before Scenario")
-        Logger().info(f"Connect to server {ip}")
-        self.con = connect_dbapi(ip)
-        yield
-        Logger().info("After Scenario")
-        self.con.close()
-        Logger().info(f"Close Session to server {ip}")
-
-
-class TestBaseWithoutBeforeAfter():
-    @pytest.fixture()
-    def ip(self, pytestconfig):
-        return pytestconfig.getoption("ip")
-
-    @pytest.fixture(autouse=True)
-    def Test_setup_teardown(self, ip):
-        self.ip = ip if ip else socket.gethostbyname(socket.gethostname())
-        yield
-
 
 
 class TestConnection(TestBaseWithoutBeforeAfter):
