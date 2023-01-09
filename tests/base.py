@@ -3,6 +3,7 @@ import socket
 import sys
 import os
 sys.path.append(os.path.abspath(__file__).rsplit('tests/', 1)[0] + '/tests/')
+sys.path.append(os.path.abspath(__file__).rsplit('tests/', 1)[0] + 'pysqream/')
 from pysqream.pysqream import connect
 from tests.pytest_logger import Logger
 

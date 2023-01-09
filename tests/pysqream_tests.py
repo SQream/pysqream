@@ -3,8 +3,9 @@ from numpy.random import randint, uniform
 from queue import Queue
 from time import sleep
 import threading, sys, os
-import pysqream
 sys.path.append(os.path.abspath(__file__).rsplit('tests/', 1)[0] + '/tests/')
+sys.path.append(os.path.abspath(__file__).rsplit('tests/', 1)[0] + 'pysqream/')
+import pysqream
 from base import TestBase, TestBaseWithoutBeforeAfter, Logger, connect_dbapi
 
 
