@@ -415,7 +415,9 @@ class TestCursor(TestBaseWithoutBeforeAfter):
         if not all(x == vals[0] for x in vals):
             raise Exception(f"expected to get result 1, instead got {res1} and {res2}")
         cur.close()
+        con.close()
 
+        con = connect_dbapi(self.ip)
         Logger().info("Cursor tests - running a statement through cursor when there is an open statement")
         cur = con.cursor()
         cur.execute("select 1")
@@ -425,8 +427,10 @@ class TestCursor(TestBaseWithoutBeforeAfter):
         if res != 1:
             raise Exception(f"expected to get result 1, instead got {res}")
         cur.close()
+        con.close()
 
         Logger().info("Cursor tests - fetch functions after all the data has already been read through cursor")
+        con = connect_dbapi(self.ip)
         cur = con.cursor()
         cur.execute("create or replace table test (xint int)")
         cur.executemany('insert into test values (?)', [(1,)])
@@ -442,8 +446,10 @@ class TestCursor(TestBaseWithoutBeforeAfter):
         if res != []:
             raise Exception("expected to get an empty result from fetchmany, instead got {}".format(res))
         cur.close()
+        con.close()
 
         Logger().info("Cursor tests - run a query through a cursor and close the connection directly")
+        con = connect_dbapi(self.ip)
         cur = con.cursor()
         cur.execute("select 1")
         con.close()
