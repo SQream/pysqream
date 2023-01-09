@@ -121,8 +121,8 @@ class Cursor:
         self.parsed_row_amount = 0
 
         print(f'Executing statement over connection {self.conn.connection_id} with statement id {self.stmt_id}:\n{stmt}')
-        # if self.ping_loop is not None:
-        #     _end_ping_loop(self.ping_loop)
+        if self.ping_loop is not None:
+            _end_ping_loop(self.ping_loop)
         if logger.isEnabledFor(logging.INFO):
             logger.info \
                 (f'Executing statement over connection {self.conn.connection_id} with statement id {self.stmt_id}:\n{stmt}')
@@ -481,7 +481,7 @@ class Cursor:
         self.closed = True
         self.conn.close_connection()
         self.buffer.close()
-        _end_ping_loop(self.ping_loop)
+        # _end_ping_loop(self.ping_loop)
 
     def __enter__(self):
         return self
