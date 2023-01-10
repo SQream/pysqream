@@ -120,6 +120,8 @@ class Cursor:
         self.parsed_rows = []
         self.parsed_row_amount = 0
 
+        if self.ping_loop is not None:
+            _end_ping_loop(self.ping_loop)
         if logger.isEnabledFor(logging.INFO):
             logger.info \
                 (f'Executing statement over connection {self.conn.connection_id} with statement id {self.stmt_id}:\n{stmt}')
@@ -285,7 +287,7 @@ class Cursor:
     def execute(self, query, params=None):
         """Execute a statement. Parameters are not supported"""
 
-        # self._verify_open()
+        self.conn._verify_open()
         if params:
 
             log_and_raise(ProgrammingError, "Parametered queries not supported. \
@@ -475,8 +477,8 @@ class Cursor:
     def close(self, sock=None):
         self.close_stmt()
         sock = sock or self.s
+        # self.conn.close_connection()
         self.closed = True
-        self.conn.close_connection()
         self.buffer.close()
         _end_ping_loop(self.ping_loop)
 

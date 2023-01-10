@@ -1,15 +1,14 @@
-import time
 from datetime import datetime, date, timezone
 from numpy.random import randint, uniform
-from math import floor
 from queue import Queue
-from subprocess import Popen
 from time import sleep
 import threading, sys, os
 import pytest
-import pysqream
+import socket
 sys.path.append(os.path.abspath(__file__).rsplit('tests/', 1)[0] + '/tests/')
-from base import TestBase, TestBaseWithoutBeforeAfter, Logger, connect_dbapi
+#sys.path.append(os.path.abspath(__file__).rsplit('tests/', 1)[0] + 'pysqream/')
+import pysqream
+from tests.base import TestBase, TestBaseWithoutBeforeAfter, Logger, connect_dbapi
 
 
 q = Queue()
@@ -48,6 +47,23 @@ neg_test_vals = {'tinyint': (258, 3.6, 'test',  (1997, 5, 9), (1997, 12, 12, 10,
                  'datetime': (5, 3.6, (-8, 9, 1, 0, 0, 0), (2012, 15, 6, 0, 0, 0), (2012, 9, 45, 0, 0, 0), (2012, 9, 14, 26, 0, 0), (2012, 9, 14, 13, 89, 0), 'test', False, True),
                  'varchar': (5, 3.6, (1, 2), (1997, 12, 12, 10, 10, 10), False, True),
                  'nvarchar': (5, 3.6, (1, 2), (1997, 12, 12, 10, 10, 10), False, True)}
+
+class TestBase():
+
+    @pytest.fixture()
+    def ip(self, pytestconfig):
+        return pytestconfig.getoption("ip")
+
+    @pytest.fixture(autouse=True)
+    def Test_setup_teardown(self, ip):
+        ip = ip if ip else socket.gethostbyname(socket.gethostname())
+        Logger().info("Before Scenario")
+        Logger().info(f"Connect to server {ip}")
+        self.con = connect_dbapi(ip)
+        yield
+        Logger().info("After Scenario")
+        self.con.close()
+        Logger().info(f"Close Session to server {ip}")
 
 
 class TestConnection(TestBaseWithoutBeforeAfter):
@@ -98,8 +114,6 @@ class TestConnection(TestBaseWithoutBeforeAfter):
         except Exception as e:
           if "Connection has been closed" not in repr(e):
               raise Exception("bad error message")
-        finally:
-            cur.close()
 
         Logger().info("Connection tests - close_connection() function")
         con = connect_dbapi(self.ip)
@@ -110,8 +124,6 @@ class TestConnection(TestBaseWithoutBeforeAfter):
         except Exception as e:
             if "Connection has been closed" not in repr(e):
                 raise Exception("bad error message")
-        finally:
-            cur.close()
 
         Logger().info("Connection tests - Trying to close a connection that is already closed with close()")
         con = connect_dbapi(self.ip)
@@ -422,7 +434,9 @@ class TestCursor(TestBaseWithoutBeforeAfter):
         if not all(x == vals[0] for x in vals):
             raise Exception(f"expected to get result 1, instead got {res1} and {res2}")
         cur.close()
+        con.close()
 
+        con = connect_dbapi(self.ip)
         Logger().info("Cursor tests - running a statement through cursor when there is an open statement")
         cur = con.cursor()
         cur.execute("select 1")
@@ -432,8 +446,10 @@ class TestCursor(TestBaseWithoutBeforeAfter):
         if res != 1:
             raise Exception(f"expected to get result 1, instead got {res}")
         cur.close()
+        con.close()
 
         Logger().info("Cursor tests - fetch functions after all the data has already been read through cursor")
+        con = connect_dbapi(self.ip)
         cur = con.cursor()
         cur.execute("create or replace table test (xint int)")
         cur.executemany('insert into test values (?)', [(1,)])
@@ -449,8 +465,10 @@ class TestCursor(TestBaseWithoutBeforeAfter):
         if res != []:
             raise Exception("expected to get an empty result from fetchmany, instead got {}".format(res))
         cur.close()
+        con.close()
 
         Logger().info("Cursor tests - run a query through a cursor and close the connection directly")
+        con = connect_dbapi(self.ip)
         cur = con.cursor()
         cur.execute("select 1")
         con.close()
