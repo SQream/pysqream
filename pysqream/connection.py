@@ -144,13 +144,21 @@ class Connection:
     ## DB-API API
     #  ----------
 
-    def _verify_open(self):
+    # def _verify_open(self):
+    #
+    #     if self.cur_closed:
+    #         log_and_raise(ProgrammingError, 'Cursor has been closed')
+    #
+    #     if self.con_closed:
+    #         log_and_raise(ProgrammingError, 'Connection has been closed')
 
-        if self.con_closed:
-            log_and_raise(ProgrammingError, 'Connection has been closed')
-
+    def _verify_cur_open(self):
         if self.cur_closed:
             log_and_raise(ProgrammingError, 'Cursor has been closed')
+
+    def _verify_con_open(self):
+        if self.con_closed:
+            log_and_raise(ProgrammingError, 'Connection has been closed')
 
     def cursor(self):
         ''' Return a new connection with the same parameters.
@@ -166,7 +174,7 @@ class Connection:
         )  # self is the calling connection instance, so cursor can trace back to pysqream
         conn.connect_database(self.database, self.username, self.password, self.service)
 
-        self._verify_open()
+        self._verify_con_open()
         cur = Cursor(conn, self.cursors)
         self.cursors[cur.conn.connection_id] = cur
         return cur
@@ -188,6 +196,7 @@ class Connection:
             for con_id, cursor in self.cursors.items():
                 try:
                     if not cursor.closed:
+                        cursor.base_connection_closed = True
                         cursor.close()
                 except Exception as e:
                     logger.error(f"Can't close connection - {e} for Connection ID {con_id}")
