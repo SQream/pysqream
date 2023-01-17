@@ -470,6 +470,7 @@ class Cursor:
         if self.open_statement:
             self.client.send_string('{"closeStatement": "closeStatement"}')
             self.open_statement = False
+            self.conn.cur_closed = True
 
             if logger.isEnabledFor(logging.INFO):
                 logger.info(f'Done executing statement {self.stmt_id} over connection {self.conn.connection_id}')
@@ -477,7 +478,7 @@ class Cursor:
     def close(self, sock=None):
         self.close_stmt()
         sock = sock or self.s
-        # self.conn.close_connection()
+        self.conn.close_connection()
         self.closed = True
         self.buffer.close()
         _end_ping_loop(self.ping_loop)

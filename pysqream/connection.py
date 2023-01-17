@@ -19,14 +19,13 @@ from pysqream.cursor import Cursor
 class Connection:
     ''' Connection class used to interact with SQream '''
 
-    base_conn_open = [False]
-
     def __init__(self, ip, port, clustered, use_ssl=False, log=False, base_connection=True,
                  reconnect_attempts=3, reconnect_interval=10):
 
         self.buffer = ColumnBuffer(BUFFER_SIZE)  # flushing buffer every BUFFER_SIZE bytes
         self.version = None
-        self.closed = False
+        self.cur_closed = False
+        self.con_closed = False
         self.connect_to_socket = False
         self.connect_to_database = False
         self.orig_ip, self.orig_port, self.clustered, self.use_ssl = ip, port, clustered, use_ssl
@@ -34,9 +33,7 @@ class Connection:
         self.base_connection = base_connection
         self.ping_loop = None
         self.client = None
-
-        if self.base_connection:
-            self.cursors = {}
+        self.cursors = {}
 
         self._open_connection(clustered, use_ssl)
 
@@ -92,8 +89,6 @@ class Connection:
         self.s = SQSocket(self.ip, self.port, use_ssl)
         self.client = Client(self.s)
         self.connect_to_socket = True
-        if self.base_connection:
-            self.base_conn_open[0] = True
 
     def connect_database(self, database, username, password, service='sqream'):
         """Handle connection to database, with or without server picker"""
@@ -133,16 +128,15 @@ class Connection:
         # Attempts failed
         log_and_raise(ConnectionRefusedError, 'Reconnection attempts to sqreamd failed')
 
-    def close_connection(self, sock=None):
+    def close_connection(self):
 
-        if self.closed:
+        if self.con_closed:
             log_and_raise(ProgrammingError, f"Trying to close a connection that's already closed for database "
                                             f"{self.database} and Connection ID: {self.connection_id}")
         self.client.send_string('{"closeConnection":  "closeConnection"}')
         self.s.close()
         self.buffer.close()
-        self.closed = True
-        self.base_conn_open[0] = False if self.base_connection else True
+        self.con_closed = True
 
         if logger.isEnabledFor(logging.INFO):
             logger.info(f'Connection closed to database {self.database}. Connection ID: {self.connection_id}')
@@ -152,10 +146,10 @@ class Connection:
 
     def _verify_open(self):
 
-        if not self.base_conn_open[0]:
+        if self.con_closed:
             log_and_raise(ProgrammingError, 'Connection has been closed')
 
-        if self.closed:
+        if self.cur_closed:
             log_and_raise(ProgrammingError, 'Cursor has been closed')
 
     def cursor(self):
@@ -186,13 +180,15 @@ class Connection:
         # log_and_raise(NotSupportedError, "Rollback is not supported")
 
     def close(self):
+
         if not self.connect_to_database:
             return
 
         if self.base_connection:
             for con_id, cursor in self.cursors.items():
                 try:
-                    cursor.close()
+                    if not cursor.closed:
+                        cursor.close()
                 except Exception as e:
                     logger.error(f"Can't close connection - {e} for Connection ID {con_id}")
                     raise Error(f"Can't close connection - {e} for Connection ID {con_id}")
