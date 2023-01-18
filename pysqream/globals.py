@@ -16,7 +16,7 @@ VARCHAR_ENCODING = 'ascii'
 CYTHON = False # Cython IS NOT SUPPORTED
 clean_sqream_errors = False
 support_pandas = False
-dbg = True
+dbg = False
 
 if WIN:
     get_ram = get_ram_windows()

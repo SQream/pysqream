@@ -184,6 +184,20 @@ class TestConnection(TestBaseWithoutBeforeAfter):
                 raise Exception("bad error message")
         con.close()
 
+        Logger().info("Connection tests - all connections are closed when trying to close a single connection SQ-12821")
+        con1 = connect_dbapi(self.ip, True, True)
+        con2 = connect_dbapi(self.ip, True, True)
+        cur = con1.cursor()
+        cur.execute('select 1')
+        cur.fetchall()
+        cur.close()
+        con2.close()
+        cur = con1.cursor()
+        cur.execute('select 1')
+        cur.fetchall()
+        cur.close()
+        con1.close()
+
 
 class TestPositive(TestBase):
 
