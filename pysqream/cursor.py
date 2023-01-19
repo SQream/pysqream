@@ -34,6 +34,7 @@ class Cursor:
         self.row_size = 0
         self.rows_per_flush = 0
         self.lastrowid = None
+        self.base_connection_closed = False
     
     def get_statement_type(self):
 
@@ -287,7 +288,10 @@ class Cursor:
     def execute(self, query, params=None):
         """Execute a statement. Parameters are not supported"""
 
-        self.conn._verify_open()
+        if self.base_connection_closed:
+            self.conn._verify_con_open()
+        else:
+            self.conn._verify_cur_open()
         if params:
 
             log_and_raise(ProgrammingError, "Parametered queries not supported. \
@@ -477,7 +481,8 @@ class Cursor:
     def close(self, sock=None):
         self.close_stmt()
         sock = sock or self.s
-        # self.conn.close_connection()
+        self.conn.cur_closed = True
+        self.conn.close_connection()
         self.closed = True
         self.buffer.close()
         _end_ping_loop(self.ping_loop)

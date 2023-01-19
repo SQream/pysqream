@@ -8,7 +8,7 @@ import pysqream
 from tests.pytest_logger import Logger
 
 
-def connect_dbapi(ip, clustered=False, use_ssl=False):
+def connect_dbapi(ip, clustered=True, use_ssl=False):
     port = (3109 if use_ssl else 3108) if clustered else (5001 if use_ssl else 5000)
     return pysqream.connect(ip, port, 'master', 'sqream', 'sqream', clustered, use_ssl)
 
