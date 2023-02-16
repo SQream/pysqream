@@ -1,5 +1,5 @@
 setuptools==57.4.0
-numpy==1.19.5
+numpy==1.20
 packaging==20.9
 pyarrow==6.0.1
 pytest==6.2.3
