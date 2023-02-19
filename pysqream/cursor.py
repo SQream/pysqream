@@ -12,6 +12,10 @@ from pysqream.SQSocket import Client
 import time
 
 
+def _is_null(nullable):
+    return nullable == 0
+
+
 class Cursor:
 
     def __init__(self, conn, cursors):
@@ -201,17 +205,18 @@ class Cursor:
 
         for type_tup, nullable, tvc in zip(self.col_type_tups, self.col_nul,
                                            self.col_tvc):
-            column = []
-            if nullable:
-                column.append(unsorted_data_columns.pop(0))
-            if tvc:
-                column.append(unsorted_data_columns.pop(0).cast('i'))
+            column = {'nullable': False, 'tvc': False, 'data_column': False}
 
-            column.append(unsorted_data_columns.pop(0))
+            if nullable:
+                column['nullable'] = unsorted_data_columns.pop(0)
+            if tvc:
+                column['tvc'] = unsorted_data_columns.pop(0).cast('i')
+
+            column['data_column'] = unsorted_data_columns.pop(0)
             if type_tup[0] not in ('ftVarchar', 'ftBlob', 'ftNumeric'):
-                column[-1] = column[-1].cast(type_to_letter[type_tup[0]])
+                column['data_column'] = column['data_column'].cast(type_to_letter[type_tup[0]])
             else:
-                column[-1] = column[-1].tobytes()
+                column['data_column'] = column['data_column'].tobytes()
             self.data_columns.append(column)
 
         self.unparsed_row_amount = num_rows_fetched
@@ -227,44 +232,69 @@ class Cursor:
             return self.extracted_cols
 
         for idx, raw_col_data in enumerate(self.data_columns):
+
             # Extract data according to column type
             if self.col_tvc[idx]:  # nvarchar
-                nvarc_sizes = raw_col_data[1 if self.col_nul[idx] else 0]
-                col = [
-                    raw_col_data[-1][start:end].decode('utf8')
-                    for (start, end) in lengths_to_pairs(nvarc_sizes)
-                ]
+                if self.col_nul[idx]:
+                    col = [
+                        None if _is_null(raw_col_data['nullable'][idx]) else raw_col_data['data_column'][start:end].decode('utf8')
+                        for (start, end) in lengths_to_pairs(raw_col_data['tvc'])
+                    ]
+                else:
+                    col = [
+                        raw_col_data['data_column'][start:end].decode('utf8')
+                        for (start, end) in lengths_to_pairs(raw_col_data['tvc'])
+                    ]
             elif self.col_type_tups[idx][0] == "ftVarchar":
-                varchar_size = self.col_type_tups[idx][1]
-                col = [
-                    raw_col_data[-1][idx:idx + varchar_size].decode(
-                        self.conn.varchar_enc, "ignore").replace('\x00', '').rstrip()
-                    for idx in range(0, len(raw_col_data[-1]), varchar_size)
-                ]
+                if self.col_nul[idx]:
+                    varchar_size = self.col_type_tups[idx][1]
+                    col = [
+                        None if _is_null(raw_col_data['nullable'][idx]) else raw_col_data['data_column'][idx:idx + varchar_size].decode(
+                            self.conn.varchar_enc, "ignore").replace('\x00', '').rstrip()
+                        for idx in range(0, len(raw_col_data['data_column']), varchar_size)
+                    ]
+                else:
+                    varchar_size = self.col_type_tups[idx][1]
+                    col = [
+                        raw_col_data['data_column'][idx:idx + varchar_size].decode(
+                            self.conn.varchar_enc, "ignore").replace('\x00', '').rstrip()
+                        for idx in range(0, len(raw_col_data['data_column']), varchar_size)
+                    ]
             elif self.col_type_tups[idx][0] == "ftDate":
-                col = [sq_date_to_py_date(d) for d in raw_col_data[-1]]
+                col = [sq_date_to_py_date(d) for d in raw_col_data['data_column']]
             elif self.col_type_tups[idx][0] == "ftDateTime":
-                col = [sq_datetime_to_py_datetime(d) for d in raw_col_data[-1]]
+                col = [sq_datetime_to_py_datetime(d) for d in raw_col_data['data_column']]
             elif self.col_type_tups[idx][0] == "ftNumeric":
-                scale = self.col_type_tups[idx][2]
-                col = [
-                    # sq_numeric_to_decimal(bytes_to_bigint(raw_col_data[-1][idx:idx + 16]), scale)
-                    sq_numeric_to_decimal(raw_col_data[-1][idx:idx + 16], scale)
-                    for idx in range(0, len(raw_col_data[-1]), 16)
-                ]
+                if self.col_nul[idx]:
+                    scale = self.col_type_tups[idx][2]
+                    col = [
+                        # sq_numeric_to_decimal(bytes_to_bigint(raw_col_data[-1][idx:idx + 16]), scale)
+                         None if _is_null(raw_col_data['nullable'][idx]) else sq_numeric_to_decimal(raw_col_data['data_column'][idx:idx + 16], scale)
+                        for idx in range(0, len(raw_col_data['data_column']), 16)
+                    ]
+                else:
+                    scale = self.col_type_tups[idx][2]
+                    col = [
+                        # sq_numeric_to_decimal(bytes_to_bigint(raw_col_data[-1][idx:idx + 16]), scale)
+                        sq_numeric_to_decimal(raw_col_data['data_column'][idx:idx + 16], scale)
+                        for idx in range(0, len(raw_col_data['data_column']), 16)
+                    ]
 
             else:
-                col = raw_col_data[-1]
+                if self.col_nul[idx]:
+                    col = [None if _is_null(n[idx]) else d[idx] for d, n in zip(raw_col_data['data_column'], raw_col_data['nullable'])]
+                else:
+                    col = raw_col_data['data_column']
 
-            # Fill Nones if / where needed
-            if self.col_nul[idx]:
-                nulls = raw_col_data[0]  # .tolist()
-                col = [
-                    item if not null else None
-                    for item, null in zip(col, nulls)
-                ]
-            else:
-                pass
+            # # Fill Nones if / where needed
+            # if self.col_nul[idx]:
+            #     nulls = raw_col_data['nullable']  # .tolist()
+            #     col = [
+            #         item if not null else None
+            #         for item, null in zip(col, nulls)
+            #     ]
+            # else:
+            #     pass
 
             self.extracted_cols.append(col)
 
