@@ -13,7 +13,7 @@ import time
 
 
 def _is_null(nullable):
-    return nullable == 0
+    return nullable == 1
 
 
 class Cursor:
@@ -235,66 +235,21 @@ class Cursor:
 
             # Extract data according to column type
             if self.col_tvc[idx]:  # nvarchar
-                if self.col_nul[idx]:
-                    col = [
-                        None if _is_null(raw_col_data['nullable'][idx]) else raw_col_data['data_column'][start:end].decode('utf8')
-                        for (start, end) in lengths_to_pairs(raw_col_data['tvc'])
-                    ]
-                else:
-                    col = [
-                        raw_col_data['data_column'][start:end].decode('utf8')
-                        for (start, end) in lengths_to_pairs(raw_col_data['tvc'])
-                    ]
+                col = self._extract_nvarchar(idx , raw_col_data)
+
             elif self.col_type_tups[idx][0] == "ftVarchar":
-                if self.col_nul[idx]:
-                    varchar_size = self.col_type_tups[idx][1]
-                    col = [
-                        None if _is_null(raw_col_data['nullable'][idx]) else raw_col_data['data_column'][idx:idx + varchar_size].decode(
-                            self.conn.varchar_enc, "ignore").replace('\x00', '').rstrip()
-                        for idx in range(0, len(raw_col_data['data_column']), varchar_size)
-                    ]
-                else:
-                    varchar_size = self.col_type_tups[idx][1]
-                    col = [
-                        raw_col_data['data_column'][idx:idx + varchar_size].decode(
-                            self.conn.varchar_enc, "ignore").replace('\x00', '').rstrip()
-                        for idx in range(0, len(raw_col_data['data_column']), varchar_size)
-                    ]
+                col = self._extract_varchar(idx, raw_col_data)
+
             elif self.col_type_tups[idx][0] == "ftDate":
-                col = [sq_date_to_py_date(d) for d in raw_col_data['data_column']]
+                col = self._extract_date(idx, raw_col_data)
+
             elif self.col_type_tups[idx][0] == "ftDateTime":
-                col = [sq_datetime_to_py_datetime(d) for d in raw_col_data['data_column']]
+                col = self._extract_datetime(idx, raw_col_data)
+
             elif self.col_type_tups[idx][0] == "ftNumeric":
-                if self.col_nul[idx]:
-                    scale = self.col_type_tups[idx][2]
-                    col = [
-                        # sq_numeric_to_decimal(bytes_to_bigint(raw_col_data[-1][idx:idx + 16]), scale)
-                         None if _is_null(raw_col_data['nullable'][idx]) else sq_numeric_to_decimal(raw_col_data['data_column'][idx:idx + 16], scale)
-                        for idx in range(0, len(raw_col_data['data_column']), 16)
-                    ]
-                else:
-                    scale = self.col_type_tups[idx][2]
-                    col = [
-                        # sq_numeric_to_decimal(bytes_to_bigint(raw_col_data[-1][idx:idx + 16]), scale)
-                        sq_numeric_to_decimal(raw_col_data['data_column'][idx:idx + 16], scale)
-                        for idx in range(0, len(raw_col_data['data_column']), 16)
-                    ]
-
+                col = self._extract_numeric(idx, raw_col_data)
             else:
-                if self.col_nul[idx]:
-                    col = [None if _is_null(n[idx]) else d[idx] for d, n in zip(raw_col_data['data_column'], raw_col_data['nullable'])]
-                else:
-                    col = raw_col_data['data_column']
-
-            # # Fill Nones if / where needed
-            # if self.col_nul[idx]:
-            #     nulls = raw_col_data['nullable']  # .tolist()
-            #     col = [
-            #         item if not null else None
-            #         for item, null in zip(col, nulls)
-            #     ]
-            # else:
-            #     pass
+                col = self._extract_datatype(idx, raw_col_data)
 
             self.extracted_cols.append(col)
 
@@ -507,6 +462,77 @@ class Cursor:
 
             if logger.isEnabledFor(logging.INFO):
                 logger.info(f'Done executing statement {self.stmt_id} over connection {self.conn.connection_id}')
+
+    def _extract_nvarchar(self, idx, raw_col_data):
+        if self.col_nul[idx]:
+            col = [None if (_is_null(n)) else raw_col_data['data_column'][start:end].decode('utf8') for (start, end), n
+                   in
+                   zip(lengths_to_pairs(raw_col_data['tvc']), raw_col_data['nullable'])]
+        else:
+            col = [
+                raw_col_data['data_column'][start:end].decode('utf8')
+                for (start, end) in lengths_to_pairs(raw_col_data['tvc'])
+            ]
+        return col
+
+    def _extract_varchar(self, idx, raw_col_data):
+        varchar_size = self.col_type_tups[idx][1]
+        if self.col_nul[idx]:
+            col = []
+            offset = 0
+            for idx in raw_col_data['nullable']:
+                if _is_null(idx):
+                    col.append(None)
+                    offset = offset + varchar_size
+                else:
+                    col.append(raw_col_data['data_column'][offset:offset + varchar_size].decode(self.conn.varchar_enc,
+                                                                                                "ignore").replace(
+                        '\x00', '').rstrip())
+                    offset = offset + varchar_size
+        else:
+            col = [
+                raw_col_data['data_column'][idx:idx + varchar_size].decode(
+                    self.conn.varchar_enc, "ignore").replace('\x00', '').rstrip()
+                for idx in range(0, len(raw_col_data['data_column']), varchar_size)
+            ]
+        return col
+
+    def _extract_date(self, idx, raw_col_data):
+        if self.col_nul[idx]:
+            col = [sq_date_to_py_date(d, is_null=_is_null(n)) for d, n in
+                   zip(raw_col_data['data_column'], raw_col_data['nullable'])]
+        else:
+            col = [sq_date_to_py_date(d) for d in raw_col_data['data_column']]
+        return col
+
+    def _extract_datetime(self, idx, raw_col_data):
+        if self.col_nul[idx]:
+            col = [sq_datetime_to_py_datetime(d, is_null=_is_null(n)) for d, n in
+                   zip(raw_col_data['data_column'], raw_col_data['nullable'])]
+        else:
+            col = [sq_datetime_to_py_datetime(d) for d in raw_col_data['data_column']]
+        return col
+
+    def _extract_numeric(self, idx, raw_col_data):
+        scale = self.col_type_tups[idx][2]
+        if self.col_nul[idx]:
+            col = [
+                sq_numeric_to_decimal(raw_col_data['data_column'][idx:idx + 16], scale, is_null=_is_null(n))
+                for idx, n in zip(range(0, len(raw_col_data['data_column']), 16), raw_col_data['nullable'])
+            ]
+        else:
+            col = [
+                sq_numeric_to_decimal(raw_col_data['data_column'][idx:idx + 16], scale)
+                for idx in range(0, len(raw_col_data['data_column']), 16)
+            ]
+        return col
+
+    def _extract_datatype(self, idx, raw_col_data):
+        if self.col_nul[idx]:
+            col = [None if _is_null(n) else d for d, n in zip(raw_col_data['data_column'], raw_col_data['nullable'])]
+        else:
+            col = raw_col_data['data_column']
+        return col
 
     def close(self, sock=None):
         self.close_stmt()
