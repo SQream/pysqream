@@ -37,7 +37,7 @@ def sq_datetime_to_py_datetime(sqream_datetime, is_null=False, dt_convert_func=d
 
     date_part = sqream_datetime >> 32
     time_part = sqream_datetime & 0xffffffff
-    date_part = sq_date_to_py_date(date_part, is_null)
+    date_part = sq_date_to_py_date(date_part, is_null=is_null)
 
     if date_part is None:
         return None
