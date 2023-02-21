@@ -205,12 +205,12 @@ class Cursor:
 
         for type_tup, nullable, tvc in zip(self.col_type_tups, self.col_nul,
                                            self.col_tvc):
-            column = {'nullable': False, 'tvc': False, 'data_column': False}
+            column = {'nullable': False, 'true_nvarchar': False, 'data_column': False}
 
             if nullable:
                 column['nullable'] = unsorted_data_columns.pop(0)
             if tvc:
-                column['tvc'] = unsorted_data_columns.pop(0).cast('i')
+                column['true_nvarchar'] = unsorted_data_columns.pop(0).cast('i')
 
             column['data_column'] = unsorted_data_columns.pop(0)
             if type_tup[0] not in ('ftVarchar', 'ftBlob', 'ftNumeric'):
@@ -467,11 +467,11 @@ class Cursor:
         if self.col_nul[idx]:
             col = [None if (_is_null(n)) else raw_col_data['data_column'][start:end].decode('utf8') for (start, end), n
                    in
-                   zip(lengths_to_pairs(raw_col_data['tvc']), raw_col_data['nullable'])]
+                   zip(lengths_to_pairs(raw_col_data['true_nvarchar']), raw_col_data['nullable'])]
         else:
             col = [
                 raw_col_data['data_column'][start:end].decode('utf8')
-                for (start, end) in lengths_to_pairs(raw_col_data['tvc'])
+                for (start, end) in lengths_to_pairs(raw_col_data['true_nvarchar'])
             ]
         return col
 
