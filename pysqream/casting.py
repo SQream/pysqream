@@ -7,8 +7,9 @@ def pad_dates(num):
     return ('0' if num < 10 else '') + str(num)
 
 
-def sq_date_to_py_date(sqream_date, date_convert_func=date):
-    if sqream_date is None or sqream_date == 0:
+def sq_date_to_py_date(sqream_date, is_null=False, date_convert_func=date):
+
+    if is_null:
         return None
 
     year = (10000 * sqream_date + 14780) // 3652425
@@ -27,16 +28,16 @@ def sq_date_to_py_date(sqream_date, date_convert_func=date):
     return date_convert_func(year, month, day)
 
 
-def sq_datetime_to_py_datetime(sqream_datetime, dt_convert_func=datetime):
+def sq_datetime_to_py_datetime(sqream_datetime, is_null=False, dt_convert_func=datetime):
     ''' Getting the datetime items involves breaking the long into the date int and time it holds
         The date is extracted in the above, while the time is extracted here  '''
 
-    if sqream_datetime is None or sqream_datetime == 0:
+    if is_null:
         return None
 
     date_part = sqream_datetime >> 32
     time_part = sqream_datetime & 0xffffffff
-    date_part = sq_date_to_py_date(date_part)
+    date_part = sq_date_to_py_date(date_part, is_null=is_null)
 
     if date_part is None:
         return None
@@ -78,7 +79,10 @@ if getcontext().prec < 38:
     getcontext().prec = 38
 
 
-def sq_numeric_to_decimal(bigint_as_bytes: bytes, scale: int) -> Decimal:
+def sq_numeric_to_decimal(bigint_as_bytes: bytes, scale: int, is_null=False) -> [Decimal, None]:
+    if is_null:
+        return None
+
     getcontext().prec = 38
     c = memoryview(bigint_as_bytes).cast('i')
     bigint = ((c[3] << 96) + ((c[2] & 0xffffffff) << 64) + ((c[1] & 0xffffffff) << 32) + (c[0] & 0xffffffff))
