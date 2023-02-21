@@ -9,6 +9,7 @@ sys.path.append(os.path.abspath(__file__).rsplit('tests/', 1)[0] + '/tests/')
 #sys.path.append(os.path.abspath(__file__).rsplit('tests/', 1)[0] + 'pysqream/')
 import pysqream
 from tests.base import TestBase, TestBaseWithoutBeforeAfter, Logger, connect_dbapi
+from pysqream import casting
 
 
 q = Queue()
@@ -566,6 +567,51 @@ class TestThreads(TestBaseWithoutBeforeAfter):
             raise Exception("expected to get equal values. instead got res1 {} and res2 {}".format(res1, res2))
 
         con.close()
+
+
+class TestDatetimeUnitTest(TestBaseWithoutBeforeAfter):
+
+    def test_zero_date(self):
+        error = 'year 0 is out of range'
+        try:
+            casting.sq_date_to_py_date(0, is_null=False)
+        except Exception as e:
+            if error not in str(e):
+                raise ValueError(f"Excepted to get error [{error}], got [{str(e)}]")
+
+    def test_zero_datetime(self):
+        error = 'year 0 is out of range'
+        try:
+            casting.sq_datetime_to_py_datetime(0, is_null=False)
+        except Exception as e:
+            if error not in str(e):
+                raise ValueError(f"Excepted to get error [{error}], got [{str(e)}]")
+
+    def test_negative_date(self):
+        error = 'year -9 is out of range'
+        try:
+            casting.sq_date_to_py_date(-3000, is_null=False)
+        except Exception as e:
+            if error not in str(e):
+                raise ValueError(f"Excepted to get error [{error}], got [{str(e)}]")
+
+    def test_negative_datetime(self):
+        error = 'year -9 is out of range'
+        try:
+            casting.sq_datetime_to_py_datetime(-3000, is_null=False)
+        except Exception as e:
+            if error in str(e):
+                raise ValueError(f"Excepted to get error [{error}], got [{str(e)}]")
+
+    def test_null_date(self):
+        res = casting.sq_date_to_py_date(-3000, is_null=True)
+        if res is not None:
+            raise ValueError(f"Excepted to get None, but got [{res}]")
+
+    def test_null_datetime(self):
+        res = casting.sq_datetime_to_py_datetime(-3000, is_null=True)
+        if res is not None:
+            raise ValueError(f"Excepted to get None, but got [{res}]")
 
 
 # def copy_tests():
