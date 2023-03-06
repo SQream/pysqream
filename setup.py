@@ -19,8 +19,8 @@ setup_params = dict(
         "Operating System :: OS Independent",
     ],
     keywords = 'database db-api sqream sqreamdb',
-    python_requires = '>=3.6.5',
-    install_requires=["numpy==1.19.5", "packaging==20.9", "pyarrow==6.0.1",
+    python_requires = '>=3.9',
+    install_requires=["numpy==1.20", "packaging==20.9", "pyarrow==6.0.1",
                       "pytest==6.2.3", "setuptools==57.4.0"]
 )
 
