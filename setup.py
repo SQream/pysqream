@@ -14,14 +14,14 @@ setup_params = dict(
     author_email = "info@sqream.com",
     packages = find_packages(),
     classifiers = [
-        "Programming Language :: Python :: 3.6",
+        "Programming Language :: Python :: 3.9",
         "License :: OSI Approved :: BSD License",
         "Operating System :: OS Independent",
     ],
     keywords = 'database db-api sqream sqreamdb',
     python_requires = '>=3.9',
-    install_requires=["numpy>=1.20", "packaging==20.9", "pyarrow==6.0.1",
-                      "pytest==6.2.3", "setuptools==57.4.0"]
+    install_requires=["numpy>=1.20", "packaging>=23.0", "pyarrow>=6.0.1",
+                      "setuptools>=57.4.0"]
 )
 
 if __name__ == '__main__':
