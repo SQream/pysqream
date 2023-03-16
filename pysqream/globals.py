@@ -1,7 +1,7 @@
 from pysqream.utils import get_ram_windows, get_ram_linux
 import sys
 
-__version__ = '3.2.2'
+__version__ = '3.2.5'
 buf_maps, buf_views = [], []
 WIN = True if sys.platform in ('win32', 'cygwin') else False
 MAC = True if sys.platform in ('darwin') else False

@@ -5,7 +5,7 @@
 Python connector for SQream DB
 ===================================
 
-* **Version:**  3.2.4
+* **Version:**  3.2.5
 
 * **Supported SQream DB versions:** >= 2.13, 2019.2 or newer recommended
 
@@ -22,7 +22,7 @@ For more information and a full API reference, see `SQream documentation's pysqr
 Requirements
 ====================
 
-* Python 3.6.5+, with 3.7+ highly recommended
+* Python 3.9+
 
 * Cython (Optional, faster performance) - `pip3 install --upgrade cython`
 
@@ -35,12 +35,12 @@ Prerequisites
 1. Python
 ^^^^^^^^^^^^
 
-The connector requires Python 3.6.5 or newer. To verify your version of Python:
+The connector requires Python 3.9 or newer. To verify your version of Python:
 
 .. code-block:: console
 
    $ python --version
-   Python 3.7.3
+   Python 3.9
    
 
 Note: If both Python 2.x and 3.x are installed, you can run ``python3`` and ``pip3`` instead of ``python`` and ``pip`` respectively for the rest of this guide
@@ -53,7 +53,7 @@ We recommend upgrading to the latest version of ``pip`` before installing. To ve
 
 .. code-block:: console
 
-   $ python -m pip install --upgrade pip
+   $ python3.9 -m pip install --upgrade pip
    Collecting pip
       Downloading https://files.pythonhosted.org/packages/00/b6/9cfa56b4081ad13874b0c6f96af8ce16cfbc1cb06bedf8e9164ce5551ec1/pip-19.3.1-py2.py3-none-any.whl (1.4MB)
         |████████████████████████████████| 1.4MB 1.6MB/s
@@ -95,7 +95,7 @@ Install the connector with ``pip``:
 
 .. code-block:: console
    
-   $ pip install pysqream
+   $ pip3.9 install pysqream
 
 ``pip`` will automatically installs all necessary libraries and modules.
 
