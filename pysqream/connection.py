@@ -63,7 +63,7 @@ class Connection:
         if clustered is True:
 
             # Create non SSL socket for picker communication
-            picker_socket = SQSocket(self.orig_ip, self.orig_port, False)
+            picker_socket = SQSocket(self.orig_ip, self.orig_port, use_ssl)
             self.client = Client(picker_socket)
             # Parse picker response to get ip and port
             # Read 4 bytes to find length of how much to read
