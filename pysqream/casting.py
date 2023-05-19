@@ -107,6 +107,14 @@ def lengths_to_pairs(nvarc_lengths):
         idx = new_idx
 
 
+def arr_lengths_to_pairs(text_lengths):
+    """Generator for parsing ARRAY TEXT columns' data"""
+    start = 0
+    for length in text_lengths:
+        yield start, length
+        start = length + (8 - length % 8) % 8
+
+
 def numpy_datetime_str_to_tup(numpy_dt):
     ''' '1970-01-01T00:00:00.699148800' '''
 
