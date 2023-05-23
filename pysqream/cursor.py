@@ -232,9 +232,7 @@ class Cursor:
                                            self.col_tvc):
             column = {'nullable': False, 'true_nvarchar': False}
 
-            # Only ARRAYs have 5 values such
-            # ['ftArray', 'ftBlob', 0, 0, 0]
-            is_array = len(type_tup) == 5
+            is_array = type_tup[0] == 'ftArray'
 
             if nullable:
                 column['nullable'] = unsorted_data_columns.pop(0)
@@ -588,8 +586,8 @@ class Cursor:
 
             [[1, 5, 7], None, [31, 2, None, 6]]
         """
-        type_tup = self.col_type_tups[idx]
-        typecode = typecodes.get(type_tup[1])
+        sub_type_tup = self.col_type_tups[idx]
+        typecode = typecodes.get(sub_type_tup[1])
 
         if typecode == "STRING":
             return self._extract_unfixed_array(raw_col_data)
@@ -597,7 +595,7 @@ class Cursor:
         if typecode not in ("NUMBER", "DATETIME"):
             log_and_raise(
                 NotSupportedError,
-                f'Array of "{type_tup[1]}" is not supported',
+                f'Array of "{sub_type_tup[1]}" is not supported',
             )
 
         return self._extract_fixed_array(idx, raw_col_data)
