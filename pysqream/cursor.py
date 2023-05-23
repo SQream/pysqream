@@ -232,7 +232,7 @@ class Cursor:
                                            self.col_tvc):
             column = {'nullable': False, 'true_nvarchar': False}
 
-            is_array = type_tup[0] == 'ftArray'
+            is_array = 'ftArray' in type_tup
 
             if nullable:
                 column['nullable'] = unsorted_data_columns.pop(0)
