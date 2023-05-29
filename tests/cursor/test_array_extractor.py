@@ -13,12 +13,15 @@ TEMP_TABLE = "test_array_fetch_temp"
 def generate_array_table(cursor, request):
     """Fixture that generate table, insert data and drop table"""
     _type, values = request.param
-    cursor.execute(
-        f"CREATE OR REPLACE TABLE {TEMP_TABLE} (data array({_type}));")
-    insert_values = ', '.join([f"(ARRAY({v}))" for v in values])
+    cursor.execute(f"CREATE OR REPLACE TABLE {TEMP_TABLE} (data {_type}[]);")
+    insert_values = ', '.join([f"(ARRAY[{v}])" for v in values])
     cursor.execute(f"INSERT INTO {TEMP_TABLE} VALUES {insert_values}")
-    yield
-    cursor.execute(f"DROP TABLE {TEMP_TABLE};")
+
+
+@pytest.fixture(autouse=True)
+def autodrop_array_table(cursor):
+    """Fixture that automatically drop database every test run in the module"""
+    cursor.execute(f"DROP TABLE IF EXISTS {TEMP_TABLE};")
 
 
 def str_to_decimal(value: str):
@@ -33,6 +36,13 @@ def tuple_to_datetime(values: tuple):
     if values is None:
         return None
     return datetime(*values)
+
+
+def assert_table_empty(cursor, table: str):
+    """Utility to check that table is empty"""
+    cursor.execute(f"SELECT * FROM {table};")
+    preresult = cursor.fetchall()
+    assert preresult == []
 
 
 DATATYPES_DATA = [
@@ -128,19 +138,16 @@ def test_fetch_array_with_fixed_size_few_rows(cursor, data):
 def test_fetch_array_with_fixed_size_few_columns(cursor):
     """Test few columns with few rows of array with fixed size"""
     cursor.execute(
-        f"CREATE OR REPLACE TABLE {TEMP_TABLE} "
-        "(x1 array(INT), x2 array(DOUBLE))")
+        f"CREATE OR REPLACE TABLE {TEMP_TABLE} (x1 INT[], x2 DOUBLE[])")
 
-    cursor.execute(f"SELECT * FROM {TEMP_TABLE};")
-    preresult = cursor.fetchall()
-    assert preresult == []
+    assert_table_empty(cursor, TEMP_TABLE)
 
     cursor.execute(f"""
         INSERT INTO {TEMP_TABLE} VALUES
-        (array(1, 5, null, 10), array(true, false, true, false, null)),
-        (null, array(false, false, true)),
-        (array(11, 25, 7), null),
-        (array(356, 2, 10, 3), array(false, null, true, true))
+        (array[1, 5, null, 10], array[true, false, true, false, null]),
+        (null, array[false, false, true]),
+        (array[11, 25, 7], null),
+        (array[356, 2, 10, 3], array[false, null, true, true])
     """)
     cursor.execute(f"SELECT * FROM {TEMP_TABLE};")
     result = cursor.fetchall()
@@ -150,8 +157,6 @@ def test_fetch_array_with_fixed_size_few_columns(cursor):
         ([11, 25, 7], None),
         ([356, 2, 10, 3], [False, None, True, True]),
     ]
-
-    cursor.execute(f"DROP TABLE {TEMP_TABLE}")
 
 
 NUMERICS_GTE8 = [
@@ -295,3 +300,39 @@ def test_fetch_array_unfixed_size(cursor, data):
     cursor.execute(f"SELECT data FROM {TEMP_TABLE};")
     result = cursor.fetchall()
     assert result == data
+
+
+@pytest.mark.parametrize("data_type", [
+    "BOOL", "TINYINT", "SMALLINT", "INT", "BIGINT", "REAL", "DOUBLE",
+    # "NUMERIC(38,38)", "NUMERIC(12,4)", does not support numeric in
+    # multiple rows insert due to bug in SQREAM
+    "DATE", "DATETIME", "TEXT"])
+def test_fetch_empty_array(cursor, data_type):
+    """Test empty array works fine"""
+    cursor.execute(
+        f"CREATE OR REPLACE TABLE {TEMP_TABLE} (data {data_type}[])")
+
+    assert_table_empty(cursor, TEMP_TABLE)
+
+    cursor.execute(f"""
+        INSERT INTO {TEMP_TABLE} VALUES
+        (array[]), (null), (array[]), (array[]), (null), (array[])
+    """)
+    cursor.execute(f"SELECT * FROM {TEMP_TABLE};")
+    result = cursor.fetchall()
+    assert result == [([], ), (None, ), ([], ), ([], ), (None, ), ([], )]
+
+
+@pytest.mark.parametrize("num", ["NUMERIC(38,38)", "NUMERIC(12,4)"])
+def test_fetch_empty_array_numeric_one_row(cursor, num):
+    """Test empty array works fine for NUMERICs"""
+    cursor.execute(f"CREATE OR REPLACE TABLE {TEMP_TABLE} (data {num}[])")
+    assert_table_empty(cursor, TEMP_TABLE)
+
+    # Cannot insert many rows of NUMERIC because of a bug
+    for txt in ["array[]", "null", "array[]", "array[]", "null", "array[]"]:
+        cursor.execute(f"INSERT INTO {TEMP_TABLE} VALUES ({txt});")
+
+    cursor.execute(f"SELECT * FROM {TEMP_TABLE};")
+    result = cursor.fetchall()
+    assert result == [([], ), (None, ), ([], ), ([], ), (None, ), ([], )]
