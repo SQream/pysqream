@@ -1,10 +1,14 @@
-from pysqream.utils import get_ram_windows, get_ram_linux
+"""Contains pysqream global variables"""
 import sys
+from datetime import datetime, date
+from decimal import Decimal
+
+from .utils import get_ram_windows, get_ram_linux
 
 __version__ = '3.2.5'
 buf_maps, buf_views = [], []
-WIN = True if sys.platform in ('win32', 'cygwin') else False
-MAC = True if sys.platform in ('darwin') else False
+WIN = sys.platform in ('win32', 'cygwin')
+MAC = sys.platform in ('darwin')
 PROTOCOL_VERSION = 8
 SUPPORTED_PROTOCOLS = 6, 7, 8
 BUFFER_SIZE = 100 * int(1e6)  # For setting auto-flushing on netrwork insert
@@ -24,6 +28,8 @@ elif MAC:
     get_ram = None
 else:
     get_ram = get_ram_linux()
+
+# TODO: replace strings ftBool, ... with enum
 
 try:
     import pyarrow as pa
@@ -78,4 +84,21 @@ typecodes = {
     'ftBlob': 'STRING',
     'ftNumeric': 'NUMBER',
     'ftArray': 'ARRAY',
+}
+
+
+PYTYPES = {
+    'ftBool': bool,
+    'ftUByte': int,
+    'ftInt': int,
+    'ftShort': int,
+    'ftLong': int,
+    'ftDouble': float,
+    'ftFloat': float,
+    'ftDate': date,
+    'ftDateTime': datetime,
+    'ftVarchar': str,
+    'ftBlob': str,
+    'ftNumeric': Decimal,
+    'ftArray': list,
 }

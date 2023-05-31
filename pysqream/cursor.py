@@ -7,6 +7,7 @@ Responsible for both fetching and extracting data.
 Should be used only by .connection.Connection
 """
 
+import functools
 import json
 import logging
 import struct
@@ -64,7 +65,7 @@ class Cursor:
         self.rows_per_flush = 0
         self.lastrowid = None
         self.base_connection_closed = False
-    
+
     def get_statement_type(self):
 
         return self.statement_type
@@ -138,9 +139,25 @@ class Cursor:
         }
 
         if self.statement_type == 'INSERT':
-            self.col_types = [type_tup[0] for type_tup in self.col_type_tups]
-            self.col_sizes = [type_tup[1] for type_tup in self.col_type_tups]
-            self.col_scales = [type_tup[2] for type_tup in self.col_type_tups]
+            # variables should not be defined outside __init__
+            # TODO: get rid of definition of attributes outside __init__
+            self.col_types = []
+            self.col_sizes = []
+            self.col_scales = []
+            for type_tup in self.col_type_tups:
+                is_array = 'ftArray' in type_tup
+                offset = 0
+                _type = type_tup[0]
+                if is_array:
+                    # for array other stuff like scale is shifted in type_tup
+                    offset = 1
+                    # Use tuple for ftArray that will be checked
+                    # only in buffer like 'ftArray' in col_type
+                    _type = type_tup[0:2]
+                self.col_types.append(_type)
+                self.col_sizes.append(type_tup[1 + offset])
+                self.col_scales.append(type_tup[2 + offset])
+
             self.row_size = sum(self.col_sizes) + sum(
                 self.col_nul) + 4 * sum(self.col_tvc)
             self.rows_per_flush = ROWS_PER_FLUSH
@@ -193,8 +210,7 @@ class Cursor:
         packed_cols = self.buffer.pack_columns(cols, capacity, self.col_types,
                                                self.col_sizes, self.col_nul,
                                                self.col_tvc, self.col_scales)
-        del cols
-        byte_count = sum(len(packed_col) for packed_col in packed_cols)
+        byte_count = functools.reduce(lambda c, n: c + len(n), packed_cols, 0)
 
         # Sending put message and binary header
         self.client.send_string(f'{{"put":{capacity}}}', False)
@@ -205,7 +221,6 @@ class Cursor:
             self.s.send((packed_col))
 
         self.client.validate_response(self.client.get_response(), '{"putted":"putted"}')
-        del packed_cols
 
     def _fetch(self, sock=None):
 
@@ -612,8 +627,8 @@ class Cursor:
         and data separated by optional padding (trailing zeros at the
         end for portions of data whose lengths are not dividable by 8)
 
-        Example for binary data for 1 row of boolean array(true, null,
-        false):
+        Example for binary data for 1 row of boolean array[true, null,
+        false]:
         `010 00000 100` -> replace paddings with _ `010_____100` where
         `010` are flag of null data inside array. Then `00000` is a
         padding to make lengths of data about nulls to be dividable by 8
@@ -681,7 +696,7 @@ class Cursor:
         takes N * 4 bytes. Then if it is not divisible by 8 -> + padding
         Then the strings data also separated by optional padding
 
-        Example for binary data for 1 row of text array('ABC','ABCDEF',null):
+        Example for binary data for 1 row of text array['ABC','ABCDEF',null]:
         (padding zeros replaced with _)
         Whole buffer data: `3000000 001_____ 3000 14000 16000 ____ `
                            `65 66 67 _____ 65 66 67 68 69 70 __`
