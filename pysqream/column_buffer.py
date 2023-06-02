@@ -63,6 +63,8 @@ class ColumnBuffer:
             # To use multiprocess type packing, we call a top level function with a single tuple parameter
             try:
                 packed_cols = self.pool.map(_pack_column, pool_params, chunksize=2)  # buf_end_indices
+            except DataError:
+                raise  # Expected error, shouldn't be caught and wrapped
             except Exception as e:
                 printdbg("Original error from pool.map: ", e)
                 if logger.isEnabledFor(logging.ERROR):
@@ -355,7 +357,8 @@ def _pack_array(col: List[Union[List[Any], None]],
                 f"There is null in data for not nullable column {col_idx}")
 
         d_size = 0
-        if row:
+
+        if row is not None and len(row) > 0:
             if typecodes[col_type] == 'STRING':
                 data_list.append(pack('i', len(row)))
                 d_size = 4

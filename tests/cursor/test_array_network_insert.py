@@ -16,10 +16,67 @@ from datetime import date, datetime
 from decimal import Decimal
 
 import pytest
+import numpy as np  # numpy is currently in requirements of the package
 
-from .utils import assert_table_empty
+from pysqream.utils import DataError
+from pysqream.globals import ROWS_PER_FLUSH
+
+from .utils import ensure_empty_table, select
 
 TEMP_TABLE = "test_array_network_insert_temp"
+
+ALL_TYPES = [
+    "BOOL",
+    "TINYINT",
+    "SMALLINT",
+    "INT",
+    "BIGINT",
+    "REAL",
+    "DOUBLE",
+    "NUMERIC(38,38)",
+    "NUMERIC(12,4)",
+    "DATE",
+    "DATETIME",
+    "TEXT",
+]
+
+SIMPLE_VALUES = [
+    [True, False],
+    [1, 255],
+    [256, 32767],
+    [32768, 2147483647],
+    [2147483648, 9223372036854775807],
+
+    [3.1410000324249268, 5.315000057220459],
+    [0.000003, 101.000026],
+    [Decimal('0.12324567890123456789012345678901234567')],
+    [Decimal('131235.1232')],
+
+    [date(1955, 11, 5), date(9999, 12, 31)],
+    [
+        datetime(1955, 11, 5, 1, 24),
+        # Does not work unless SQ-13967 & SQ-13969 fixed
+        # datetime(9999, 12, 31, 23, 59, 59, 999),
+    ],
+
+    ["Kiwis have tiny wings, but cannot fly.", ""],
+]
+
+WRONG_TYPES_VALUES = [
+    [True, False, "What?"],
+    [1, 255, 255.1],
+    [256, 32767, 3.5],
+    [32768, 2147483647, 1.0123],
+    [2147483648, 9223372036854775807, 1.5],
+
+    [Decimal('0.12324567890123456789012345678901234567'), "Don't do that"],
+    [Decimal('131235.1232'), [Decimal('131235.1232')]],
+
+    [date(1955, 11, 5), '9999-12-31'],  # Does not accept strings
+    [datetime(1955, 11, 5, 1, 24), date(1955, 11, 5)],
+
+    ["Kiwis have tiny wings, but cannot fly.", 12331, b'No bytes!'],
+]
 
 
 @pytest.mark.parametrize("data_type, data", [
@@ -40,14 +97,11 @@ TEMP_TABLE = "test_array_network_insert_temp"
 ])
 def test_insert_most_types(cursor, data_type, data):
     """Test insert most types except DATETIME"""
-    cursor.execute(f"CREATE OR REPLACE TABLE {TEMP_TABLE} (d {data_type}[])")
-    assert_table_empty(cursor, TEMP_TABLE)
+    ensure_empty_table(cursor, TEMP_TABLE, f"d {data_type}[]")
 
     cursor.executemany(f"insert into {TEMP_TABLE} values (?)", [(data,)])
 
-    cursor.execute(f"SELECT * FROM {TEMP_TABLE};")
-    result = cursor.fetchall()
-    assert result == [(data, )]
+    assert select(cursor, TEMP_TABLE) == [(data, )]
 
 
 @pytest.mark.parametrize("year, month, day, hour, minute, sec, mcrsec", [
@@ -64,36 +118,102 @@ def test_insert_datetime(cursor, year, month, day, hour, minute, sec, mcrsec):
     """
     # Passing many argument allows to see datetime in tests explicitly, so
     # pylint: disable=too-many-arguments
-    cursor.execute(f"CREATE OR REPLACE TABLE {TEMP_TABLE} (d DATETIME[])")
-    assert_table_empty(cursor, TEMP_TABLE)
+    ensure_empty_table(cursor, TEMP_TABLE, "d DATETIME[]")
 
     data = datetime(year, month, day, hour, minute, sec, mcrsec)
     data2 = datetime(year - 1, month, day, hour, minute, sec, mcrsec)
     cursor.executemany(
         f"insert into {TEMP_TABLE} values (?)", [([data, data2], )])
 
-    cursor.execute(f"SELECT * FROM {TEMP_TABLE};")
-    result = cursor.fetchall()
     # adjust to working in current bugs environment
     res1 = datetime(year, month, day, hour, minute, sec, mcrsec // 1000)
     res2 = datetime(year - 1, month, day, hour, minute, sec, mcrsec // 1000)
-    assert result == [([res1, res2], )]
+    assert select(cursor, TEMP_TABLE) == [([res1, res2], )]
 
 
-def test_insert_all_types_send_none(cursor):
-    ...
+@pytest.mark.parametrize("_type", ALL_TYPES)
+def test_insert_all_types_send_none(cursor, _type):
+    """Test that None send appropriate values for nullable columns"""
+    ensure_empty_table(cursor, TEMP_TABLE, f"d {_type}[] null")
 
-def test_insert_all_types_send_none_for_not_nullable(cursor):
-    ...
+    data = [(None,)] * 15
+    cursor.executemany(f"insert into {TEMP_TABLE} values (?)", data)
+    assert select(cursor, TEMP_TABLE) == data
 
-def test_insert_fixed_size_array_exceed_value_range_raises(cursor):
-    ...
 
-def test_insert_all_types_send_empty_list(cursor):
-    ...
+@pytest.mark.parametrize("_type", ALL_TYPES)
+def test_insert_all_types_send_none_for_not_nullable(cursor, _type):
+    """Test that DataError raises in case of sending Nones to not nullable"""
+    ensure_empty_table(cursor, TEMP_TABLE, f"d {_type}[] not null")
 
-def test_insert_more_rows_than_per_flush(cursor):
-    ...
+    with pytest.raises(DataError):
+        cursor.executemany(f"insert into {TEMP_TABLE} values (?)", [(None,)])
 
-def test_inappropriate_type_raises(cursor):
-    ...
+
+@pytest.mark.parametrize("size", [2, 10, 50])
+@pytest.mark.parametrize("_type", ALL_TYPES)
+def test_insert_fixed_size_array_works(cursor, _type, size):
+    """Test that insert works with lists of length less or equal to defined"""
+    ensure_empty_table(cursor, TEMP_TABLE, f"d {_type}[{size}]")
+
+    data = [([None] * i, ) for i in range(size + 1)] * 15
+    cursor.executemany(f"insert into {TEMP_TABLE} values (?)", data)
+    assert select(cursor, TEMP_TABLE) == data
+
+
+@pytest.mark.skip("Network insertion skips it silently SQ-13979")
+@pytest.mark.parametrize("size", [2, 10, 50])
+@pytest.mark.parametrize("_type", ALL_TYPES)
+def test_insert_fixed_size_array_exceed_range_raises(cursor, _type, size):
+    """Test that insert raises with lists of length greater than defined"""
+    ensure_empty_table(cursor, TEMP_TABLE, f"d {_type}[{size - 1}]")
+    data = [([None] * i, ) for i in range(size + 1)] * 15
+    with pytest.raises(Exception):
+        # Should not validate response
+        cursor.executemany(f"insert into {TEMP_TABLE} values (?)", data)
+
+
+@pytest.mark.parametrize("_type", ALL_TYPES)
+def test_insert_all_types_send_empty_list(cursor, _type):
+    """Test insertion of empty lists"""
+    ensure_empty_table(cursor, TEMP_TABLE, f"d {_type}[]")
+    data = [([],)] * 10
+    cursor.executemany(f"insert into {TEMP_TABLE} values (?)", data)
+    assert select(cursor, TEMP_TABLE) == data
+
+
+@pytest.mark.parametrize("_type, val", zip(ALL_TYPES, SIMPLE_VALUES))
+def test_insert_more_rows_than_per_flush(cursor, _type, val):
+    """Test insertion works with sending rows by parts"""
+    ensure_empty_table(cursor, TEMP_TABLE, f"d {_type}[]")
+    data = [(val,)] * (ROWS_PER_FLUSH + 2)
+    cursor.executemany(f"insert into {TEMP_TABLE} values (?)", data)
+    res = select(cursor, TEMP_TABLE)
+    # Do some lightweight checks before full compare to make it easier
+    # both to debug and to provide comparison by pytest
+    assert len(res) == len(data)
+    assert res[0] == data[0]
+    mid = int(ROWS_PER_FLUSH / 2)
+    assert res[mid] == data[mid]
+    assert res[-1] == data[-1]
+    assert res == data
+
+
+@pytest.mark.parametrize("_type, val", zip(ALL_TYPES, WRONG_TYPES_VALUES))
+def test_inappropriate_type_raises(cursor, _type, val):
+    """Test wrong python types raises DataError"""
+    ensure_empty_table(cursor, TEMP_TABLE, f"d {_type}[]")
+    data = [(val, )]
+    with pytest.raises(DataError):
+        cursor.executemany(f"insert into {TEMP_TABLE} values (?)", data)
+    assert select(cursor, TEMP_TABLE) == []
+
+
+@pytest.mark.parametrize("_type, val", zip(ALL_TYPES, SIMPLE_VALUES))
+def test_numpy_arrays(cursor, _type, val):
+    """Test that numpy data types works as well as python built-ins"""
+    ensure_empty_table(cursor, TEMP_TABLE, f"d {_type}[]")
+    data = [(np.array(val),)]
+    cursor.executemany(f"insert into {TEMP_TABLE} values (?)", data)
+    res = select(cursor, TEMP_TABLE)
+    assert res == [(val,)]

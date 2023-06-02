@@ -19,7 +19,7 @@ from .globals import BUFFER_SIZE, ROWS_PER_FLUSH, DEFAULT_CHUNKSIZE, \
     FETCH_MANY_DEFAULT, typecodes, type_to_letter
 from .column_buffer import ColumnBuffer
 from .ping import _start_ping_loop, _end_ping_loop
-from .logger import log_and_raise, logger
+from .logger import log_and_raise, logger, printdbg
 from .utils import NotSupportedError, ProgrammingError, get_array_size, \
     false_generator
 from .casting import lengths_to_pairs, sq_date_to_py_date, \
@@ -218,6 +218,7 @@ class Cursor:
 
         # Sending packed data (binary buffer)
         for packed_col in packed_cols:
+            printdbg("Packed data sent:", packed_col)
             self.s.send((packed_col))
 
         self.client.validate_response(self.client.get_response(), '{"putted":"putted"}')
