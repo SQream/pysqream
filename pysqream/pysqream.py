@@ -17,15 +17,21 @@ def stop_logs():
 
 
 def connect(host, port, database, username, password, clustered=False,
-            use_ssl=False, service='sqream', log=False, reconnect_attempts=3, reconnect_interval=10):
+            use_ssl=False, service='sqream', log=False,
+            reconnect_attempts=3, reconnect_interval=10, **kwargs):
     ''' Connect to SQream database '''
     if not isinstance(reconnect_attempts, int) or reconnect_attempts < 0:
         log_and_raise(Exception, f'reconnect attempts should be a positive integer, got : {reconnect_attempts}')
     if not isinstance(reconnect_interval, int) or reconnect_attempts < 0:
         log_and_raise(Exception, f'reconnect interval should be a positive integer, got : {reconnect_interval}')
 
-    conn = Connection(host, port, clustered, use_ssl, log=log, base_connection=True,
-                        reconnect_attempts=reconnect_attempts, reconnect_interval=reconnect_interval)
+    conn = Connection(
+        host, port, clustered, use_ssl, log=log, base_connection=True,
+        reconnect_attempts=reconnect_attempts,
+        reconnect_interval=reconnect_interval,
+        # Temporary desision to provide seamless transition to array features
+        allow_array=kwargs.pop("allow_array", False)
+    )
     conn.connect_database(database, username, password, service)
 
     return conn

@@ -21,7 +21,7 @@ from .column_buffer import ColumnBuffer
 from .ping import _start_ping_loop, _end_ping_loop
 from .logger import log_and_raise, logger, printdbg
 from .utils import NotSupportedError, ProgrammingError, get_array_size, \
-    false_generator
+    false_generator, ArraysAreDisabled
 from .casting import lengths_to_pairs, sq_date_to_py_date, \
     sq_datetime_to_py_datetime, sq_numeric_to_decimal, arr_lengths_to_pairs
 from .SQSocket import Client
@@ -130,6 +130,11 @@ class Cursor:
         else:
             self.statement_type = 'INSERT'
 
+        # Check if arrays are allowed before executing the rest
+        if not self._validate_arrays_usage():
+            log_and_raise(
+                ArraysAreDisabled, "Arrays are disabled in this connection.")
+
         # {"isTrueVarChar":false,"nullable":true,"type":["ftInt",4,0]}
         self.col_names, self.col_tvc, self.col_nul, self.col_type_tups = \
             list(zip(*[(col.get("name", ""), col["isTrueVarChar"], col["nullable"], col["type"]) for col in self.column_list]))
@@ -172,6 +177,20 @@ class Cursor:
         if logger.isEnabledFor(logging.INFO):
             logger.info \
                 (f'Executing statement over connection {self.conn.connection_id} with statement id {self.stmt_id}:\n{stmt}')
+
+    def _validate_arrays_usage(self) -> bool:
+        """
+        Checks if the executing statement uses arrays and if they are allowed.
+
+        Returns:
+            bool: False if arrays are not allowed by connection, but used in
+              statement, True otherwise.
+        """
+        if not self.conn.allow_array:
+            for col in self.column_list:
+                if "ftArray" in col["type"]:
+                    return False
+        return True
 
     def _fill_description(self):
         """Getting parameters for the cursor's 'description' attribute, even for

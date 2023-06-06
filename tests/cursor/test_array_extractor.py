@@ -10,6 +10,13 @@ from .utils import ensure_empty_table, select
 TEMP_TABLE = "test_array_fetch_temp"
 
 
+@pytest.fixture(name='cursor')
+def cursor_with_arrays_allowed(cursor):
+    """Redefined cursor fixture that enables arrays for this tests module"""
+    cursor.conn.allow_array = True
+    yield cursor
+
+
 @pytest.fixture(name='array_table')
 def generate_array_table(cursor, request):
     """Fixture that generate table, insert data and drop table"""
