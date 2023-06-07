@@ -50,11 +50,6 @@ neg_test_vals = {'tinyint': (258, 3.6, 'test',  (1997, 5, 9), (1997, 12, 12, 10,
                  'nvarchar': (5, 3.6, (1, 2), (1997, 12, 12, 10, 10, 10), False, True)}
 
 class TestBase():
-
-    @pytest.fixture()
-    def ip(self, pytestconfig):
-        return pytestconfig.getoption("ip")
-
     @pytest.fixture(autouse=True)
     def Test_setup_teardown(self, ip):
         ip = ip if ip else socket.gethostbyname(socket.gethostname())

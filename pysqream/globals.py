@@ -76,5 +76,6 @@ typecodes = {
     'ftDateTime': 'DATETIME',
     'ftVarchar': 'STRING',
     'ftBlob': 'STRING',
-    'ftNumeric': 'NUMBER'
+    'ftNumeric': 'NUMBER',
+    'ftArray': 'ARRAY',
 }
