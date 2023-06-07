@@ -6,7 +6,7 @@ from pysqream.column_buffer import ColumnBuffer
 from pysqream.ping import PingLoop, _start_ping_loop, _end_ping_loop
 from pysqream.logger import *
 # So it won't silently merge with array feature branch
-from .utils import NotSupportedError, ProgrammingError, OperationalError
+from pysqream.utils import NotSupportedError, ProgrammingError, OperationalError
 from pysqream.casting import lengths_to_pairs, sq_date_to_py_date, sq_datetime_to_py_datetime, sq_numeric_to_decimal
 from pysqream.SQSocket import Client
 import time
