@@ -19,11 +19,8 @@ class ConnectionMock:
     version = 'Mock1'
 
 
-send_string_origin = Client.send_string
-
-
 def test_raise_on_error_from_sqream(monkeypatch):
-    """Json with error from SQREM on closeStatement produce OperationalError"""
+    """JSON with error from SQREAM on closeStatement raises OperationalError"""
     monkeypatch.setattr(
         Client, "send_string", lambda *_: '{"error": "mock SQREAM error"}')
     cur = Cursor(ConnectionMock(), [])
@@ -34,7 +31,7 @@ def test_raise_on_error_from_sqream(monkeypatch):
 
 def test_raise_on_invalid_json(monkeypatch):
     """
-    Test if SQREM sends invalid json on closeStatement produce ProgrammingError
+    Test if SQREAM sends invalid json on closeStatement raises ProgrammingError
     """
     monkeypatch.setattr(Client, "send_string", lambda *_: "I'm invalid json")
     cur = Cursor(ConnectionMock(), [])
@@ -45,7 +42,7 @@ def test_raise_on_invalid_json(monkeypatch):
 
 def test_raise_if_json_not_obj(monkeypatch):
     """
-    Test if SQREM sends not object on closeStatement produce ProgrammingError
+    Test if SQREAM sends not object on closeStatement raises ProgrammingError
     """
     monkeypatch.setattr(Client, "send_string", lambda *_: '["valid array"]')
     cur = Cursor(ConnectionMock(), [])
