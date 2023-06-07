@@ -21,7 +21,7 @@ def pytest_generate_tests(metafunc):
     metafunc.config.getoption("ip")
 
 
-@pytest.fixture(scope='session', name='ip_address')
+@pytest.fixture(scope='session', name='ip')
 def sqream_ip_address(pytestconfig):
     """Fixture that adopts IP address of SQream Server for direct tests"""
     yield pytestconfig.getoption("ip")
@@ -38,10 +38,10 @@ def sqream_port_number(pytestconfig):
 
 
 @pytest.fixture(name='conn')
-def sqream_connection(ip_address, port):
+def sqream_connection(ip, port):  # pylint: disable=invalid-name
     """Fixture that create connection at each direct fixture call"""
     conn = pysqream.connect(
-        ip_address, port, 'master', 'sqream', 'sqream', False, False)
+        ip, port, 'master', 'sqream', 'sqream', False, False)
     yield conn
     conn.close()
 
