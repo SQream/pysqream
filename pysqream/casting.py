@@ -68,12 +68,16 @@ def _get_date_int(year: int, month: int, day: int) -> int:
 def date_to_int(dat: date) -> int:
     """Convert datetime.date to integer compatible with SQREAM interface"""
     # datetime is also supported because it is descendant of date
+    # date_to_int(date(1900, 1, 1)) is 693901 which is the oldest date that
+    # sqream supports, so for None use the same
     return 693901 if dat is None else _get_date_int(*dat.timetuple()[:3])
 
 
 def datetime_to_long(dat: datetime) -> int:
     """Convert datetime.datetime to integer (LONG) compatible with SQREAM"""
     if dat is None:
+        # datetime_to_long(datetime(1900, 1, 1)) is 2980282101661696 which is
+        # the oldest date that sqream supports, so for None use the same
         return 2980282101661696
     year, month, day, hour, minute, second = dat.timetuple()[:6]
     msec = dat.microsecond

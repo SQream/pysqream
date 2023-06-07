@@ -37,7 +37,7 @@ try:
     from pyarrow import csv
     import numpy as np
     ARROW = True
-except:
+except ImportError:
     ARROW = False
 else:
     sqream_to_pa = {
@@ -52,7 +52,8 @@ else:
         'ftDateTime': pa.timestamp('ns'),
         'ftVarchar':  pa.string(),
         'ftBlob':     pa.utf8(),
-        'ftNumeric':  pa.decimal128(38, 11)
+        'ftNumeric':  pa.decimal128(38, 11),
+        'ftArray': list,
     }
 
 # For encoding data to be sent to SQream using struct.pack() and for type checking by _set_val()

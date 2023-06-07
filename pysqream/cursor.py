@@ -655,6 +655,15 @@ class Cursor:
         data_size = struct.calcsize(type_to_letter[self.col_type_tups[idx][1]])
         trasform = self._get_trasform_func(idx)
 
+        def _get_array(data: memoryview, nulls: memoryview, arr_size: int):
+            """Construct one single array from data of type with fixed size"""
+            # Do not use direct data.cast(data_format) to skip nulls
+            # and process all data (including Numeric) by the same pattern
+            return [
+                trasform(data[i * data_size:(i + 1) * data_size], nulls[i])
+                for i in range(arr_size)
+            ]
+
         col = []
         start = 0
         for buf_len, null in zip(raw_col_data['array_lengths'], nulls_buffer):
@@ -668,12 +677,7 @@ class Cursor:
                 data = buffer[start + array_size + padding:start + buf_len]
                 nulls = buffer[start:start + array_size]
 
-                # Do not use direct data.cast(data_format) to skip nulls
-                # and process all data (including Numeric) by the same pattern
-                col.append([
-                    trasform(data[i * data_size:(i + 1) * data_size], nulls[i])
-                    for i in range(array_size)
-                ])
+                col.append(_get_array(data, nulls, array_size))
             start += buf_len
         return col
 
@@ -728,8 +732,17 @@ class Cursor:
         buffer = raw_col_data['data_column']
         nulls_buffer = raw_col_data['nullable'] or false_generator()
 
-        def trasform(data: memoryview):
-            return data.tobytes().decode('utf8')
+        def _get_array(data: memoryview, nulls: memoryview, dlen: memoryview):
+            """Construct one single array from data with dlen right bounds"""
+            arr = []
+            # lengths_to_pairs is not appropriate due to differences
+            # in lengths representation
+            for is_null, (strt, end) in zip(nulls, arr_lengths_to_pairs(dlen)):
+                if is_null:
+                    arr.append(None)
+                else:
+                    arr.append(data[strt:end].tobytes().decode('utf8'))
+            return arr
 
         col = []
         start = 0
@@ -748,15 +761,9 @@ class Cursor:
 
                 # Slices of memoryview do not copy underlying data
                 data = buffer[cur:start + buf_len]
+                nulls = buffer[start + 8:start + 8 + array_size]
 
-                # lengths_to_pairs is not appropriate due to differences
-                # in lengths representation
-                col.append([
-                    None if is_null else trasform(data[s:e])
-                    for is_null, (s, e) in zip(
-                        buffer[start + 8:start + 8 + array_size],
-                        arr_lengths_to_pairs(d_len))
-                ])
+                col.append(_get_array(data, nulls, d_len))
 
             start += buf_len
         return col

@@ -89,6 +89,7 @@ def _pack_column(col_tup, return_actual_data=True):
     ''' Packs the buffer starting a given index with the column.
         Returns number of bytes packed '''
 
+    global CYTHON
     col, col_idx, col_type, size, nullable, tvc, scale = col_tup
     if "ftArray" in col_type:
         return _pack_array(col, col_idx, col_type[1], nullable, scale)
@@ -248,6 +249,7 @@ def _pack_column(col_tup, return_actual_data=True):
             logger.error(error_msg, exc_info=True)
         raise ProgrammingError(error_msg)
 
+    CYTHON = False
     # Done preceding column handling, pack the actual data
     if col_type in ('ftVarchar', 'ftBlob'):
         buf_map.seek(buf_idx)
@@ -260,7 +262,11 @@ def _pack_column(col_tup, return_actual_data=True):
         buf_idx += len(all)
     else:
         try:
-            pack_into(f'{capacity}{type_code}', buf_view, buf_idx, *col)
+            if CYTHON:
+                buf_map.seek(buf_idx)
+                # type_packer[col_type](col, size, buf_map, buf_idx)
+            else:
+                pack_into(f'{capacity}{type_code}', buf_view, buf_idx, *col)
         except struct_error as e:
             pack_exception(e)
 
