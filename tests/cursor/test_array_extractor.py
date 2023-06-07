@@ -1,6 +1,7 @@
 """Test fetching SQREAM Arrays of all datatype"""
 from datetime import date, datetime
 from decimal import Decimal
+from string import ascii_lowercase, ascii_uppercase
 
 import pytest
 
@@ -54,6 +55,18 @@ DATA = [
     [([date(1955, 11, 5), None, date(9999, 12, 31)],)],
     [([datetime(1955, 11, 5, 1, 24),
         datetime(9999, 12, 31, 23, 59, 59, 999), None],)],
+]
+
+TEXT_VALUES = [
+    [None, "Kiwis have tiny wings, but cannot fly.", "", "xXx"],
+    ["ABCDEF", ascii_lowercase, None, ascii_uppercase],
+    ["AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA", "B"],
+]
+
+TEXT_INSERT_VALUES = [
+    'null' if row is None else ', '.join(
+        ['null' if val is None else f"'{val}'" for val in row])
+    for row in TEXT_VALUES
 ]
 
 
@@ -136,6 +149,20 @@ def test_fetch_array_with_fixed_size_few_columns(cursor):
 @pytest.mark.usefixtures("array_table")
 def test_fetch_array_len_gte8_with_fixed_size(cursor, data):
     """Test array with length greater and equal to 8 (different paddings)"""
+    cursor.execute(f"SELECT data FROM {TEMP_TABLE};")
+    result = cursor.fetchall()
+    assert result == data
+
+
+@pytest.mark.parametrize("array_table,data", [
+    [
+        ["TEXT", TEXT_INSERT_VALUES],
+        [(t,) for t in TEXT_VALUES],
+    ],
+], indirect=['array_table'])
+@pytest.mark.usefixtures("array_table")
+def test_fetch_array_unfixed_size(cursor, data):
+    """Test array with unfixed sise - TEXT"""
     cursor.execute(f"SELECT data FROM {TEMP_TABLE};")
     result = cursor.fetchall()
     assert result == data

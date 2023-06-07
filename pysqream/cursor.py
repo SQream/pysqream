@@ -11,7 +11,7 @@ import json
 import logging
 import struct
 
-from typing import List, Any
+from typing import List, Any, Union
 
 from .utils import version_compare
 from .globals import BUFFER_SIZE, ROWS_PER_FLUSH, DEFAULT_CHUNKSIZE, \
@@ -22,7 +22,7 @@ from .logger import log_and_raise, logger
 from .utils import NotSupportedError, ProgrammingError, get_array_size, \
     false_generator
 from .casting import lengths_to_pairs, sq_date_to_py_date, \
-    sq_datetime_to_py_datetime, sq_numeric_to_decimal
+    sq_datetime_to_py_datetime, sq_numeric_to_decimal, arr_lengths_to_pairs
 from .SQSocket import Client
 
 
@@ -592,7 +592,7 @@ class Cursor:
         typecode = typecodes.get(type_tup[1])
 
         if typecode == "STRING":
-            raise NotImplementedError()
+            return self._extract_unfixed_array(raw_col_data)
 
         if typecode not in ("NUMBER", "DATETIME"):
             log_and_raise(
@@ -658,7 +658,90 @@ class Cursor:
                 # and process all data (including Numeric) by the same pattern
                 col.append([
                     trasform(data[i * data_size:(i + 1) * data_size], nulls[i])
-                    for i in range(array_size)])
+                    for i in range(array_size)
+                ])
+            start += buf_len
+        return col
+
+    def _extract_unfixed_array(
+            self, raw_col_data: memoryview) -> List[List[Union[str, None]]]:
+        """Extract array with data of unfixed size
+
+        Extract array from binary data of an Array with types of TEXT
+        - unfixed size
+
+        Contains 8 bytes (long) that contains length of whole array
+        (including nulls), binary data of nulls at each index in array
+        and data separated by optional padding. Data here represents
+        chunked info of each element inside array
+
+        At the beginning, the data contains **cumulative** lengths
+        (however is better to say indexes of their ends at data buffer)
+        of all data strings (+ their paddings) of array as integers.
+        The number of those int lengths is equal to the array length
+        (those was in 8 bytes above) and because int take 4 bytes it all
+        takes N * 4 bytes. Then if it is not divisible by 8 -> + padding
+        Then the strings data also separated by optional padding
+
+        Example for binary data for 1 row of text array('ABC','ABCDEF',null):
+        (padding zeros replaced with _)
+        Whole buffer data: `3000000 001_____ 3000 14000 16000 ____ `
+                           `65 66 67 _____ 65 66 67 68 69 70 __`
+        Length of array: `3000000` -> long 3
+        Nulls: `001_____`
+        Length of strings: `3000 14000 16000 ____` -> 3,14,16 + padding
+        Strings: `65, 66, 67, _____ 65, 66, 67, 68, 69, 70, __`
+        L1 = 3, so [0 - 3) is string `65 66 67` -> ABC, padding P1=5
+        L2 = 14 (which is L1 + padding + current_length), so
+        current_length = L2 - (L1 + P1) = 14 - (5 + 3) = 6, P2=2
+        => [5 + 3, 14) is string `65, 66, 67, 68, 69, 70` -> ABCDEF
+        L3 = 16 => current_length = L3 - (L2 + P2) = 16 - (14 + 2) = 0
+        thus string is empty, and considering Nulls -> it is a null
+
+        Args:
+            idx: integer index of extracting column in response
+            raw_col_data: memoryview (bytes represenation) of data of
+              column
+
+        Returns:
+            A list with Arrays of data. Array represented as python
+            lists also.
+
+            [["ABC", "ABCDEF", None], None, ["A", None, ""]]
+        """
+        # Code duplication with _extract_fixed_array could be eliminated
+        # using template method with using separate Extractor classes
+        buffer = raw_col_data['data_column']
+        nulls_buffer = raw_col_data['nullable'] or false_generator()
+
+        def trasform(data: memoryview):
+            return data.tobytes().decode('utf8')
+
+        col = []
+        start = 0
+        for buf_len, null in zip(raw_col_data['array_lengths'], nulls_buffer):
+            if null:
+                col.append(None)
+            else:
+                array_size = buffer[start: start + 8].cast('q')[0]  # Long
+                padding = (8 - array_size % 8) % 8
+                cur = start + 8 + array_size + padding
+                # data lengths
+                d_len = buffer[cur:cur + array_size * 4].cast('i')
+                cur += (array_size + array_size % 2) * 4
+
+                # Slices of memoryview do not copy underlying data
+                data = buffer[cur:start + buf_len]
+
+                # lengths_to_pairs is not appropriate due to differences
+                # in lengths representation
+                col.append([
+                    None if is_null else trasform(data[s:e])
+                    for is_null, (s, e) in zip(
+                        buffer[start + 8:start + 8 + array_size],
+                        arr_lengths_to_pairs(d_len))
+                ])
+
             start += buf_len
         return col
 
