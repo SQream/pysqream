@@ -21,46 +21,10 @@ import numpy as np  # numpy is currently in requirements of the package
 from pysqream.utils import DataError
 from pysqream.globals import ROWS_PER_FLUSH
 
-from .utils import ensure_empty_table, select
+from .utils import ALL_TYPES, SIMPLE_VALUES, ensure_empty_table, select
 
 TEMP_TABLE = "test_array_network_insert_temp"
 
-ALL_TYPES = [
-    "BOOL",
-    "TINYINT",
-    "SMALLINT",
-    "INT",
-    "BIGINT",
-    "REAL",
-    "DOUBLE",
-    "NUMERIC(38,38)",
-    "NUMERIC(12,4)",
-    "DATE",
-    "DATETIME",
-    "TEXT",
-]
-
-SIMPLE_VALUES = [
-    [True, False],
-    [1, 255],
-    [256, 32767],
-    [32768, 2147483647],
-    [2147483648, 9223372036854775807],
-
-    [3.1410000324249268, 5.315000057220459],
-    [0.000003, 101.000026],
-    [Decimal('0.12324567890123456789012345678901234567')],
-    [Decimal('131235.1232')],
-
-    [date(1955, 11, 5), date(9999, 12, 31)],
-    [
-        datetime(1955, 11, 5, 1, 24),
-        # Does not work unless SQ-13967 & SQ-13969 fixed
-        # datetime(9999, 12, 31, 23, 59, 59, 999),
-    ],
-
-    ["Kiwis have tiny wings, but cannot fly.", ""],
-]
 
 WRONG_TYPES_VALUES = [
     [True, False, "What?"],
@@ -77,6 +41,13 @@ WRONG_TYPES_VALUES = [
 
     ["Kiwis have tiny wings, but cannot fly.", 12331, b'No bytes!'],
 ]
+
+
+@pytest.fixture(name='cursor')
+def cursor_with_arrays_allowed(cursor):
+    """Redefined cursor fixture that enables arrays for this tests module"""
+    cursor.conn.allow_array = True
+    yield cursor
 
 
 @pytest.mark.parametrize("data_type, data", [

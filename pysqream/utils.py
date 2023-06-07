@@ -106,3 +106,7 @@ class ProgrammingError(DatabaseError):
 
 class NotSupportedError(DatabaseError):
     pass
+
+
+class ArraysAreDisabled(DatabaseError):
+    pass

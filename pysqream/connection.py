@@ -20,7 +20,7 @@ class Connection:
     ''' Connection class used to interact with SQream '''
 
     def __init__(self, ip, port, clustered, use_ssl=False, log=False, base_connection=True,
-                 reconnect_attempts=3, reconnect_interval=10):
+                 reconnect_attempts=3, reconnect_interval=10, **kwargs):
 
         self.buffer = ColumnBuffer(BUFFER_SIZE)  # flushing buffer every BUFFER_SIZE bytes
         self.version = None
@@ -34,6 +34,8 @@ class Connection:
         self.ping_loop = None
         self.client = None
         self.cursors = {}
+        # Temporary desision to provide seamless transition to array features
+        self.allow_array = kwargs.pop("allow_array", False)
 
         self._open_connection(clustered, use_ssl)
 
