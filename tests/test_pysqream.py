@@ -8,7 +8,7 @@ import socket
 sys.path.append(os.path.abspath(__file__).rsplit('tests/', 1)[0] + '/tests/')
 #sys.path.append(os.path.abspath(__file__).rsplit('tests/', 1)[0] + 'pysqream/')
 import pysqream
-from tests.base import TestBase, TestBaseWithoutBeforeAfter, Logger, connect_dbapi
+from base import TestBase, TestBaseWithoutBeforeAfter, Logger, connect_dbapi
 from pysqream import casting
 
 
@@ -73,12 +73,12 @@ class TestConnection(TestBaseWithoutBeforeAfter):
             if "perhaps wrong IP?" not in repr(e):
                 raise Exception("bad error message")
 
-        # Logger().info("Connection tests - wrong port")
-        # try:
-        #     pysqream.connect(ip, 6000, 'master', 'sqream', 'sqream', False, False)
-        # except Exception as e:
-        #     if "Connection refused" not in repr(e):
-        #         raise Exception("bad error message")
+        Logger().info("Connection tests - wrong port")
+        try:
+            pysqream.connect(self.ip, 6000, 'master', 'sqream', 'sqream', False, False)
+        except Exception as e:
+            if "Connection refused" not in repr(e):
+                raise Exception("bad error message")
 
         Logger().info("Connection tests - wrong database")
         try:
@@ -198,7 +198,6 @@ class TestConnection(TestBaseWithoutBeforeAfter):
 class TestPositive(TestBase):
 
     def test_positive(self):
-
         cur = self.con.cursor()
         for col_type in col_types:
             trimmed_col_type = col_type.split('(')[0]
