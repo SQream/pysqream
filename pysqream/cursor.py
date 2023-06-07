@@ -720,6 +720,8 @@ class Cursor:
         for buf_len, null in zip(raw_col_data['array_lengths'], nulls_buffer):
             if null:
                 col.append(None)
+            elif not buf_len:
+                col.append([])
             else:
                 array_size = buffer[start: start + 8].cast('q')[0]  # Long
                 padding = (8 - array_size % 8) % 8
