@@ -5,8 +5,8 @@ from pysqream.globals import BUFFER_SIZE, ROWS_PER_FLUSH, DEFAULT_CHUNKSIZE, FET
 from pysqream.column_buffer import ColumnBuffer
 from pysqream.ping import PingLoop, _start_ping_loop, _end_ping_loop
 from pysqream.logger import *
-from pysqream.utils import NotSupportedError, ProgrammingError, InternalError, IntegrityError, OperationalError, DataError, \
-    DatabaseError, InterfaceError, Warning, Error
+# So it won't silently merge with array feature branch
+from pysqream.utils import NotSupportedError, ProgrammingError, OperationalError
 from pysqream.casting import lengths_to_pairs, sq_date_to_py_date, sq_datetime_to_py_datetime, sq_numeric_to_decimal
 from pysqream.SQSocket import Client
 import time
@@ -455,9 +455,36 @@ class Cursor:
 
     ## Closing
 
-    def close_stmt(self):
+    def close_stmt(self) -> None:
+        """Closes open statement with SQREAM
+
+        Raises:
+            ProgrammingError: If server responds with invalid JSON
+            ProgrammingError: If server responds with valid JSON,
+              but it is not object
+            OperationalError: If server responds with "error" key in JSON
+        """
         if self.open_statement:
-            self.client.send_string('{"closeStatement": "closeStatement"}')
+            raw = self.client.send_string(
+                '{"closeStatement": "closeStatement"}')
+
+            # Check errors in response of the server
+            if raw:
+                try:
+                    response = json.loads(raw)
+                except json.decoder.JSONDecodeError:
+                    log_and_raise(
+                        ProgrammingError,
+                        f"Could not parse server response: {raw}"
+                    )
+                if not isinstance(response, dict):
+                    log_and_raise(
+                        ProgrammingError,
+                        f"Unexpected server response: {raw}"
+                    )
+                if "error" in response:
+                    log_and_raise(OperationalError, response["error"])
+
             self.open_statement = False
 
             if logger.isEnabledFor(logging.INFO):
