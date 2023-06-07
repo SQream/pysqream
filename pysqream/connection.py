@@ -172,7 +172,8 @@ class Connection:
             self.orig_port if self.clustered is True else self.port,
             self.clustered,
             self.use_ssl,
-            base_connection=False
+            base_connection=False,
+            allow_array=self.allow_array
         )  # self is the calling connection instance, so cursor can trace back to pysqream
         conn.connect_database(self.database, self.username, self.password, self.service)
 
