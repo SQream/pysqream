@@ -5,6 +5,7 @@ from string import ascii_lowercase, ascii_uppercase
 
 import pytest
 
+from .utils import assert_table_empty
 
 TEMP_TABLE = "test_array_fetch_temp"
 
@@ -36,13 +37,6 @@ def tuple_to_datetime(values: tuple):
     if values is None:
         return None
     return datetime(*values)
-
-
-def assert_table_empty(cursor, table: str):
-    """Utility to check that table is empty"""
-    cursor.execute(f"SELECT * FROM {table};")
-    preresult = cursor.fetchall()
-    assert preresult == []
 
 
 DATATYPES_DATA = [
