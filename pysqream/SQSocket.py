@@ -1,12 +1,12 @@
 
-from pysqream.logger import *
-from pysqream.globals import PROTOCOL_VERSION, SUPPORTED_PROTOCOLS, clean_sqream_errors
 import socket
 import ssl
 import sys
-import array
 from struct import pack, unpack
 from threading import Lock
+
+from .globals import PROTOCOL_VERSION, SUPPORTED_PROTOCOLS, clean_sqream_errors
+from .logger import printdbg, log_and_raise
 
 
 class SQSocket:
@@ -61,13 +61,10 @@ class SQSocket:
             log_and_raise(ConnectionRefusedError, f"Connection to SQream interrupted")
 
     def send(self, data):
-
-        # print ("sending: ", data)
-        # try:
-        return self.s.send(data)
-
-        # except BrokenPipeError:
-        #    raise BrokenPipeError('No connection to SQream. Try reconnecting')
+        """Send data via open socket"""
+        res = self.s.send(data)
+        printdbg("Message sent: ", data)
+        return res
 
     def close(self):
         return self.s.close()

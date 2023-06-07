@@ -5,7 +5,7 @@ from string import ascii_lowercase, ascii_uppercase
 
 import pytest
 
-from .utils import assert_table_empty
+from .utils import ensure_empty_table, select
 
 TEMP_TABLE = "test_array_fetch_temp"
 
@@ -96,15 +96,15 @@ TEXT_INSERT_VALUES = [
     for row in TEXT_VALUES
 ]
 
+EMPTY_ARRAY_DATA = [([], ), (None, ), ([], ), ([], ), (None, ), ([], )]
+
 
 @pytest.mark.parametrize(
     "array_table,data", zip(DATATYPES_DATA, DATA), indirect=['array_table'])
 @pytest.mark.usefixtures("array_table")
 def test_fetch_array_with_fixed_size(cursor, data):
     """Test simplest portions of each data type of array with fixed size"""
-    cursor.execute(f"SELECT data FROM {TEMP_TABLE};")
-    result = cursor.fetchall()
-    assert result == data
+    assert select(cursor, TEMP_TABLE) == data
 
 
 @pytest.mark.parametrize("array_table,data", [
@@ -124,17 +124,12 @@ def test_fetch_array_with_fixed_size(cursor, data):
 @pytest.mark.usefixtures("array_table")
 def test_fetch_array_with_fixed_size_few_rows(cursor, data):
     """Test few rows of array with fixed size"""
-    cursor.execute(f"SELECT data FROM {TEMP_TABLE};")
-    result = cursor.fetchall()
-    assert result == data
+    assert select(cursor, TEMP_TABLE) == data
 
 
 def test_fetch_array_with_fixed_size_few_columns(cursor):
     """Test few columns with few rows of array with fixed size"""
-    cursor.execute(
-        f"CREATE OR REPLACE TABLE {TEMP_TABLE} (x1 INT[], x2 DOUBLE[])")
-
-    assert_table_empty(cursor, TEMP_TABLE)
+    ensure_empty_table(cursor, TEMP_TABLE, "x1 INT[], x2 DOUBLE[]")
 
     cursor.execute(f"""
         INSERT INTO {TEMP_TABLE} VALUES
@@ -143,9 +138,7 @@ def test_fetch_array_with_fixed_size_few_columns(cursor):
         (array[11, 25, 7], null),
         (array[356, 2, 10, 3], array[false, null, true, true])
     """)
-    cursor.execute(f"SELECT * FROM {TEMP_TABLE};")
-    result = cursor.fetchall()
-    assert result == [
+    assert select(cursor, TEMP_TABLE) == [
         ([1, 5, None, 10], [True, False, True, False, None]),
         (None, [False, False, True]),
         ([11, 25, 7], None),
@@ -291,9 +284,7 @@ def test_fetch_array_len_gte8_with_fixed_size(cursor, data):
 @pytest.mark.usefixtures("array_table")
 def test_fetch_array_unfixed_size(cursor, data):
     """Test array with unfixed sise - TEXT"""
-    cursor.execute(f"SELECT data FROM {TEMP_TABLE};")
-    result = cursor.fetchall()
-    assert result == data
+    assert select(cursor, TEMP_TABLE) == data
 
 
 @pytest.mark.parametrize("data_type", [
@@ -303,30 +294,22 @@ def test_fetch_array_unfixed_size(cursor, data):
     "DATE", "DATETIME", "TEXT"])
 def test_fetch_empty_array(cursor, data_type):
     """Test empty array works fine"""
-    cursor.execute(
-        f"CREATE OR REPLACE TABLE {TEMP_TABLE} (data {data_type}[])")
-
-    assert_table_empty(cursor, TEMP_TABLE)
+    ensure_empty_table(cursor, TEMP_TABLE, f"data {data_type}[]")
 
     cursor.execute(f"""
         INSERT INTO {TEMP_TABLE} VALUES
         (array[]), (null), (array[]), (array[]), (null), (array[])
     """)
-    cursor.execute(f"SELECT * FROM {TEMP_TABLE};")
-    result = cursor.fetchall()
-    assert result == [([], ), (None, ), ([], ), ([], ), (None, ), ([], )]
+    assert select(cursor, TEMP_TABLE) == EMPTY_ARRAY_DATA
 
 
 @pytest.mark.parametrize("num", ["NUMERIC(38,38)", "NUMERIC(12,4)"])
 def test_fetch_empty_array_numeric_one_row(cursor, num):
     """Test empty array works fine for NUMERICs"""
-    cursor.execute(f"CREATE OR REPLACE TABLE {TEMP_TABLE} (data {num}[])")
-    assert_table_empty(cursor, TEMP_TABLE)
+    ensure_empty_table(cursor, TEMP_TABLE, f"data {num}[]")
 
     # Cannot insert many rows of NUMERIC because of a bug
     for txt in ["array[]", "null", "array[]", "array[]", "null", "array[]"]:
         cursor.execute(f"INSERT INTO {TEMP_TABLE} VALUES ({txt});")
 
-    cursor.execute(f"SELECT * FROM {TEMP_TABLE};")
-    result = cursor.fetchall()
-    assert result == [([], ), (None, ), ([], ), ([], ), (None, ), ([], )]
+    assert select(cursor, TEMP_TABLE) == EMPTY_ARRAY_DATA

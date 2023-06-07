@@ -1,4 +1,5 @@
 """Contains pysqream global variables"""
+import numbers
 import sys
 from datetime import datetime, date
 from decimal import Decimal
@@ -88,17 +89,17 @@ typecodes = {
 
 
 PYTYPES = {
-    'ftBool': bool,
-    'ftUByte': int,
-    'ftInt': int,
-    'ftShort': int,
-    'ftLong': int,
-    'ftDouble': float,
-    'ftFloat': float,
+    'ftBool': (bool, np.bool_),
+    'ftUByte': numbers.Integral,
+    'ftInt': numbers.Integral,
+    'ftShort': numbers.Integral,
+    'ftLong': numbers.Integral,
+    'ftDouble': numbers.Real,
+    'ftFloat': numbers.Real,
     'ftDate': date,
     'ftDateTime': datetime,
     'ftVarchar': str,
     'ftBlob': str,
-    'ftNumeric': Decimal,
+    'ftNumeric': (Decimal, numbers.Real),
     'ftArray': list,
 }
