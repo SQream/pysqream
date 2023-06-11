@@ -30,7 +30,7 @@ def connect(host, port, database, username, password, clustered=False,
         reconnect_attempts=reconnect_attempts,
         reconnect_interval=reconnect_interval,
         # Temporary desision to provide seamless transition to array features
-        allow_array=kwargs.pop("allow_array", False)
+        allow_array=kwargs.pop("allow_array", True)
     )
     conn.connect_database(database, username, password, service)
 

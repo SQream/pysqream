@@ -34,8 +34,8 @@ class Connection:
         self.ping_loop = None
         self.client = None
         self.cursors = {}
-        # Temporary desision to provide seamless transition to array features
-        self.allow_array = kwargs.pop("allow_array", False)
+        # Temporary decision to provide seamless transition to array features
+        self.allow_array = kwargs.pop("allow_array", True)
 
         self._open_connection(clustered, use_ssl)
 
