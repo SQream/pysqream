@@ -1,21 +1,24 @@
+"""Integrational tests for DB API
+
+Seems that should be a part of testing framework
+"""
 from datetime import datetime, date
-from numpy.random import randint, uniform
-from queue import Queue
-from time import sleep
 from decimal import Decimal, getcontext
+
 import pytest
-import sys, os
+from numpy.random import randint, uniform
+
+from .base import TestBase, Logger, connect_dbapi
+
 import pysqream
-sys.path.append(os.path.abspath(__file__).rsplit('tests/', 1)[0] + '/tests/')
-from base import TestBase, TestBaseWithoutBeforeAfter, Logger, connect_dbapi
 
 
-q = Queue()
 varchar_length = 10
 nvarchar_length = 10
 precision = 38
 scale = 10
-max_bigint = sys.maxsize if sys.platform not in ('win32', 'cygwin') else 2147483647
+# Python doesn't have limits on integers, so use SQream specified value
+max_bigint = 9223372036854775807
 
 
 def generate_varchar(length):
@@ -81,7 +84,6 @@ class TestPositive(TestBase):
                 cur.executemany("insert into test values (?)", rows)
                 res = cur.execute("select * from test").fetchall()[0][0]
                 # Compare
-                error = False
                 assert (
                         val == res or
                         (val != res and trimmed_col_type == 'bool' and val != 0 and res == True) or
@@ -128,7 +130,7 @@ class TestPositive(TestBase):
         cur = self.con.cursor()
         Logger().info("Running a statement when there is an open statement")
         cur.execute("select 1")
-        sleep(10)
+        # don't need to sleep, it's only slowing tests.  Code is synchronous.
         res = cur.execute("select 1").fetchall()[0][0]
         cur.close()
         assert res == 1
@@ -142,6 +144,7 @@ class TestNegative(TestBase):
         cur = self.con.cursor()
         Logger().info('Negative tests')
         for col_type in col_types:
+            Logger().debug("Col type: %s", col_type)
             if col_type == 'bool':
                 continue
             trimmed_col_type = col_type.split('(')[0]
@@ -315,17 +318,17 @@ class TestFetch(TestBase):
         cur.close()
 
 
-class TestCursor(TestBaseWithoutBeforeAfter):
-
-    def test_cursor_through_clustered(self):
-        con_clustered = pysqream.connect(self.ip, 3108, 'master', 'sqream', 'sqream', clustered=True)
+class TestCursor:
+    def test_cursor_through_clustered(self, ip_address):
+        con_clustered = pysqream.connect(
+            ip_address, 3108, 'master', 'sqream', 'sqream', clustered=True)
         cur = con_clustered.cursor()
         assert cur.execute("select 1").fetchall()[0][0] == 1
         cur.close()
 
-    def test_two_statements_same_cursor(self):
+    def test_two_statements_same_cursor(self, ip_address):
         vals = [1]
-        con = connect_dbapi(self.ip)
+        con = connect_dbapi(ip_address)
         cur = con.cursor()
         cur.execute("select 1")
         res1 = cur.fetchall()[0][0]
@@ -337,19 +340,19 @@ class TestCursor(TestBaseWithoutBeforeAfter):
         con.close()
         assert all(x == vals[0] for x in vals)
 
-    def test_cursor_when_open_statement(self):
-        con = connect_dbapi(self.ip)
+    def test_cursor_when_open_statement(self, ip_address):
+        con = connect_dbapi(ip_address)
         cur = con.cursor()
         cur.execute("select 1")
-        sleep(10)
+        # don't need to sleep, it's only slowing tests.  Code is synchronous.
         cur.execute("select 1")
         res = cur.fetchall()[0][0]
         cur.close()
         con.close()
         assert res == 1
 
-    def test_fetch_after_all_read(self):
-        con = connect_dbapi(self.ip)
+    def test_fetch_after_all_read(self, ip_address):
+        con = connect_dbapi(ip_address)
         cur = con.cursor()
         cur.execute("create or replace table test (xint int)")
         cur.executemany('insert into test values (?)', [(1,)])

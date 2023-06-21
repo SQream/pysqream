@@ -1,10 +1,18 @@
+"""Contains base classes for testing pysqream package"""
+import logging
 import pytest
-import socket
-import sys
-import os
-sys.path.append(os.path.abspath(__file__).rsplit('tests/', 1)[0] + '/tests/')
+
 import pysqream
-from pytest_logger import Logger
+
+
+logger = logging.getLogger(__name__)
+
+
+def _get_logger():
+    return logger
+
+
+Logger = _get_logger  # for compatibility
 
 
 def connect_dbapi(ip, clustered=False, use_ssl=False):
@@ -12,25 +20,22 @@ def connect_dbapi(ip, clustered=False, use_ssl=False):
     return pysqream.connect(ip, port, 'master', 'sqream', 'sqream', clustered, use_ssl)
 
 
-class TestBase():
-    @pytest.fixture(autouse=True)
-    def Test_setup_teardown(self, ip):
-        ip = ip if ip else socket.gethostbyname(socket.gethostname())
-        Logger().info("Before Scenario")
-        Logger().info(f"Connect to server {ip}")
-        self.con = connect_dbapi(ip)
-        yield
-        Logger().info("After Scenario")
-        self.con.close()
-        Logger().info(f"Close Session to server {ip}")
-
-
-class TestBaseWithoutBeforeAfter():
-    @pytest.fixture()
-    def ip(self, pytestconfig):
-        return pytestconfig.getoption("ip")
+class TestBase:
+    """
+    Base for building class-based tests with debugging before and after tests
+    """
+    con = None
 
     @pytest.fixture(autouse=True)
-    def Test_setup_teardown(self, ip):
-        self.ip = ip if ip else socket.gethostbyname(socket.gethostname())
+    # pylint: disable=invalid-name
+    def Test_setup_teardown(self, ip_address, conn):
+        """Use pytest's function to run for each test of descendants"""
+        # Keep for compatibility
+        logger.debug("Before Scenario")
+        logger.debug("Connect to server %s", ip_address)
+        self.con = conn
         yield
+        logger.debug("Close Session to server %s", ip_address)
+        logger.debug("After Scenario")
+
+# TestBaseWithoutBeforeAfter didn't do anything, it is not required

@@ -1,30 +1,32 @@
 """Global test configurations and fixtures"""
+import logging
 import pytest
 
-import pysqream
-
-from base import Logger
+from pysqream.pysqream import connect
 
 
 DEFAULT_IP = "192.168.0.35"
-logger = Logger()
+logger = logging.getLogger(__name__)
 
 
 def pytest_addoption(parser):
+    """Pytest way for adding options"""
     parser.addoption(
         "--ip", action="store", help="SQream Server ip", default=DEFAULT_IP)
     parser.addoption(
         "--port", action="store", help="SQream Server port", default="5000")
 
 
-def pytest_generate_tests(metafunc):
-    metafunc.config.getoption("ip")
-
-
-@pytest.fixture(scope='session', name='ip')
+@pytest.fixture(scope='session', name='ip_address')
 def sqream_ip_address(pytestconfig):
     """Fixture that adopts IP address of SQream Server for direct tests"""
     yield pytestconfig.getoption("ip")
+
+
+@pytest.fixture(scope='session', name='ip')
+def sqream_ip(ip_address):
+    """The same as ip_address fixture, but using name ip for compatibility"""
+    yield ip_address
 
 
 @pytest.fixture(scope='session', name='port')
@@ -38,10 +40,10 @@ def sqream_port_number(pytestconfig):
 
 
 @pytest.fixture(name='conn')
-def sqream_connection(ip, port):  # pylint: disable=invalid-name
+def sqream_connection(ip_address, port):
     """Fixture that create connection at each direct fixture call"""
-    conn = pysqream.connect(
-        ip, port, 'master', 'sqream', 'sqream', False, False)
+    conn = connect(
+        ip_address, port, 'master', 'sqream', 'sqream', False, False)
     yield conn
     conn.close()
 

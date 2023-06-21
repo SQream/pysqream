@@ -1,14 +1,20 @@
+"""Tests for whole pytest package except the arrays
+
+TODO: Separate by modules
+"""
+import socket
+import sys
+import threading
 from datetime import datetime, date, timezone
-from numpy.random import randint, uniform
 from queue import Queue
 from time import sleep
-import threading, sys, os
+
 import pytest
-import socket
-sys.path.append(os.path.abspath(__file__).rsplit('tests/', 1)[0] + '/tests/')
-#sys.path.append(os.path.abspath(__file__).rsplit('tests/', 1)[0] + 'pysqream/')
+from numpy.random import randint, uniform
+
+from .base import TestBase, Logger, connect_dbapi
+
 import pysqream
-from base import TestBase, TestBaseWithoutBeforeAfter, Logger, connect_dbapi
 from pysqream import casting
 
 
@@ -49,22 +55,10 @@ neg_test_vals = {'tinyint': (258, 3.6, 'test',  (1997, 5, 9), (1997, 12, 12, 10,
                  'varchar': (5, 3.6, (1, 2), (1997, 12, 12, 10, 10, 10), False, True),
                  'nvarchar': (5, 3.6, (1, 2), (1997, 12, 12, 10, 10, 10), False, True)}
 
-class TestBase():
-    @pytest.fixture(autouse=True)
-    def Test_setup_teardown(self, ip):
-        ip = ip if ip else socket.gethostbyname(socket.gethostname())
-        Logger().info("Before Scenario")
-        Logger().info(f"Connect to server {ip}")
-        self.con = connect_dbapi(ip)
-        yield
-        Logger().info("After Scenario")
-        self.con.close()
-        Logger().info(f"Close Session to server {ip}")
 
+class TestConnection:
 
-class TestConnection(TestBaseWithoutBeforeAfter):
-
-    def test_connection(self):
+    def test_connection(self, ip_address):
 
         Logger().info("Connection tests - wrong ip")
         try:
@@ -75,34 +69,34 @@ class TestConnection(TestBaseWithoutBeforeAfter):
 
         Logger().info("Connection tests - wrong port")
         try:
-            pysqream.connect(self.ip, 6000, 'master', 'sqream', 'sqream', False, False)
+            pysqream.connect(ip_address, 6000, 'master', 'sqream', 'sqream', False, False)
         except Exception as e:
             if "Connection refused" not in repr(e):
                 raise Exception("bad error message")
 
         Logger().info("Connection tests - wrong database")
         try:
-            pysqream.connect(self.ip, 5000, 'wrong_db', 'sqream', 'sqream', False, False)
+            pysqream.connect(ip_address, 5000, 'wrong_db', 'sqream', 'sqream', False, False)
         except Exception as e:
             if "Database 'wrong_db' does not exist" not in repr(e):
                 raise Exception("bad error message")
 
         Logger().info("Connection tests - wrong username")
         try:
-            pysqream.connect(self.ip, 5000, 'master', 'wrong_username', 'sqream', False, False)
+            pysqream.connect(ip_address, 5000, 'master', 'wrong_username', 'sqream', False, False)
         except Exception as e:
             if "role 'wrong_username' doesn't exist" not in repr(e):
                 raise Exception("bad error message")
 
         Logger().info("Connection tests - wrong password")
         try:
-            pysqream.connect(self.ip, 5000, 'master', 'sqream', 'wrong_pw', False, False)
+            pysqream.connect(ip_address, 5000, 'master', 'sqream', 'wrong_pw', False, False)
         except Exception as e:
             if "wrong password for role 'sqream'" not in repr(e):
                 raise Exception("bad error message")
 
         Logger().info("Connection tests - close() function")
-        con = connect_dbapi(self.ip)
+        con = connect_dbapi(ip_address)
         cur = con.cursor()
         con.close()
         try:
@@ -112,7 +106,7 @@ class TestConnection(TestBaseWithoutBeforeAfter):
               raise Exception("bad error message")
 
         Logger().info("Connection tests - close_connection() function")
-        con = connect_dbapi(self.ip)
+        con = connect_dbapi(ip_address)
         cur = con.cursor()
         con.close()
         try:
@@ -122,7 +116,7 @@ class TestConnection(TestBaseWithoutBeforeAfter):
                 raise Exception("bad error message")
 
         Logger().info("Connection tests - Trying to close a connection that is already closed with close()")
-        con = connect_dbapi(self.ip)
+        con = connect_dbapi(ip_address)
         con.close()
         try:
             con.close()
@@ -131,7 +125,7 @@ class TestConnection(TestBaseWithoutBeforeAfter):
                 raise Exception("bad error message")
         #
         Logger().info("Connection tests - Trying to close a connection that is already closed with close_connection()")
-        con = connect_dbapi(self.ip)
+        con = connect_dbapi(ip_address)
         con.close()
         try:
             con.close()
@@ -141,13 +135,13 @@ class TestConnection(TestBaseWithoutBeforeAfter):
         #
         # Logger().info("Connection tests - negative test for use_ssl=True")
         # try:
-        #     pysqream.connect(self.ip, 5000, 'master', 'sqream', 'sqream', False, True)
+        #     pysqream.connect(ip_address, 5000, 'master', 'sqream', 'sqream', False, True)
         # except Exception as e:
         #     if "Using use_ssl=True but connected to non ssl sqreamd port" not in repr(e):
         #         raise Exception("bad error message")
 
         # Logger().info("Connection tests - positive test for use_ssl=True")
-        # con = connect_dbapi(self.ip, False, True)
+        # con = connect_dbapi(ip_address, False, True)
         # cur = con.cursor()
         # res = cur.execute('select 1').fetchall()[0][0]
         # if res != 1:
@@ -156,13 +150,13 @@ class TestConnection(TestBaseWithoutBeforeAfter):
 
         Logger().info("Connection tests - negative test for clustered=True")
         try:
-            pysqream.connect(self.ip, 5000, 'master', 'sqream', 'sqream', True, False)
+            pysqream.connect(ip_address, 5000, 'master', 'sqream', 'sqream', True, False)
         except Exception as e:
             if "Connected with clustered=True, but apparently not a server picker port" not in repr(e):
                 raise Exception("bad error message")
 
         Logger().info("Connection tests - positive test for clustered=True")
-        con = pysqream.connect(self.ip, 3108, "master", "sqream", "sqream", clustered=True)
+        con = pysqream.connect(ip_address, 3108, "master", "sqream", "sqream", clustered=True)
         cur = con.cursor()
         cur.execute('select 1')
         res = cur.fetchall()[0][0]
@@ -172,7 +166,7 @@ class TestConnection(TestBaseWithoutBeforeAfter):
         con.close()
 
         Logger().info("Connection tests - both clustered and use_ssl flags on True")
-        con = connect_dbapi(self.ip, True, True)
+        con = connect_dbapi(ip_address, True, True)
         cur = con.cursor()
         res = cur.execute('select 1').fetchall()[0][0]
         if res != 1:
@@ -181,8 +175,8 @@ class TestConnection(TestBaseWithoutBeforeAfter):
         con.close()
 
         Logger().info("Connection tests - all connections are closed when trying to close a single connection SQ-12821")
-        con1 = connect_dbapi(self.ip, True, True)
-        con2 = connect_dbapi(self.ip, True, True)
+        con1 = connect_dbapi(ip_address, True, True)
+        con2 = connect_dbapi(ip_address, True, True)
         cur = con1.cursor()
         cur.execute('select 1')
         cur.fetchall()
@@ -425,14 +419,14 @@ class TestFetch(TestBase):
         cur.close()
 
 
-class TestCursor(TestBaseWithoutBeforeAfter):
+class TestCursor:
 
-    def test_cursor(self):
+    def test_cursor(self, ip_address):
 
 
         Logger().info("Cursor tests - running two statements on the same cursor connection")
         vals = [1]
-        con = connect_dbapi(self.ip)
+        con = connect_dbapi(ip_address)
         cur = con.cursor()
         cur.execute("select 1")
         res1 = cur.fetchall()[0][0]
@@ -445,7 +439,7 @@ class TestCursor(TestBaseWithoutBeforeAfter):
         cur.close()
         con.close()
 
-        con = connect_dbapi(self.ip)
+        con = connect_dbapi(ip_address)
         Logger().info("Cursor tests - running a statement through cursor when there is an open statement")
         cur = con.cursor()
         cur.execute("select 1")
@@ -458,7 +452,7 @@ class TestCursor(TestBaseWithoutBeforeAfter):
         con.close()
 
         Logger().info("Cursor tests - fetch functions after all the data has already been read through cursor")
-        con = connect_dbapi(self.ip)
+        con = connect_dbapi(ip_address)
         cur = con.cursor()
         cur.execute("create or replace table test (xint int)")
         cur.executemany('insert into test values (?)', [(1,)])
@@ -477,7 +471,7 @@ class TestCursor(TestBaseWithoutBeforeAfter):
         con.close()
 
         Logger().info("Cursor tests - run a query through a cursor and close the connection directly")
-        con = connect_dbapi(self.ip)
+        con = connect_dbapi(ip_address)
         cur = con.cursor()
         cur.execute("select 1")
         con.close()
@@ -536,7 +530,7 @@ class TestDatetime(TestBase):
         cur.close()
 
 
-class TestThreads(TestBaseWithoutBeforeAfter):
+class TestThreads:
 
     def connect_and_execute(self, num, con):
         cur = con.cursor()
@@ -545,8 +539,8 @@ class TestThreads(TestBaseWithoutBeforeAfter):
         q.put(res)
         cur.close()
 
-    def test_threads(self):
-        con = connect_dbapi(self.ip)
+    def test_threads(self, ip_address):
+        con = connect_dbapi(ip_address)
 
         Logger().info("Thread tests - concurrent inserts with multiple threads through cursor")
         t1 = threading.Thread(target=self.connect_and_execute, args=(3, con,))
@@ -563,7 +557,7 @@ class TestThreads(TestBaseWithoutBeforeAfter):
         con.close()
 
 
-class TestDatetimeUnitTest(TestBaseWithoutBeforeAfter):
+class TestDatetimeUnitTest:
 
     def test_zero_date(self):
         error = 'year 0 is out of range'
