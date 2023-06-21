@@ -9,6 +9,13 @@ from .utils import ALL_TYPES, SIMPLE_VALUES, select
 TEMP_TABLE = "test_arrays_allowed_temp"
 
 
+@pytest.fixture(name='cursor')
+def cursor_with_arrays_allowed(cursor):
+    """Redefined cursor fixture that disables arrays for this tests module"""
+    cursor.conn.allow_array = False
+    yield cursor
+
+
 @pytest.mark.parametrize("data_type", ALL_TYPES)
 def test_array_enabled_false_default_raises_on_select(cursor, data_type):
     """Test select fails from array columns with allow_array=False"""
