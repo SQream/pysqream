@@ -21,7 +21,7 @@ from .column_buffer import ColumnBuffer
 from .ping import _start_ping_loop, _end_ping_loop
 from .logger import log_and_raise, logger, printdbg
 from .utils import NotSupportedError, ProgrammingError, get_array_size, \
-    false_generator, ArraysAreDisabled
+    false_generator, ArraysAreDisabled, OperationalError
 from .casting import lengths_to_pairs, sq_date_to_py_date, \
     sq_datetime_to_py_datetime, sq_numeric_to_decimal, arr_lengths_to_pairs
 from .SQSocket import Client
@@ -527,9 +527,36 @@ class Cursor:
 
     ## Closing
 
-    def close_stmt(self):
+    def close_stmt(self) -> None:
+        """Closes open statement with SQREAM
+
+        Raises:
+            ProgrammingError: If server responds with invalid JSON
+            ProgrammingError: If server responds with valid JSON,
+              but it is not object
+            OperationalError: If server responds with "error" key in JSON
+        """
         if self.open_statement:
-            self.client.send_string('{"closeStatement": "closeStatement"}')
+            raw = self.client.send_string(
+                '{"closeStatement": "closeStatement"}')
+
+            # Check errors in response of the server
+            if raw:
+                try:
+                    response = json.loads(raw)
+                except json.decoder.JSONDecodeError:
+                    log_and_raise(
+                        ProgrammingError,
+                        f"Could not parse server response: {raw}"
+                    )
+                if not isinstance(response, dict):
+                    log_and_raise(
+                        ProgrammingError,
+                        f"Unexpected server response: {raw}"
+                    )
+                if "error" in response:
+                    log_and_raise(OperationalError, response["error"])
+
             self.open_statement = False
 
             if logger.isEnabledFor(logging.INFO):
