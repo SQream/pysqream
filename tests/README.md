@@ -14,13 +14,11 @@ some values, please revise it
 
 ## Running the tests
 From the root folder of the repository
-`python3 -m pytest tests/`
+`pytest tests/`
 
 Or with test specified:
-`python3 -m pytest tests/dbapi_test.py`
->>> python3 -m pytest allows to handle imports
-
-
+`pytest tests/dbapi_test.py`
+>>> python3 -m pytest also could be used
 
 ### Logging
 For showing pretty log use pytest parameter:

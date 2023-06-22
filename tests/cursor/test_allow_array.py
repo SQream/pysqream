@@ -3,7 +3,7 @@ import pytest
 from pysqream import connect
 from pysqream.utils import ArraysAreDisabled
 
-from .utils import ALL_TYPES, SIMPLE_VALUES, select
+from ..utils import ALL_TYPES, SIMPLE_VALUES, select
 
 
 TEMP_TABLE = "test_arrays_allowed_temp"

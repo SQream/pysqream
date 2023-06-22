@@ -5,7 +5,7 @@ from string import ascii_lowercase, ascii_uppercase
 
 import pytest
 
-from .utils import ensure_empty_table, select
+from ..utils import ensure_empty_table, select
 
 TEMP_TABLE = "test_array_fetch_temp"
 

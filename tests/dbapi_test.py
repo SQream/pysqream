@@ -1,139 +1,203 @@
-"""Integrational tests for DB API
+"""Tests for network insertion for each data type except ARRAY
 
 Seems that should be a part of testing framework
 """
+import struct
+import logging
+from collections import defaultdict
 from datetime import datetime, date
 from decimal import Decimal, getcontext
+# better use the same standard library, then numpy
+from random import randint, uniform, choice
+from string import printable
 
 import pytest
-from numpy.random import randint, uniform
-
-from .base import TestBase, Logger, connect_dbapi
 
 import pysqream
 
+from .base import TestBase, Logger, connect_dbapi
+from .utils import ensure_empty_table, select
 
-varchar_length = 10
-nvarchar_length = 10
-precision = 38
-scale = 10
+logger = logging.getLogger(__name__)
+
+
+VARCHAR_LENGTH = 10
+NVARCHAR_LENGTH = 10
+NUMERIC_PRECISION = 38
+NUMERIC_SCALE = 10
 # Python doesn't have limits on integers, so use SQream specified value
-max_bigint = 9223372036854775807
+MAX_BIGINT = 9223372036854775807
+
+TEMP_TABLE = "pysqream_dbapi_test_temp"
+
+# Used for transformation of python types to the same returned from SQream
+# For example, python's float with double precision, so conversion to single
+# precision is required before comparison
+COMPARISON_TRANSFORM_FUNCS = defaultdict(
+    # Returns function that produce the same value, convenient to avoid if/else
+    lambda: lambda x: x,
+    {
+        'bool': lambda x: bool(x),  # pylint: disable=unnecessary-lambda
+        'varchar': lambda x: x.strip(),
+        'real': lambda x: struct.unpack('f', struct.pack('f', x))[0],
+    }
+)
 
 
 def generate_varchar(length):
-    return ''.join(chr(num) for num in randint(32, 128, length))
+    """
+    Generate string of size `length` from random printable ASCII chars
+    """
+    # Should not rely on int representation of letters because it
+    # depends on OS
+    return ''.join(choice(printable) for _ in range(length))
 
 
 getcontext().prec = 38
 
 
-col_types = ['bool', 'tinyint', 'smallint', 'int', 'bigint', 'real', 'double', 'date', 'datetime',
-             'varchar({})'.format(varchar_length), 'nvarchar({})'.format(varchar_length),
-             'numeric({},{})'.format(precision, scale)]
+col_types = [
+    'bool', 'tinyint', 'smallint', 'int', 'bigint',
+    'real', 'double',
+    'date', 'datetime',
+    f'varchar({VARCHAR_LENGTH})', f'nvarchar({VARCHAR_LENGTH})',
+    f'numeric({NUMERIC_PRECISION},{NUMERIC_SCALE})']
 
-pos_test_vals = {'bool': (0, 1, True, False, 2, 3.6, 'test', (1997, 5, 9), (1997, 12, 12, 10, 10, 10)),
-                 'tinyint': (randint(0, 255), randint(0, 255), 0, 255, True, False),
-                 'smallint': (randint(-32768, 32767), 0, -32768, 32767, True, False),
-                 'int': (randint(-2147483648, 2147483647), 0, -2147483648, 2147483647, True, False),
-                 'bigint': (randint(1 - max_bigint, max_bigint), 0, 1 - max_bigint, max_bigint, True, False),
-                 'real': (
-                 float('inf'), float('-inf'), float('+0'), float('-0'), round(uniform(1e-6, 1e6), 5), 837326.52428,
-                 True, False),  # float('nan')
-                 'double': (float('inf'), float('-inf'), float('+0'), float('-0'), uniform(1e-6, 1e6), True, False),
-                 # float('nan')
-                 'date': (date(1998, 9, 24), date(2020, 12, 1), date(1997, 5, 9), date(1993, 7, 13), date(1001, 1, 1)),
-                 'datetime': (datetime(1001, 1, 1, 10, 10, 10), datetime(1997, 11, 30, 10, 10, 10),
-                              datetime(1987, 7, 27, 20, 15, 45), datetime(1993, 12, 20, 17, 25, 46)),
-                 'varchar': (
-                 generate_varchar(varchar_length), generate_varchar(varchar_length), generate_varchar(varchar_length),
-                 'b   '),
-                 'nvarchar': ('א', 'א  ', '', 'ab א'),
-                 'numeric': (Decimal("0"), Decimal("1"), Decimal("1.1"), Decimal("-1"), Decimal("-1.0"),
-                             Decimal("12345678901234567890.0123456789"))}
+pos_test_vals = {
+    'bool': (0, 1, True, False, 2, 3.6, 'test', (1997, 5, 9),
+             (1997, 12, 12, 10, 10, 10)),
+    'tinyint': (randint(0, 255), randint(0, 255), 0, 255, True, False),
+    'smallint': (randint(-32768, 32767), 0, -32768, 32767, True, False),
+    'int': (randint(-2147483648, 2147483647), 0, -2147483648,
+            2147483647, True, False),
+    'bigint': (randint(1 - MAX_BIGINT, MAX_BIGINT), 0,
+               1 - MAX_BIGINT, MAX_BIGINT, True, False),
+    'real': (float('inf'), float('-inf'), float('+0'), float('-0'),
+             round(uniform(1e-6, 1e6), 5), 837326.52428, True, False),
+    'double': (float('inf'), float('-inf'), float('+0'), float('-0'),
+               uniform(1e-6, 1e6), True, False),  # float('nan')
+    'date': (date(1998, 9, 24), date(2020, 12, 1), date(1997, 5, 9),
+             date(1993, 7, 13), date(1001, 1, 1)),
+    'datetime': (datetime(1001, 1, 1, 10, 10, 10),
+                 datetime(1997, 11, 30, 10, 10, 10),
+                 datetime(1987, 7, 27, 20, 15, 45),
+                 datetime(1993, 12, 20, 17, 25, 46)),
+    'varchar': (generate_varchar(VARCHAR_LENGTH),
+                generate_varchar(VARCHAR_LENGTH),
+                generate_varchar(VARCHAR_LENGTH), 'b   '),
+    'nvarchar': ('א', 'א  ', '', 'ab א'),
+    'numeric': (Decimal("0"), Decimal("1"), Decimal("1.1"),
+                Decimal("-1"), Decimal("-1.0"),
+                Decimal("12345678901234567890.0123456789"))}
 
-neg_test_vals = {'tinyint': (258, 3.6, 'test', (1997, 5, 9), (1997, 12, 12, 10, 10, 10)),
-                 'smallint': (40000, 3.6, 'test', (1997, 5, 9), (1997, 12, 12, 10, 10, 10)),
-                 'int': (9999999999, 3.6, 'test', (1997, 5, 9), (1997, 12, 12, 10, 10, 10)),
-                 'bigint': (92233720368547758070, 3.6, 'test', (1997, 12, 12, 10, 10, 10)),
-                 'real': ('test', (1997, 12, 12, 10, 10, 10)),
-                 'double': ('test', (1997, 12, 12, 10, 10, 10)),
-                 'date': (5, 3.6, (-8, 9, 1), (2012, 15, 6), (2012, 9, 45), 'test', False, True),
-                 'datetime': (
-                 5, 3.6, (-8, 9, 1, 0, 0, 0), (2012, 15, 6, 0, 0, 0), (2012, 9, 45, 0, 0, 0), (2012, 9, 14, 26, 0, 0),
+neg_test_vals = {
+    'tinyint': (258, 3.6, 'test', (1997, 5, 9), (1997, 12, 12, 10, 10, 10)),
+    'smallint': (40000, 3.6, 'test', (1997, 5, 9), (1997, 12, 12, 10, 10, 10)),
+    'int': (9999999999, 3.6, 'test', (1997, 5, 9), (1997, 12, 12, 10, 10, 10)),
+    'bigint': (92233720368547758070, 3.6, 'test', (1997, 12, 12, 10, 10, 10)),
+    'real': ('test', (1997, 12, 12, 10, 10, 10)),
+    'double': ('test', (1997, 12, 12, 10, 10, 10)),
+    'date': (5, 3.6, (-8, 9, 1), (2012, 15, 6), (2012, 9, 45), 'test',
+             False, True),
+    'datetime': (5, 3.6, (-8, 9, 1, 0, 0, 0), (2012, 15, 6, 0, 0, 0),
+                 (2012, 9, 45, 0, 0, 0), (2012, 9, 14, 26, 0, 0),
                  (2012, 9, 14, 13, 89, 0), 'test', False, True),
-                 'varchar': (5, 3.6, (1, 2), (1997, 12, 12, 10, 10, 10), False, True),
-                 'nvarchar': (5, 3.6, (1, 2), (1997, 12, 12, 10, 10, 10), False, True),
-                 'numeric': ('a')}
+    'varchar': (5, 3.6, (1, 2), (1997, 12, 12, 10, 10, 10), False, True),
+    'nvarchar': (5, 3.6, (1, 2), (1997, 12, 12, 10, 10, 10), False, True),
+    'numeric': ('a')}
+
+# Fill params for parametrization of tests
+POSITIVE_TEST_PARAMS = []
+POSITIVE_TEST_PARAMS_BY_ONE = []
+for type_ in col_types:
+    values = pos_test_vals[type_.split('(', maxsplit=1)[0]]
+    POSITIVE_TEST_PARAMS.append((type_, values))
+    # add only one value for testing by one
+    POSITIVE_TEST_PARAMS_BY_ONE.append((type_, values[0]))
 
 
-class TestPositive(TestBase):
+# TODO: Separate by functionality, not by positive & negative cases
+# class TestNetworkInsert(TestBase):
+#     """
+#     Test insertion of data via network insert
 
-    def test_positive(self):
+#     It implies insertion by next flow:
+#         >>> data = [
+#         ...     (5, "Text1"),  # row 1 (col1, col2)
+#         ...     (9, "Text2"),  # row 2
+#         ...     ...  # other rows
+#         ... ]
+#         >>> cursor.executemany("INSERT INTO table VALUES (?, ?)", data)
+#         >>> # (?, ?) means values into 2 columns
+#     """
 
-        cur = self.con.cursor()
-        Logger().info('positive tests')
-        for col_type in col_types:
-            trimmed_col_type = col_type.split('(')[0]
 
-            Logger().info(f'Inserted values test for column type {col_type}')
-            cur.execute(f"create or replace table test (t_{trimmed_col_type} {col_type})")
-            for val in pos_test_vals[trimmed_col_type]:
-                cur.execute('truncate table test')
-                rows = [(val,)]
-                cur.executemany("insert into test values (?)", rows)
-                res = cur.execute("select * from test").fetchall()[0][0]
-                # Compare
-                assert (
-                        val == res or
-                        (val != res and trimmed_col_type == 'bool' and val != 0 and res == True) or
-                        (val != res and trimmed_col_type == 'varchar' and val != 0 and val.strip() == res) or
-                        (val != res and trimmed_col_type == 'real' and val != 0 and abs(res - val) <= 0.1)
-                )
+# Logging scenarios from TestBase are not needed anymore, because tests
+# are verbose by themselves because of tests names and parametrization
+class TestPositive:
+    """Test get & set works with valid values"""
 
-            Logger().info(f'Null test for column type: {col_type}')
-            cur.execute("create or replace table test (t_{} {})".format(trimmed_col_type, col_type))
-            cur.executemany('insert into test values (?)', [(None,)])
-            res = cur.execute('select * from test').fetchall()[0][0]
-            assert res == None
+    @pytest.mark.parametrize("col_type, data", POSITIVE_TEST_PARAMS)
+    def test_positive_insert(self, cursor, col_type, data):
+        """Test network insert works while inserting data"""
+        ensure_empty_table(cursor, TEMP_TABLE, f"t {col_type}")
+        to_insert = [(val,) for val in data]
+        cursor.executemany(f"insert into {TEMP_TABLE} values (?)", to_insert)
+        res = select(cursor, TEMP_TABLE)
 
-        cur.close()
+        trimmed_col_type = col_type.split('(', maxsplit=1)[0]
+        func = COMPARISON_TRANSFORM_FUNCS[trimmed_col_type]
+        to_compare = [(func(val), ) for val in data]
+        assert res == to_compare
 
-    def test_nulls(self):
+    @pytest.mark.parametrize("col_type, val", POSITIVE_TEST_PARAMS_BY_ONE)
+    def test_positive_insert_by_one(self, cursor, col_type, val):
+        """Test network insert works while inserting data by one"""
+        ensure_empty_table(cursor, TEMP_TABLE, f"t {col_type}")
+        rows = [(val,)]
+        cursor.executemany(f"insert into {TEMP_TABLE} values (?)", rows)
+        res = select(cursor, TEMP_TABLE)
 
-        cur = self.con.cursor()
-        Logger().info("Case statement with nulls")
-        cur.execute("create or replace table test (xint int)")
-        cur.executemany('insert into test values (?)', [(5,), (None,), (6,), (7,), (None,), (8,), (None,)])
-        cur.executemany("select case when xint is null then 1 else 0 end from test")
+        trimmed_col_type = col_type.split('(', maxsplit=1)[0]
+        to_compare = COMPARISON_TRANSFORM_FUNCS[trimmed_col_type](val)
+        assert res == [(to_compare, )]
+
+    @pytest.mark.parametrize("col_type", col_types)
+    def test_positive_insert_nulls_by_one(self, cursor, col_type):
+        """Test network insert works while inserting None"""
+        # logging does not require because type will be printed with test
+        ensure_empty_table(cursor, TEMP_TABLE, f"t {col_type}")
+        cursor.executemany(f'insert into {TEMP_TABLE} values (?)', [(None,)])
+        res = select(cursor, TEMP_TABLE)
+        assert res == [(None, )]
+        cursor.close()
+
+    def test_case_statement_with_nulls(self, cursor):
+        """Test network insert works while inserting None"""
+        ensure_empty_table(cursor, TEMP_TABLE, "xint int")
+        cursor.executemany(f'insert into {TEMP_TABLE} values (?)',
+                           [(5,), (None,), (6,), (7,), (None,), (8,), (None,)])
+        cursor.executemany(f"select case when xint is null then 1 else 0 end "
+                           f"from {TEMP_TABLE}")
         expected_list = [0, 1, 0, 0, 1, 0, 1]
-        res_list = []
-        res_list += [x[0] for x in cur.fetchall()]
-        cur.close()
+        res_list = [x[0] for x in cursor.fetchall()]
+        cursor.close()
         assert expected_list == res_list
 
-    def test_bool(self):
+    @pytest.mark.parametrize('value', (True, False))
+    def test_select_bool_literals(self, cursor, value):
+        """Test select true/false returns integer value"""
+        cursor.execute(f"select {value}")
+        res = cursor.fetchall()
+        assert res == [(int(value), )]
 
-        cur = self.con.cursor()
-        Logger().info("Testing select true/false")
-        cur.execute("select false")
-        res = cur.fetchall()[0][0]
-        assert res == 0
-
-        cur.execute("select true")
-        res = cur.fetchall()[0][0]
-        cur.close()
-        assert res == 1
-
-    def test_when_running(self):
-
-        cur = self.con.cursor()
-        Logger().info("Running a statement when there is an open statement")
-        cur.execute("select 1")
+    def test_running_statement_while_open_statement(self, cursor):
+        """Open statement should not impact new statement"""
+        cursor.execute("select 1")
         # don't need to sleep, it's only slowing tests.  Code is synchronous.
-        res = cur.execute("select 1").fetchall()[0][0]
-        cur.close()
-        assert res == 1
+        res = cursor.execute("select 2").fetchall()  # Change value to be sure
+        cursor.close()
+        assert res == [(2, )]
 
 
 class TestNegative(TestBase):
