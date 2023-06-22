@@ -98,6 +98,10 @@ threadsafety = 1 # Threads can share the module but not a connection
 paramstyle = 'qmark'
 
 
+class Error(Exception):
+    pass
+
+
 # if __name__ == '__main__':
 #
 #     print('PySqream DB-API connector, version ', __version__)

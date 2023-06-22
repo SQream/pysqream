@@ -11,7 +11,7 @@ from queue import Queue, Empty
 from struct import unpack
 import socket
 from pysqream.utils import NotSupportedError, ProgrammingError, InternalError, IntegrityError, OperationalError, DataError, \
-    DatabaseError, InterfaceError, Warning, Error
+    DatabaseError, InterfaceError, Warning
 from pysqream.casting import date_to_int as pydate_to_int, datetime_to_long as pydt_to_long, sq_date_to_py_date as date_to_py, sq_datetime_to_py_datetime as dt_to_py
 from pysqream.cursor import Cursor
 
@@ -216,3 +216,7 @@ class Connection:
 
     def __exit__(self, exc_type, exc_value, exc_traceback):
         self.close()
+
+
+# class Error(Exception):
+#     pass

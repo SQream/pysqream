@@ -6,7 +6,7 @@ from pysqream.column_buffer import ColumnBuffer
 from pysqream.ping import PingLoop, _start_ping_loop, _end_ping_loop
 from pysqream.logger import *
 from pysqream.utils import NotSupportedError, ProgrammingError, InternalError, IntegrityError, OperationalError, DataError, \
-    DatabaseError, InterfaceError, Warning, Error
+    DatabaseError, InterfaceError, Warning
 from pysqream.casting import lengths_to_pairs, sq_date_to_py_date, sq_datetime_to_py_datetime, sq_numeric_to_decimal
 from pysqream.SQSocket import Client
 import time
@@ -277,13 +277,14 @@ class Cursor:
             self.conn._verify_con_open()
         else:
             self.conn._verify_cur_open()
-        if params:
+        if params and len(params)==1:
+            query = query.replace('?', f"{params[0]}")
+            # log_and_raise(ProgrammingError, "Parametered queries not supported. \
+            #     If this is an insert query, use executemany() with the data rows as the parameter.\n"
+            #               f"query is {query}")
 
-            log_and_raise(ProgrammingError, "Parametered queries not supported. \
-                If this is an insert query, use executemany() with the data rows as the parameter")
-
-        else:
-            self._execute_sqream_statement(query)
+        # else:
+        self._execute_sqream_statement(query)
 
         self._fill_description()
         self.rows_fetched = 0
@@ -552,3 +553,7 @@ class Cursor:
     def __iter__(self):
         for item in self.fetchall():
             yield item
+
+
+# class Error(Exception):
+#     pass
