@@ -42,7 +42,7 @@ def sq_datetime_to_py_datetime(sqream_datetime, is_null=False, dt_convert_func=d
     if date_part is None:
         return None
 
-    msec = time_part % 1000
+    msec = time_part % 1000 * 1000
     sec = (time_part // 1000) % 60
     mins = (time_part // 1000 // 60) % 60
     hour = time_part // 1000 // 60 // 60
