@@ -32,8 +32,6 @@ def sq_datetime_to_py_datetime(sqream_datetime, is_null=False, dt_convert_func=d
     ''' Getting the datetime items involves breaking the long into the date int and time it holds
         The date is extracted in the above, while the time is extracted here  '''
 
-    print(sqream_datetime)
-
     if is_null:
         return None
 
