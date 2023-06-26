@@ -1,6 +1,6 @@
 from datetime import datetime, date, time as t
 from decimal import Decimal, getcontext
-from math import floor, ceil
+from math import floor, ceil, pow
 
 
 def pad_dates(num):
@@ -46,9 +46,9 @@ def sq_datetime_to_py_datetime(sqream_datetime, is_null=False, dt_convert_func=d
     sec = (time_part // 1000) % 60
     mins = (time_part // 1000 // 60) % 60
     hour = time_part // 1000 // 60 // 60
-
     return dt_convert_func(date_part.year, date_part.month, date_part.day,
-                           hour, mins, sec, msec)
+                           hour, mins, sec, msec * int(pow(10, 3)))  # Python expects to get 6 digit on
+                                                                     # miliseconds while SQream returns 3.
 
 
 def date_to_int(d: date) -> int:
