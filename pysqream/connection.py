@@ -172,10 +172,6 @@ class Connection:
     #     if self.con_closed:
     #         log_and_raise(ProgrammingError, 'Connection has been closed')
 
-    def _verify_cur_open(self):
-        if self.cur_closed:
-            log_and_raise(ProgrammingError, 'Cursor has been closed')
-
     def _verify_con_open(self):
         if self.con_closed:
             log_and_raise(ProgrammingError, 'Connection has been closed')
