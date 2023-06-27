@@ -62,8 +62,8 @@ def cursor_with_arrays_allowed(cursor):
         Decimal('0.12324567890123456789012345678901234567'), None]),
     ("NUMERIC(12,4)", [Decimal('131235.1232'), None]),
     ("DATE", [date(1955, 11, 5), None, date(9999, 12, 31)]),
-    # ("DATETIME", [datetime(1955, 11, 5, 1, 24),
-    #               datetime(9999, 12, 31, 23, 59, 59, 999), None]),
+    ("DATETIME", [datetime(1955, 11, 5, 1, 24),
+                  datetime(9999, 12, 31, 23, 59, 59, 999000), None]),
     ("TEXT", [None, "Kiwis have tiny wings, but cannot fly.", "", "xXx"]),
 ])
 def test_insert_most_types(cursor, data_type, data):
@@ -76,15 +76,15 @@ def test_insert_most_types(cursor, data_type, data):
 
 
 @pytest.mark.parametrize("year, month, day, hour, minute, sec, mcrsec", [
-    (1955, 11, 5, 1, 24, 0, 0),
-    (9999, 12, 31, 23, 59, 59, 999),
+    (1955, 11, 5, 1, 24, 0, 111),
+    (9999, 12, 31, 23, 59, 59, 888444),
+    # (9999, 12, 31, 23, 59, 59, 888999),  # Won't pass while SQ-13969
 ])
 def test_insert_datetime(cursor, year, month, day, hour, minute, sec, mcrsec):
     """
     Test insert array of datetime works such buggy as DATATIME itself
 
     Should move to test_insert_most_types after fixing bugs:
-    Bug1 (SELECT) https://sqream.atlassian.net/browse/SQ-13967
     Bug2 (INSERT) https://sqream.atlassian.net/browse/SQ-13969
     """
     # Passing many argument allows to see datetime in tests explicitly, so
@@ -97,8 +97,8 @@ def test_insert_datetime(cursor, year, month, day, hour, minute, sec, mcrsec):
         f"insert into {TEMP_TABLE} values (?)", [([data, data2], )])
 
     # adjust to working in current bugs environment
-    res1 = datetime(year, month, day, hour, minute, sec, mcrsec // 1000)
-    res2 = datetime(year - 1, month, day, hour, minute, sec, mcrsec // 1000)
+    res1 = datetime(year, month, day, hour, minute, sec, round(mcrsec, -3))
+    res2 = datetime(year - 1, month, day, hour, minute, sec, round(mcrsec, -3))
     assert select(cursor, TEMP_TABLE) == [([res1, res2], )]
 
 
