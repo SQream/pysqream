@@ -143,7 +143,7 @@ TYPE_TUPLES_FOR_MOCKS = {
 
 
 # TODO: Separate by functionality, not by positive & negative cases
-# class TestNetworkInsert(TestBase):
+# class TestNetworkInsert:
 #     """
 #     Test insertion of data via network insert
 
