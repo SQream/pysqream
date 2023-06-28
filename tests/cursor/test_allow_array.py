@@ -1,7 +1,7 @@
 """Test arrays disabled by default and raises on fetch and network insert"""
 import pytest
 from pysqream import connect
-from pysqream.utils import ArraysAreDisabled
+from pysqream.errors import ArraysAreDisabled
 
 from ..utils import ALL_TYPES, SIMPLE_VALUES, select
 

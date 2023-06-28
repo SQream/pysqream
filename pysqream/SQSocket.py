@@ -7,7 +7,7 @@ from threading import Lock
 
 from .globals import PROTOCOL_VERSION, SUPPORTED_PROTOCOLS, clean_sqream_errors
 from .logger import printdbg, log_and_raise
-from .utils import NonSSLPortError
+from .errors import NonSSLPortError
 
 
 class SQSocket:

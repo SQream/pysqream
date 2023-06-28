@@ -1,29 +1,43 @@
+"""Additional utilities of common purpose"""
+import os
 import re
 from packaging import version
-from subprocess import Popen, PIPE
 
 
 def get_ram_linux():
-    vmstat, err = Popen('vmstat -s'.split(), stdout=PIPE, stderr=PIPE).communicate()
-
-    return int(vmstat.splitlines()[0].split()[0])
+    """Get RAM on Linux OS"""
+    # Don't need to run subprocess
+    mem_bytes = os.sysconf('SC_PAGE_SIZE') * os.sysconf('SC_PHYS_PAGES')
+    return mem_bytes // (1024)  # in kilobytes for compatibility
 
 
 def get_ram_windows():
-    pass
+    """Dummy function"""
 
 
-## Version compare
-def version_compare(v1, v2) :
-    if (v2 is None or v1 is None):
+def version_compare(ver1, ver2):
+    """
+    Compares two versions of SQream and returns the result.
+
+    Args:
+        ver1 (str): The first version string to compare.
+        ver2 (str): The second version string to compare.
+
+    Returns:
+        int: Returns -1 if ver1 is less than ver2, 1 if ver1 is greater
+             than ver2, or 0 if ver1 is equal to ver2. Returns None if
+             any of the version strings are None or if the version
+             format is invalid.
+    """
+    if None in (ver2, ver1):
         return None
-    r1 = re.search("\\d{4}(\\.\\d+)+", v1)
-    r2 = re.search("\\d{4}(\\.\\d+)+", v2)
-    if (r2 is None or r1 is None):
+    match1 = re.search("\\d{4}(\\.\\d+)+", ver2)
+    match2 = re.search("\\d{4}(\\.\\d+)+", ver2)
+    if None in (match2, match1):
         return None
-    v1 = version.parse(r1.group(0))
-    v2 = version.parse(r2.group(0))
-    return -1 if v1 < v2 else 1 if v1 > v2 else 0
+    ver1 = version.parse(match1.group(0))
+    ver2 = version.parse(match2.group(0))
+    return -1 if ver1 < ver2 else 1 if ver1 > ver2 else 0
 
 
 def get_array_size(data_size: int, buffer_length: int) -> int:
@@ -68,55 +82,3 @@ def false_generator():
     """
     while True:
         yield False
-
-
-class Error(Exception):
-    pass
-
-
-class Warning(Exception):
-    pass
-
-
-class InterfaceError(Error):
-    pass
-
-
-class DatabaseError(Error):
-    pass
-
-
-class DataError(DatabaseError):
-    pass
-
-
-class OperationalError(DatabaseError):
-    pass
-
-
-class IntegrityError(DatabaseError):
-    pass
-
-
-class InternalError(DatabaseError):
-    pass
-
-
-class ProgrammingError(DatabaseError):
-    pass
-
-
-class NotSupportedError(DatabaseError):
-    pass
-
-
-class ArraysAreDisabled(DatabaseError):
-    pass
-
-
-class NonSSLPortError(OperationalError):
-    """Raised on SSL error"""
-
-    def __init__(self, message: str = "Using use_ssl=True but connected to non"
-                                      " ssl sqreamd port"):
-        super().__init__(message)

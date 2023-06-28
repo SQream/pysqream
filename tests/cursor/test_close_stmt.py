@@ -7,7 +7,7 @@ impression of success.
 """
 import pytest
 
-from pysqream.utils import OperationalError, ProgrammingError
+from pysqream.errors import OperationalError, ProgrammingError
 
 
 def _patch_send(monkeypatch, mock_cursor, response):

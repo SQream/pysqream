@@ -12,7 +12,7 @@ from pysqream import connect
 from pysqream.casting import sq_date_to_py_date, sq_datetime_to_py_datetime
 from pysqream.connection import Connection
 from pysqream.SQSocket import SQSocket, Client
-from pysqream.utils import ProgrammingError, NonSSLPortError
+from pysqream.errors import ProgrammingError, NonSSLPortError
 
 from .utils import ensure_empty_table, select
 

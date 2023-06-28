@@ -15,7 +15,7 @@ import pytest
 
 import pysqream
 from pysqream.cursor import Cursor
-from pysqream.utils import ProgrammingError
+from pysqream.errors import ProgrammingError
 
 from .utils import ensure_empty_table, select
 

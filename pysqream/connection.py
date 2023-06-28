@@ -24,7 +24,7 @@ from .column_buffer import ColumnBuffer
 from .SQSocket import SQSocket, Client
 from .globals import BUFFER_SIZE, CYTHON
 from .logger import log_and_raise, logger
-from .utils import NotSupportedError, ProgrammingError, Error
+from .errors import NotSupportedError, ProgrammingError, Error
 from .casting import (
     date_to_int as pydate_to_int,
     datetime_to_long as pydt_to_long,

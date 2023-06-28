@@ -14,7 +14,7 @@ import numpy as np
 from .casting import date_to_int, datetime_to_long, decimal_to_sq_numeric
 from .globals import WIN, ROWS_PER_FLUSH, VARCHAR_ENCODING, \
     type_to_letter, ARROW, buf_maps, PYTYPES, typecodes
-from .utils import DataError, ProgrammingError
+from .errors import DataError, ProgrammingError
 from .logger import log_and_raise, logger, printdbg
 
 

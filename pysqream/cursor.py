@@ -14,14 +14,14 @@ import struct
 
 from typing import List, Any, Union
 
-from .utils import version_compare
 from .globals import BUFFER_SIZE, ROWS_PER_FLUSH, DEFAULT_CHUNKSIZE, \
     FETCH_MANY_DEFAULT, typecodes, type_to_letter
 from .column_buffer import ColumnBuffer
+from .errors import NotSupportedError, ProgrammingError, ArraysAreDisabled, \
+    OperationalError
 from .ping import _start_ping_loop, _end_ping_loop
 from .logger import log_and_raise, logger, printdbg
-from .utils import NotSupportedError, ProgrammingError, get_array_size, \
-    false_generator, ArraysAreDisabled, OperationalError
+from .utils import get_array_size, false_generator, version_compare
 from .casting import lengths_to_pairs, sq_date_to_py_date, \
     sq_datetime_to_py_datetime, sq_numeric_to_decimal, arr_lengths_to_pairs
 from .SQSocket import Client
