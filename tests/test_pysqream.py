@@ -2,257 +2,294 @@
 
 TODO: Separate by modules
 """
-import threading
+import ssl
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
-from queue import Queue
+from socket import socket
 
 import pytest
-import pysqream
-from pysqream import casting
+from pysqream import connect
+from pysqream.casting import sq_date_to_py_date, sq_datetime_to_py_datetime
+from pysqream.connection import Connection
+from pysqream.SQSocket import SQSocket, Client
+from pysqream.utils import ProgrammingError, NonSSLPortError
 
-from .base import TestBase, Logger, connect_dbapi
+from .utils import ensure_empty_table, select
+
+TEMP_TABLE = "pysqream_test_pysqream_temp"
 
 
-q = Queue()
+class BaseTestConnection:
+    """
+    Base for connection tests, that provide fixture and connection factory
+    """
+
+    @pytest.fixture
+    def patch_response(self, monkeypatch):
+        """Utility to mock _open_connection and server response"""
+        def _m_open_connection(obj, *_):
+            obj.connect_to_socket = True
+            obj.client = Client(None)
+            obj.s = socket()
+            obj.ip, obj.port = obj.orig_ip, obj.orig_port
+        monkeypatch.setattr(Connection, '_open_connection', _m_open_connection)
+
+        def _patch_response(msg='{"connectionId": 123}'):
+            monkeypatch.setattr(Client, 'send_string', lambda *_: msg)
+        yield _patch_response
+
+    def connect(self, host, port, dbname='master', username='sqream',
+                password='sqream', *args, **kwargs):
+        """Wrapper for connection factory that provide default values"""
+        # to conform pysqream.connect function
+        # pylint: disable=keyword-arg-before-vararg,too-many-arguments
+        __tracebackhide__ = True  # pylint: disable=unused-variable
+        return connect(host, port, dbname, username, password, *args, **kwargs)
 
 
-class TestConnection:
+# TODO: Part of it should be tests of pysqream.SQSocket.SQSocket / Client
+# or pysqream.connection.Connection
+@pytest.mark.mock_connection
+class TestConnection(BaseTestConnection):
+    """
+    Test exceptions on connection and connections does not affect each other
+    """
 
-    def test_connection(self, ip_address):
+    def test_connection_wrong_ip_reraise(self, monkeypatch):
+        """
+        Test that TimeoutError on connection is reraised  with "wrong IP"
+        """
+        # Set small timeout for test speed, don't need to wait too long
+        def _set_small_timeout(obj, *_):
+            obj.s.settimeout(0.5)
+        monkeypatch.setattr(SQSocket, 'timeout', _set_small_timeout)
 
-        Logger().info("Connection tests - wrong ip")
-        try:
-            pysqream.connect('123.4.5.6', 5000, 'master', 'sqream', 'sqream', False, False)
-        except Exception as e:
-            if "perhaps wrong IP?" not in repr(e):
-                raise Exception("bad error message")
+        with pytest.raises(TimeoutError, match="Timeout when connecting to "
+                                               "SQream, perhaps wrong IP?"):
+            self.connect('1.1.1.1', 5000)
 
-        Logger().info("Connection tests - wrong port")
-        try:
-            pysqream.connect(ip_address, 6000, 'master', 'sqream', 'sqream', False, False)
-        except Exception as e:
-            if "Connection refused" not in repr(e):
-                raise Exception("bad error message")
+    def test_connection_wrong_port(self):
+        """
+        Test that ConnectionRefusedError is reraised with "wrong IP"
+        """
+        with pytest.raises(ConnectionRefusedError, match="Connection refused, "
+                                                         "perhaps wrong IP?"):
+            self.connect('127.0.0.1', 1)  # Ensure to connect on closed port
 
-        Logger().info("Connection tests - wrong database")
-        try:
-            pysqream.connect(ip_address, 5000, 'wrong_db', 'sqream', 'sqream', False, False)
-        except Exception as e:
-            if "Database 'wrong_db' does not exist" not in repr(e):
-                raise Exception("bad error message")
+    # Errors of wrong db, username & password are controlled, so
+    # TODO: Check only base error in response from server and check wrong json
+    def test_connection_wrong_database(self, patch_response, ip_address):
+        """Connection to wrong DB produces ProgrammingError"""
+        patch_response('{"error": "Database \'wrong_db\' does not exist"}')
 
-        Logger().info("Connection tests - wrong username")
-        try:
-            pysqream.connect(ip_address, 5000, 'master', 'wrong_username', 'sqream', False, False)
-        except Exception as e:
-            if "role 'wrong_username' doesn't exist" not in repr(e):
-                raise Exception("bad error message")
+        with pytest.raises(ProgrammingError, match=r"Database ['\"]\w+['\"] "
+                                                   "does not exist"):
+            self.connect(ip_address, 5000, 'wrong_db')
 
-        Logger().info("Connection tests - wrong password")
-        try:
-            pysqream.connect(ip_address, 5000, 'master', 'sqream', 'wrong_pw', False, False)
-        except Exception as e:
-            if "wrong password for role 'sqream'" not in repr(e):
-                raise Exception("bad error message")
+    def test_connection_wrong_login(self, patch_response, ip_address):
+        """Connection to DB with wrong username produces ProgrammingError"""
+        patch_response('{"error": "Login failure: role \'wrong_username\' '
+                       "doesn't exist\"}")
 
-        Logger().info("Connection tests - close() function")
-        con = connect_dbapi(ip_address)
-        cur = con.cursor()
-        con.close()
-        try:
+        with pytest.raises(ProgrammingError, match=r"role ['\"]\w+['\"] "
+                                                   "doesn't exist"):
+            self.connect(ip_address, 5000, username='wrong_username')
+
+    def test_connection_wrong_password(self, patch_response, ip_address):
+        """Connection to DB with wrong password produces ProgrammingError"""
+        patch_response('{"error": "Login failure: wrong password for role '
+                       "'sqream'\"}")
+
+        with pytest.raises(ProgrammingError, match="wrong password for role"):
+            self.connect(ip_address, 5000, password='wrong_pw')
+
+    def test_closed_cursor_execute_raise(self, mock_cursor):
+        """Closed Cursor raises ProgrammingError on attempt to execute"""
+        mock_cursor.close()
+        with pytest.raises(
+                ProgrammingError, match="Cursor has been closed"):
+            mock_cursor.execute('select 1')
+
+    def test_closed_connection_execute_raise(self, patch_response):
+        """Cursor raises ProgrammingError if base Connection is closed"""
+        patch_response()
+        conn = self.connect('1.1.1.1', 5000)
+        cur = conn.cursor()
+        conn.close()
+        with pytest.raises(
+                ProgrammingError, match="Connection has been closed"):
             cur.execute('select 1')
-        except Exception as e:
-          if "Connection has been closed" not in repr(e):
-              raise Exception("bad error message")
 
-        Logger().info("Connection tests - close_connection() function")
-        con = connect_dbapi(ip_address)
-        cur = con.cursor()
+    def test_connection_close_closed(self, patch_response):
+        """
+        Closed connection raises ProgrammingError on attempt to close again
+        """
+        patch_response()
+        con = self.connect('1.1.1.1', 5000)
         con.close()
-        try:
-            cur.execute('select 1')
-        except Exception as e:
-            if "Connection has been closed" not in repr(e):
-                raise Exception("bad error message")
-
-        Logger().info("Connection tests - Trying to close a connection that is already closed with close()")
-        con = connect_dbapi(ip_address)
-        con.close()
-        try:
+        with pytest.raises(
+                ProgrammingError, match="Trying to close a connection that's "
+                                        "already closed"):
             con.close()
-        except Exception as e:
-            if "Trying to close a connection that's already closed" not in repr(e):
-                raise Exception("bad error message")
-        #
-        Logger().info("Connection tests - Trying to close a connection that is already closed with close_connection()")
-        con = connect_dbapi(ip_address)
-        con.close()
-        try:
-            con.close()
-        except Exception as e:
-            if "Trying to close a connection that's already closed" not in repr(e):
-                raise Exception("bad error message")
-        #
-        # Logger().info("Connection tests - negative test for use_ssl=True")
-        # try:
-        #     pysqream.connect(ip_address, 5000, 'master', 'sqream', 'sqream', False, True)
-        # except Exception as e:
-        #     if "Using use_ssl=True but connected to non ssl sqreamd port" not in repr(e):
-        #         raise Exception("bad error message")
 
-        # Logger().info("Connection tests - positive test for use_ssl=True")
-        # con = connect_dbapi(ip_address, False, True)
-        # cur = con.cursor()
-        # res = cur.execute('select 1').fetchall()[0][0]
-        # if res != 1:
-        #     if f'expected to get 1, instead got {res}' not in repr(e):
-        #         raise Exception("bad error message")
+    def test_connection_ssl_violation_raises(self, monkeypatch, ip_address):
+        """
+        Violation of SSL protocol raises pysqream.utils.NonSSLPortError
+        """
+        def _interrupt(*_, **__):
+            raise ssl.SSLEOFError(
+                8, 'Mock | EOF occurred in violation of protocol (_ssl.c:997)')
+        monkeypatch.setattr(socket, 'connect', _interrupt)
 
-        Logger().info("Connection tests - negative test for clustered=True")
-        try:
-            pysqream.connect(ip_address, 5000, 'master', 'sqream', 'sqream', True, False)
-        except Exception as e:
-            if "Connected with clustered=True, but apparently not a server picker port" not in repr(e):
-                raise Exception("bad error message")
+        with pytest.raises(NonSSLPortError):
+            self.connect(ip_address, 5000, use_ssl=True)
 
-        Logger().info("Connection tests - positive test for clustered=True")
-        con = pysqream.connect(ip_address, 3108, "master", "sqream", "sqream", clustered=True)
-        cur = con.cursor()
-        cur.execute('select 1')
-        res = cur.fetchall()[0][0]
-        if res != 1:
-            if f'expected to get 1, instead got {res}' not in repr(e):
-                raise Exception("bad error message")
-        con.close()
+    def test_connection_ssl_wrong_version(self, monkeypatch, ip_address):
+        """Wrong SSL version number raises pysqream.utils.NonSSLPortError"""
+        def _interrupt(*_, **__):
+            raise ssl.SSLError(1, '[SSL: WRONG_VERSION_NUMBER] wrong version '
+                                  'number (_ssl.c:997)')
+        monkeypatch.setattr(socket, 'connect', _interrupt)
 
-        Logger().info("Connection tests - both clustered and use_ssl flags on True")
-        con = connect_dbapi(ip_address, True, True)
-        cur = con.cursor()
-        res = cur.execute('select 1').fetchall()[0][0]
-        if res != 1:
-            if f'expected to get 1, instead got {res}' not in repr(e):
-                raise Exception("bad error message")
-        con.close()
+        with pytest.raises(NonSSLPortError):
+            self.connect(ip_address, 5000, use_ssl=True)
 
-        Logger().info("Connection tests - all connections are closed when trying to close a single connection SQ-12821")
-        con1 = connect_dbapi(ip_address, True, True)
-        con2 = connect_dbapi(ip_address, True, True)
-        cur = con1.cursor()
-        cur.execute('select 1')
-        cur.fetchall()
-        cur.close()
+    def test_connection_clustered_no_picker(self, monkeypatch, ip_address):
+        """
+        Attempt to connect to clustered server, but picker port isn't present
+        """
+        def _timeout(*_, **__):
+            raise TimeoutError('timed out')
+        monkeypatch.setattr(Client, "receive", _timeout)
+
+        with pytest.raises(
+                ProgrammingError, match="Connected with clustered=True, but "
+                                        "apparently not a server picker port"):
+            self.connect(ip_address, 5000, clustered=True)
+
+    def test_close_connection_but_not_others(self, patch_response):
+        """
+        Test closing connections do not close others at the same ip / port
+
+        Connected issue SQ-12821
+        """
+        patch_response()
+        con1 = self.connect('1.1.1.1', 5000)
+        con2 = self.connect('1.1.1.1', 5000)
+        assert con1 is not con2
+        cur1 = con1.cursor()
+        assert cur1
         con2.close()
-        cur = con1.cursor()
-        cur.execute('select 1')
-        cur.fetchall()
-        cur.close()
-        con1.close()
+        cur2 = con1.cursor()
+        assert cur2 not in (cur1, None)
 
 
+class TestConnectionPositive(BaseTestConnection):
+    """Integration tests of successful connection with clustered and use_ssl"""
 
-class TestDatetime(TestBase):
+    def test_connection_positive_clustered_true(self, ip_address, cport):
+        """Positive integration test with clustered=True"""
+        con = self.connect(ip_address, cport, clustered=True)
+        cur = con.cursor()
+        assert cur.execute('select 1').fetchall()[0][0] == 1
 
-    def test_datetime(self):
+    def test_connection_positive_clustered_ssl_true(self, ip_address, cport):
+        """Positive integration test with clustered=True & use_ssl=True"""
+        con = self.connect(ip_address, cport + 1, clustered=True, use_ssl=True)
+        cur = con.cursor()
+        assert cur.execute('select 1').fetchall()[0][0] == 1
 
-        cur = self.con.cursor()
-        Logger().info("Datetime tests - insert different timezones datetime")
-        t1 = datetime.strptime(datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M"), '%Y-%m-%d %H:%M')
-        t2 = datetime.strptime(datetime.now().strftime("%Y-%m-%d %H:%M"), '%Y-%m-%d %H:%M')
-        cur.execute("create or replace table test (xdatetime datetime)")
-        cur.executemany('insert into test values (?)', [(t1,), (t2,)])
-        cur.execute("select * from test")
-        res = cur.fetchall()
-        if res[0][0] == res[1][0]:
-            raise Exception("expected to get different datetimes")
 
-        Logger().info("Datetime tests - insert datetime with microseconds")
-        t1 = datetime(1997, 5, 9, 4, 30, 10, 123456)
-        t2 = datetime(1997, 5, 9, 4, 30, 10, 987654)
-        cur.execute("create or replace table test (xdatetime datetime)")
-        cur.executemany('insert into test values (?)', [(t1,), (t2,)])
+# Integration tests for datetime column
+def test_insert_different_timezones(cursor):
+    """Tests insertions of the same datetime with different timezones"""
+    # TODO: Test different timezones in converters
+    # however it really tests nothing but merely two datetimes
 
-        cur.close()
+    def _round(dtm):
+        """
+        Rounds datetime microseconds for comparison
+
+        SQream DB stores datetime rounding to milliseconds,
+        so python's datetime should be rounded appropriately before
+        comparing. Also there is a bug, that pysqream use floor division
+        on converting formats https://sqream.atlassian.net/browse/SQ-13969
+        """
+        # so use floor division for appropriate comparison here too
+        return dtm.replace(microsecond=dtm.microsecond // 1000 * 1000)
+
+    cur = cursor
+    dt1 = datetime.now()
+    dt2 = dt1.astimezone(timezone.utc)
+    assert dt1 != dt2
+    data = [(dt1,), (dt2,)]
+    ensure_empty_table(cursor, TEMP_TABLE, "xdatetime datetime")
+    cur.executemany(f'insert into {TEMP_TABLE} values (?)', data)
+    results = select(cursor, TEMP_TABLE)
+    assert results != data  # Results do not include timezone info
+    assert len(results) == 2
+    assert results[0][0] == _round(dt1)
+    assert results[1][0] != _round(dt2)  # Doesn't include TZ info
+    assert results[1][0] == _round(dt2).replace(tzinfo=None)
+
+# test_datetime_mic tested inside test_insert_different_timezones
+# because now always includes microseconds
 
 
 class TestThreads:
+    """Tests for fetch operation in threads"""
 
     def connect_and_execute(self, num, con):
+        """Utility to run in separate threads"""
         cur = con.cursor()
-        cur.execute("select {}".format(num))
+        cur.execute(f"select {num}")
         res = cur.fetchall()
-        q.put(res)
         cur.close()
+        return res[0][0]
 
-    def test_threads(self, ip_address):
-        con = connect_dbapi(ip_address)
-
-        Logger().info("Thread tests - concurrent inserts with multiple threads through cursor")
-        t1 = threading.Thread(target=self.connect_and_execute, args=(3, con,))
-        t2 = threading.Thread(target=self.connect_and_execute, args=(3, con,))
-        t1.start()
-        t2.start()
-        t1.join()
-        t2.join()
-        res1 = q.get()[0][0]
-        res2 = q.get()[0][0]
-        if res1 != res2:
-            raise Exception("expected to get equal values. instead got res1 {} and res2 {}".format(res1, res2))
-
-        con.close()
+    def test_threads(self, conn):
+        """Separate threads would get results"""
+        results = []
+        with ThreadPoolExecutor() as executor:
+            futures = {executor.submit(self.connect_and_execute, i, conn)
+                       for i in range(6)}
+            results = set()
+            for future in as_completed(futures):
+                results.add(future.result())
+        assert results == {0, 1, 2, 3, 4, 5}
 
 
 class TestDatetimeUnitTest:
+    """
+    Unit tests for converters of SQream date & datetime to python datatype
+    """
+    functions = [sq_date_to_py_date, sq_datetime_to_py_datetime]
 
-    def test_zero_date(self):
-        error = 'year 0 is out of range'
-        try:
-            casting.sq_date_to_py_date(0, is_null=False)
-        except Exception as e:
-            if error not in str(e):
-                raise ValueError(f"Excepted to get error [{error}], got [{str(e)}]")
+    @pytest.mark.parametrize("value", [0, -3000])
+    @pytest.mark.parametrize("func", functions)
+    def test_value_is_out_of_range(self, func, value):
+        """value less then or equal to 0 produce ValueError on date"""
+        with pytest.raises(ValueError, match=r"year -?\d+ is out of range"):
+            func(value, is_null=False)
 
-    def test_zero_datetime(self):
-        error = 'year 0 is out of range'
-        try:
-            casting.sq_datetime_to_py_datetime(0, is_null=False)
-        except Exception as e:
-            if error not in str(e):
-                raise ValueError(f"Excepted to get error [{error}], got [{str(e)}]")
-
-    def test_negative_date(self):
-        error = 'year -9 is out of range'
-        try:
-            casting.sq_date_to_py_date(-3000, is_null=False)
-        except Exception as e:
-            if error not in str(e):
-                raise ValueError(f"Excepted to get error [{error}], got [{str(e)}]")
-
-    def test_negative_datetime(self):
-        error = 'year -9 is out of range'
-        try:
-            casting.sq_datetime_to_py_datetime(-3000, is_null=False)
-        except Exception as e:
-            if error in str(e):
-                raise ValueError(f"Excepted to get error [{error}], got [{str(e)}]")
-
-    def test_null_date(self):
-        res = casting.sq_date_to_py_date(-3000, is_null=True)
-        if res is not None:
-            raise ValueError(f"Excepted to get None, but got [{res}]")
-
-    def test_null_datetime(self):
-        res = casting.sq_datetime_to_py_datetime(-3000, is_null=True)
-        if res is not None:
-            raise ValueError(f"Excepted to get None, but got [{res}]")
+    @pytest.mark.parametrize("value", [0, -3000, 3000])
+    @pytest.mark.parametrize("func", functions)
+    def test_null_date(self, value, func):
+        """Result is None if is_null"""
+        assert func(value, is_null=True) is None
 
 
+# Keep for reason of returning
 # def copy_tests():
 #     global con
 #     cur = con.cursor()
 #     print("loading a csv file into a table through dbapi")
-#     cur.execute("create or replace table t (xint1 int, xint2 int, xbigint1 bigint, xbigint2 bigint, xdouble1 double,"
-#                 "xint3 int,xdouble2 double, xdate date, xdatetime datetime,xint4 int, xtext text, xint5 int, xint6 int)")
-#     cur.csv_to_table(os.path.join(os.path.abspath("."), "t.csv"), "t", delimiter="|")
+#     cur.execute("create or replace table t (xint1 int, xint2 int, "
+#                 "xbigint1 bigint, xbigint2 bigint, xdouble1 double,"
+#                 "xint3 int,xdouble2 double, xdate date, xdatetime datetime,"
+#                 "xint4 int, xtext text, xint5 int, xint6 int)")
+#     cur.csv_to_table(
+#         os.path.join(os.path.abspath("."), "t.csv"), "t", delimiter="|")
 #     cur.execute("select count(*) from t")
 #     res = cur.fetchall()[0][0]
 #     if res != 2000:

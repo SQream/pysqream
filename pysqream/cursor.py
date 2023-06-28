@@ -345,10 +345,10 @@ class Cursor:
     def execute(self, query, params=None):
         """Execute a statement. Parameters are not supported"""
 
-        if self.closed:
-            log_and_raise(ProgrammingError, 'Cursor has been closed')
-        elif self.base_connection_closed:
+        if self.base_connection_closed:
             self.conn._verify_con_open()
+        elif self.closed:
+            log_and_raise(ProgrammingError, 'Cursor has been closed')
 
         if params:
 

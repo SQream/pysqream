@@ -73,8 +73,10 @@ def false_generator():
 class Error(Exception):
     pass
 
+
 class Warning(Exception):
     pass
+
 
 class InterfaceError(Error):
     pass
@@ -110,3 +112,11 @@ class NotSupportedError(DatabaseError):
 
 class ArraysAreDisabled(DatabaseError):
     pass
+
+
+class NonSSLPortError(OperationalError):
+    """Raised on SSL error"""
+
+    def __init__(self, message: str = "Using use_ssl=True but connected to non"
+                                      " ssl sqreamd port"):
+        super().__init__(message)
