@@ -161,6 +161,7 @@ class TestConnection(BaseTestConnection):
         def _timeout(*_, **__):
             raise TimeoutError('timed out')
         monkeypatch.setattr(Client, "receive", _timeout)
+        monkeypatch.setattr(socket, 'connect', lambda *_: None)
 
         with pytest.raises(
                 ProgrammingError, match="Connected with clustered=True, but "
