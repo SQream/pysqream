@@ -307,6 +307,7 @@ def test_fetch_empty_array(cursor, data_type):
     assert select(cursor, TEMP_TABLE) == EMPTY_ARRAY_DATA
 
 
+@pytest.mark.slow
 @pytest.mark.parametrize("num", ["NUMERIC(38,38)", "NUMERIC(12,4)"])
 def test_fetch_empty_array_numeric_one_row(cursor, num):
     """Test empty array works fine for NUMERICs"""

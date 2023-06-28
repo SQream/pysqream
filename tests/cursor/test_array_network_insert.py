@@ -18,7 +18,7 @@ from decimal import Decimal
 import pytest
 import numpy as np  # numpy is currently in requirements of the package
 
-from pysqream.errors import DataError
+from pysqream.errors import DataError, OperationalError
 from pysqream.globals import ROWS_PER_FLUSH
 
 from ..utils import ALL_TYPES, SIMPLE_VALUES, ensure_empty_table, select
@@ -50,6 +50,7 @@ def cursor_with_arrays_allowed(cursor):
     yield cursor
 
 
+@pytest.mark.slow
 @pytest.mark.parametrize("data_type, data", [
     ("BOOL", [True, False, True, None, True]),
     ("TINYINT", [2, None, 255]),  # less than 256 (1 byte)
@@ -121,6 +122,7 @@ def test_insert_all_types_send_none_for_not_nullable(cursor, _type):
         cursor.executemany(f"insert into {TEMP_TABLE} values (?)", [(None,)])
 
 
+@pytest.mark.slow
 @pytest.mark.parametrize("size", [2, 10, 50])
 @pytest.mark.parametrize("_type", ALL_TYPES)
 def test_insert_fixed_size_array_works(cursor, _type, size):
@@ -132,14 +134,14 @@ def test_insert_fixed_size_array_works(cursor, _type, size):
     assert select(cursor, TEMP_TABLE) == data
 
 
-@pytest.mark.skip("Network insertion skips it silently SQ-13979")
 @pytest.mark.parametrize("size", [2, 10, 50])
 @pytest.mark.parametrize("_type", ALL_TYPES)
 def test_insert_fixed_size_array_exceed_range_raises(cursor, _type, size):
     """Test that insert raises with lists of length greater than defined"""
     ensure_empty_table(cursor, TEMP_TABLE, f"d {_type}[{size - 1}]")
     data = [([None] * i, ) for i in range(size + 1)] * 15
-    with pytest.raises(Exception):
+    with pytest.raises(OperationalError, match=r"Array size \d+ exceeds \w+ "
+                                               r"column limit \d+."):
         # Should not validate response
         cursor.executemany(f"insert into {TEMP_TABLE} values (?)", data)
 
