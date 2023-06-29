@@ -85,7 +85,7 @@ def sqream_clustered_port_number(pytestconfig):
     yield port
 
 
-@pytest.fixture(scope="session", autouse=True, name="db_name")
+@pytest.fixture(scope="session", name="db_name")
 def create_unique_database(pytestconfig, base_conn, worker_id):
     """Creates database for testing for master or for each worker"""
     recreate = pytestconfig.getoption("recreate")
@@ -95,9 +95,11 @@ def create_unique_database(pytestconfig, base_conn, worker_id):
     if recreate:
         try:
             cursor.execute(f"DROP DATABASE {db_name}")
-        except:  # noqa; pylint: disable=bare-except
-            ...
-
+        except Exception as exc:  # pylint: disable=W0718
+            if f"Database '{db_name}' not found" not in str(exc):
+                raise
+        else:
+            logger.warning("Previous database is dropped")
     try:
         cursor.execute(f"CREATE DATABASE {db_name}")
     except Exception as exc:

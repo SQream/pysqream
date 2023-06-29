@@ -37,7 +37,7 @@ COMPARISON_TRANSFORM_FUNCS = defaultdict(
     lambda: lambda x: x,
     {
         'bool': lambda x: bool(x),  # pylint: disable=unnecessary-lambda
-        'varchar': lambda x: x.strip(),
+        'varchar': lambda x: x.rstrip(),
         'real': lambda x: struct.unpack('f', struct.pack('f', x))[0],
     }
 )
