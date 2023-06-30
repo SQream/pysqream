@@ -21,6 +21,16 @@ class ConnectionMock:
         """Mock presence of close_connection method"""
 
 
+@pytest.fixture(scope='session', name='worker_id')
+def ensure_worker_id(request):
+    """Provide worker_id even when pytest-xdist is not installed"""
+    try:
+        value = request.getfixturevalue('worker_id')
+    except pytest.FixtureLookupError:
+        value = "master"
+    yield value
+
+
 def pytest_configure(config):
     """
     Configure separate log_files for workers
@@ -110,6 +120,7 @@ def create_unique_database(pytestconfig, base_conn, worker_id):
         raise
 
     yield db_name
+    logger.warning("Drop database for worker (%s): %s", worker_id, db_name)
     cursor.execute(f"DROP DATABASE {db_name}")
 
 

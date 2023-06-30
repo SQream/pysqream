@@ -2,6 +2,18 @@
 
 ## Testing
 
+### Must know
+
+New database is created for each pytest run (for all tests) with default name
+`test_pysqream_testrun_worker_master`, thus providing clean environment and 
+does not affect existing databases.
+
+> other names for running pytest in parallel see [Testing in Parallel](#testing-in-parallel)
+
+If DB has already existed, then it would produce error before tests runs
+To recreate testing DB - use `--recreate` flag:
+`pytest -svvx --recreate`
+
 ### Prepare
 
 Installation of the package (in editable mode for developing) while at root folder of the repository
@@ -71,6 +83,28 @@ Pytest uses `prepend` import mode by default, but it does not allow to
 import module as is, so mode changed in pytest.ini to recommended `importlib`,
 which allows to use native python imports and does not affect PATH
 
+## Testing in Parallel
+
+There are a lot of integration tests without mocking, for increasing their testing speed,
+there is some configuration that allows to use `pytest-xdist` for parallel testing out of box.
+
+To do that just install:
+`pip3 install pytest-xdist`
+And add flag to use it:
+`pytest -svvx --recreate -n auto`, where auto could be replaced with a number of cores
+While working with xdist:
+* logs are saved in separate files for each worker with the same path and basename
+* Separated databases are created for each worker `test_pysqream_testrun_worker_gw{n}`, where n - from 0 to core_number-1
+
+> Without xdist flags such as `-n`, it would be run as normal pytest. 
+
+### Issues with internal server error
+
+There might be error while testing with pytest-xdist from local machine outside the infrastructure, while DB is inside
+In that case turning of Ping helped
+
+> To turn-off make `_start_ping_loop` do nothing 
+
 ## Test Coverage
 
 Using `coverage` package:
@@ -106,3 +140,34 @@ Then generate html of new uncovered code:
 To know if any code is uncovered in the new commit after running the above:
 
 `python3 is_commit_covered.py`
+
+
+# Refactoring design
+
+To make testing much efficient it is advisable to split unit tests and
+integration test by folder (optionally by pytest.mark also)
+
+## Unit testing
+
+Make unit tests works only with small parts of code such a function or method,
+while mocking other responses by monkeypatch. For example, mock socket.socket.recv_into(bytes)
+so it would return data from generator providing bytest those server would provide.
+
+Set up Github Actions for checking unit-tests on PR, thus avoid broken code to be merged.
+
+## Integration testing
+
+Split them into few parts:
+1. Where checks integration of different parts of package with mocked server response. (Inner integration tests)
+2. Where checks everything work with real server by providing IP & ports. (Outer integration tests)
+
+Check coverage for unit testing, inner integration test and outer integration tests separately
+to fully cover everything.
+
+### Inner integration tests
+
+Check that different parts works together.
+
+### Outer integration tests
+
+For example, as it is now, when all the data fetch and insertion is checked by cursor calls.
