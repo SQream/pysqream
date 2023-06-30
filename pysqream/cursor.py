@@ -14,14 +14,14 @@ import struct
 
 from typing import List, Any, Union
 
-from .utils import version_compare
 from .globals import BUFFER_SIZE, ROWS_PER_FLUSH, DEFAULT_CHUNKSIZE, \
     FETCH_MANY_DEFAULT, typecodes, type_to_letter
 from .column_buffer import ColumnBuffer
+from .errors import NotSupportedError, ProgrammingError, ArraysAreDisabled, \
+    OperationalError
 from .ping import _start_ping_loop, _end_ping_loop
 from .logger import log_and_raise, logger, printdbg
-from .utils import NotSupportedError, ProgrammingError, get_array_size, \
-    false_generator, ArraysAreDisabled, OperationalError
+from .utils import get_array_size, false_generator, version_compare
 from .casting import lengths_to_pairs, sq_date_to_py_date, \
     sq_datetime_to_py_datetime, sq_numeric_to_decimal, arr_lengths_to_pairs
 from .SQSocket import Client
@@ -62,7 +62,8 @@ class Cursor:
         self.more_to_fetch = False
         self.parsed_rows = []
         self.row_size = 0
-        self.rows_per_flush = 0
+        # don't need to initialize each time on execute INSERT
+        self.rows_per_flush = ROWS_PER_FLUSH
         self.lastrowid = None
         self.base_connection_closed = False
 
@@ -165,7 +166,6 @@ class Cursor:
 
             self.row_size = sum(self.col_sizes) + sum(
                 self.col_nul) + 4 * sum(self.col_tvc)
-            self.rows_per_flush = ROWS_PER_FLUSH
             self.buffer.init_buffers(self.col_sizes, self.col_nul)
 
         # if self.statement_type == 'SELECT':
@@ -347,8 +347,9 @@ class Cursor:
 
         if self.base_connection_closed:
             self.conn._verify_con_open()
-        else:
-            self.conn._verify_cur_open()
+        elif self.closed:
+            log_and_raise(ProgrammingError, 'Cursor has been closed')
+
         if params:
 
             log_and_raise(ProgrammingError, "Parametered queries not supported. \
@@ -415,9 +416,15 @@ class Cursor:
         ''' Fetch an amount of result rows '''
 
         size = size or self.arraysize
-        # self._verify_open()
+        # Strange check. statement_type is always present after first execute
+        # but with none it should raise this error, actually it should
+        # raise this error for each value except SELECT
+        # It should also reset statement_type SELECT (close connection?) after
+        # all data is fetched, otherwise fetchmany could be run infinite number
+        # of times
         if self.statement_type not in (None, 'SELECT'):
-            log_and_raise(ProgrammingError ,'No open statement while attempting fetch operation')
+            log_and_raise(ProgrammingError,
+                          'No open statement while attempting fetch operation')
 
         if self.more_to_fetch is False:
             # All data from server for this select statement was fetched
@@ -431,11 +438,15 @@ class Cursor:
         if data_as == 'rows':
             res = self.parsed_rows[0:size if size != -1 else None]
             del self.parsed_rows[:size if size != -1 else None]
+        else:
+            # Otherwise it would raise at return statement because of
+            # absence of res variable
+            raise NotImplementedError('data_as supports only "rows"')
 
-        if logger.isEnabledFor(logging.INFO):
-            logger.info(f'Fetched {size} rows')
+        logger.info('Fetched %s rows', size)
 
-        return (res if res else []) if not fetchone else (res[0] if res else None)
+        # res is always a list
+        return res if not fetchone else (res[0] if res else None)
 
     def fetchone(self, data_as='rows'):
         """Fetch one result row"""

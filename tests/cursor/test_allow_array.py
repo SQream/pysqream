@@ -1,12 +1,19 @@
 """Test arrays disabled by default and raises on fetch and network insert"""
 import pytest
 from pysqream import connect
-from pysqream.utils import ArraysAreDisabled
+from pysqream.errors import ArraysAreDisabled
 
-from .utils import ALL_TYPES, SIMPLE_VALUES, select
+from ..utils import ALL_TYPES, SIMPLE_VALUES, select
 
 
 TEMP_TABLE = "test_arrays_allowed_temp"
+
+
+@pytest.fixture(name='cursor')
+def cursor_with_arrays_allowed(cursor):
+    """Redefined cursor fixture that disables arrays for this tests module"""
+    cursor.conn.allow_array = False
+    yield cursor
 
 
 @pytest.mark.parametrize("data_type", ALL_TYPES)

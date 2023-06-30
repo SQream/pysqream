@@ -18,10 +18,10 @@ from decimal import Decimal
 import pytest
 import numpy as np  # numpy is currently in requirements of the package
 
-from pysqream.utils import DataError
+from pysqream.errors import DataError, OperationalError
 from pysqream.globals import ROWS_PER_FLUSH
 
-from .utils import ALL_TYPES, SIMPLE_VALUES, ensure_empty_table, select
+from ..utils import ALL_TYPES, SIMPLE_VALUES, ensure_empty_table, select
 
 TEMP_TABLE = "test_array_network_insert_temp"
 
@@ -50,6 +50,7 @@ def cursor_with_arrays_allowed(cursor):
     yield cursor
 
 
+@pytest.mark.slow
 @pytest.mark.parametrize("data_type, data", [
     ("BOOL", [True, False, True, None, True]),
     ("TINYINT", [2, None, 255]),  # less than 256 (1 byte)
@@ -62,8 +63,8 @@ def cursor_with_arrays_allowed(cursor):
         Decimal('0.12324567890123456789012345678901234567'), None]),
     ("NUMERIC(12,4)", [Decimal('131235.1232'), None]),
     ("DATE", [date(1955, 11, 5), None, date(9999, 12, 31)]),
-    # ("DATETIME", [datetime(1955, 11, 5, 1, 24),
-    #               datetime(9999, 12, 31, 23, 59, 59, 999), None]),
+    ("DATETIME", [datetime(1955, 11, 5, 1, 24),
+                  datetime(9999, 12, 31, 23, 59, 59, 999000), None]),
     ("TEXT", [None, "Kiwis have tiny wings, but cannot fly.", "", "xXx"]),
 ])
 def test_insert_most_types(cursor, data_type, data):
@@ -76,15 +77,15 @@ def test_insert_most_types(cursor, data_type, data):
 
 
 @pytest.mark.parametrize("year, month, day, hour, minute, sec, mcrsec", [
-    (1955, 11, 5, 1, 24, 0, 0),
-    (9999, 12, 31, 23, 59, 59, 999),
+    (1955, 11, 5, 1, 24, 0, 111),
+    (9999, 12, 31, 23, 59, 59, 888444),
+    # (9999, 12, 31, 23, 59, 59, 888999),  # Won't pass while SQ-13969
 ])
 def test_insert_datetime(cursor, year, month, day, hour, minute, sec, mcrsec):
     """
     Test insert array of datetime works such buggy as DATATIME itself
 
     Should move to test_insert_most_types after fixing bugs:
-    Bug1 (SELECT) https://sqream.atlassian.net/browse/SQ-13967
     Bug2 (INSERT) https://sqream.atlassian.net/browse/SQ-13969
     """
     # Passing many argument allows to see datetime in tests explicitly, so
@@ -97,8 +98,8 @@ def test_insert_datetime(cursor, year, month, day, hour, minute, sec, mcrsec):
         f"insert into {TEMP_TABLE} values (?)", [([data, data2], )])
 
     # adjust to working in current bugs environment
-    res1 = datetime(year, month, day, hour, minute, sec, mcrsec // 1000)
-    res2 = datetime(year - 1, month, day, hour, minute, sec, mcrsec // 1000)
+    res1 = datetime(year, month, day, hour, minute, sec, round(mcrsec, -3))
+    res2 = datetime(year - 1, month, day, hour, minute, sec, round(mcrsec, -3))
     assert select(cursor, TEMP_TABLE) == [([res1, res2], )]
 
 
@@ -121,6 +122,7 @@ def test_insert_all_types_send_none_for_not_nullable(cursor, _type):
         cursor.executemany(f"insert into {TEMP_TABLE} values (?)", [(None,)])
 
 
+@pytest.mark.slow
 @pytest.mark.parametrize("size", [2, 10, 50])
 @pytest.mark.parametrize("_type", ALL_TYPES)
 def test_insert_fixed_size_array_works(cursor, _type, size):
@@ -132,14 +134,14 @@ def test_insert_fixed_size_array_works(cursor, _type, size):
     assert select(cursor, TEMP_TABLE) == data
 
 
-@pytest.mark.skip("Network insertion skips it silently SQ-13979")
 @pytest.mark.parametrize("size", [2, 10, 50])
 @pytest.mark.parametrize("_type", ALL_TYPES)
 def test_insert_fixed_size_array_exceed_range_raises(cursor, _type, size):
     """Test that insert raises with lists of length greater than defined"""
     ensure_empty_table(cursor, TEMP_TABLE, f"d {_type}[{size - 1}]")
     data = [([None] * i, ) for i in range(size + 1)] * 15
-    with pytest.raises(Exception):
+    with pytest.raises(OperationalError, match=r"Array size \d+ exceeds \w+ "
+                                               r"column limit \d+."):
         # Should not validate response
         cursor.executemany(f"insert into {TEMP_TABLE} values (?)", data)
 

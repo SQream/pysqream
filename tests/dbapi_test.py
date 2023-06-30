@@ -1,392 +1,456 @@
+"""Tests for network insertion for each data type except ARRAY
+
+Seems that should be a part of testing framework
+"""
+import struct
+import logging
+from collections import defaultdict
 from datetime import datetime, date
-from numpy.random import randint, uniform
-from queue import Queue
-from time import sleep
 from decimal import Decimal, getcontext
+# better use the same standard library, then numpy
+from string import ascii_letters, punctuation, whitespace
+
 import pytest
-import sys, os
+
 import pysqream
-sys.path.append(os.path.abspath(__file__).rsplit('tests/', 1)[0] + '/tests/')
-from base import TestBase, TestBaseWithoutBeforeAfter, Logger, connect_dbapi
+from pysqream.cursor import Cursor
+from pysqream.errors import ProgrammingError
+
+from .utils import ensure_empty_table, select
+
+logger = logging.getLogger(__name__)
 
 
-q = Queue()
-varchar_length = 10
-nvarchar_length = 10
-precision = 38
-scale = 10
-max_bigint = sys.maxsize if sys.platform not in ('win32', 'cygwin') else 2147483647
+VARCHAR_LENGTH = 34  # size of punctuations + 2
+NUMERIC_PRECISION = 38
+NUMERIC_SCALE = 10
+# Python doesn't have limits on integers, so use SQream specified value
+MAX_BIGINT = 9223372036854775807
 
+TEMP_TABLE = "pysqream_dbapi_test_temp"
 
-def generate_varchar(length):
-    return ''.join(chr(num) for num in randint(32, 128, length))
+# Used for transformation of python types to the same returned from SQream
+# For example, python's float with double precision, so conversion to single
+# precision is required before comparison
+COMPARISON_TRANSFORM_FUNCS = defaultdict(
+    # Returns function that produce the same value, convenient to avoid if/else
+    lambda: lambda x: x,
+    {
+        'bool': lambda x: bool(x),  # pylint: disable=unnecessary-lambda
+        'varchar': lambda x: x.rstrip(),
+        'real': lambda x: struct.unpack('f', struct.pack('f', x))[0],
+    }
+)
 
 
 getcontext().prec = 38
 
 
-col_types = ['bool', 'tinyint', 'smallint', 'int', 'bigint', 'real', 'double', 'date', 'datetime',
-             'varchar({})'.format(varchar_length), 'nvarchar({})'.format(varchar_length),
-             'numeric({},{})'.format(precision, scale)]
+COLUMN_TYPES = [
+    'bool', 'tinyint', 'smallint', 'int', 'bigint',
+    'real', 'double',
+    'date', 'datetime',
+    f'varchar({VARCHAR_LENGTH})', f'nvarchar({VARCHAR_LENGTH})',
+    f'numeric({NUMERIC_PRECISION},{NUMERIC_SCALE})']
 
-pos_test_vals = {'bool': (0, 1, True, False, 2, 3.6, 'test', (1997, 5, 9), (1997, 12, 12, 10, 10, 10)),
-                 'tinyint': (randint(0, 255), randint(0, 255), 0, 255, True, False),
-                 'smallint': (randint(-32768, 32767), 0, -32768, 32767, True, False),
-                 'int': (randint(-2147483648, 2147483647), 0, -2147483648, 2147483647, True, False),
-                 'bigint': (randint(1 - max_bigint, max_bigint), 0, 1 - max_bigint, max_bigint, True, False),
-                 'real': (
-                 float('inf'), float('-inf'), float('+0'), float('-0'), round(uniform(1e-6, 1e6), 5), 837326.52428,
-                 True, False),  # float('nan')
-                 'double': (float('inf'), float('-inf'), float('+0'), float('-0'), uniform(1e-6, 1e6), True, False),
-                 # float('nan')
-                 'date': (date(1998, 9, 24), date(2020, 12, 1), date(1997, 5, 9), date(1993, 7, 13), date(1001, 1, 1)),
-                 'datetime': (datetime(1001, 1, 1, 10, 10, 10), datetime(1997, 11, 30, 10, 10, 10),
-                              datetime(1987, 7, 27, 20, 15, 45), datetime(1993, 12, 20, 17, 25, 46)),
-                 'varchar': (
-                 generate_varchar(varchar_length), generate_varchar(varchar_length), generate_varchar(varchar_length),
-                 'b   '),
-                 'nvarchar': ('א', 'א  ', '', 'ab א'),
-                 'numeric': (Decimal("0"), Decimal("1"), Decimal("1.1"), Decimal("-1"), Decimal("-1.0"),
-                             Decimal("12345678901234567890.0123456789"))}
+POSITIVE_TEST_VALUES = {
+    'bool': (0, 1, True, False, 2, 3.6, 'test', (1997, 5, 9),
+             (1997, 12, 12, 10, 10, 10)),
+    'tinyint': (195, 228, 0, 255, True, False),
+    'smallint': (-14333, 0, -32768, 32767, True, False),
+    'int': (-1461491554, 0, -2147483648, 2147483647, True, False),
+    'bigint': (-4952819090345871336, 0,
+               1 - MAX_BIGINT, MAX_BIGINT, True, False),
+    'real': (float('inf'), float('-inf'), float('+0'), float('-0'),
+             486963.45377, 837326.52428, True, False),
+    'double': (float('inf'), float('-inf'), float('+0'), float('-0'),
+               413505.7291803785, True, False),  # float('nan')
+    'date': (date(1998, 9, 24), date(2020, 12, 1), date(1997, 5, 9),
+             date(1993, 7, 13), date(1001, 1, 1)),
+    'datetime': (datetime(1001, 1, 1, 10, 10, 10),
+                 datetime(1997, 11, 30, 10, 10, 10),
+                 datetime(1987, 7, 27, 20, 15, 45),
+                 datetime(1993, 12, 20, 17, 25, 46)),
+    # Usage of random values is bad practice which is even incompatible with
+    # testing in parallel
+    'varchar': [
+        ascii_letters[:VARCHAR_LENGTH], ascii_letters[-VARCHAR_LENGTH:],
+        punctuation, whitespace, 'b  ', '  b', '  b  '],
+    'nvarchar': ('א', 'א  ', '', 'ab א'),
+    'numeric': (Decimal("0"), Decimal("1"), Decimal("1.1"),
+                Decimal("-1"), Decimal("-1.0"),
+                Decimal("12345678901234567890.0123456789"))}
 
-neg_test_vals = {'tinyint': (258, 3.6, 'test', (1997, 5, 9), (1997, 12, 12, 10, 10, 10)),
-                 'smallint': (40000, 3.6, 'test', (1997, 5, 9), (1997, 12, 12, 10, 10, 10)),
-                 'int': (9999999999, 3.6, 'test', (1997, 5, 9), (1997, 12, 12, 10, 10, 10)),
-                 'bigint': (92233720368547758070, 3.6, 'test', (1997, 12, 12, 10, 10, 10)),
-                 'real': ('test', (1997, 12, 12, 10, 10, 10)),
-                 'double': ('test', (1997, 12, 12, 10, 10, 10)),
-                 'date': (5, 3.6, (-8, 9, 1), (2012, 15, 6), (2012, 9, 45), 'test', False, True),
-                 'datetime': (
-                 5, 3.6, (-8, 9, 1, 0, 0, 0), (2012, 15, 6, 0, 0, 0), (2012, 9, 45, 0, 0, 0), (2012, 9, 14, 26, 0, 0),
+NEGATIVE_TEST_VALUES = {
+    'tinyint': (258, 3.6, 'test', (1997, 5, 9), (1997, 12, 12, 10, 10, 10)),
+    'smallint': (40000, 3.6, 'test', (1997, 5, 9), (1997, 12, 12, 10, 10, 10)),
+    'int': (9999999999, 3.6, 'test', (1997, 5, 9), (1997, 12, 12, 10, 10, 10)),
+    'bigint': (92233720368547758070, 3.6, 'test', (1997, 12, 12, 10, 10, 10)),
+    'real': ('test', (1997, 12, 12, 10, 10, 10)),
+    'double': ('test', (1997, 12, 12, 10, 10, 10)),
+    'date': (5, 3.6, (-8, 9, 1), (2012, 15, 6), (2012, 9, 45), 'test',
+             False, True),
+    'datetime': (5, 3.6, (-8, 9, 1, 0, 0, 0), (2012, 15, 6, 0, 0, 0),
+                 (2012, 9, 45, 0, 0, 0), (2012, 9, 14, 26, 0, 0),
                  (2012, 9, 14, 13, 89, 0), 'test', False, True),
-                 'varchar': (5, 3.6, (1, 2), (1997, 12, 12, 10, 10, 10), False, True),
-                 'nvarchar': (5, 3.6, (1, 2), (1997, 12, 12, 10, 10, 10), False, True),
-                 'numeric': ('a')}
+    'varchar': (5, 3.6, (1, 2), (1997, 12, 12, 10, 10, 10), False, True),
+    'nvarchar': (5, 3.6, (1, 2), (1997, 12, 12, 10, 10, 10), False, True),
+    'numeric': ('a')}
+
+# Fill params for parametrization of tests
+POSITIVE_TEST_PARAMS = []
+NEGATIVE_TEST_PARAMS = []
+POSITIVE_TEST_PARAMS_BY_ONE = []
+NEGATIVE_TEST_PARAMS_BY_ONE = []
+for column_type in COLUMN_TYPES:
+    trimmed_type = column_type.split('(', maxsplit=1)[0]
+    positive_values = POSITIVE_TEST_VALUES[trimmed_type]
+    POSITIVE_TEST_PARAMS.append((column_type, positive_values))
+    # add only one value for testing by one
+    POSITIVE_TEST_PARAMS_BY_ONE.append((column_type, positive_values[0]))
+
+    if trimmed_type in NEGATIVE_TEST_VALUES:
+        negative_values = NEGATIVE_TEST_VALUES[trimmed_type]
+        NEGATIVE_TEST_PARAMS.append((column_type, negative_values))
+        for neg_val in negative_values:
+            NEGATIVE_TEST_PARAMS_BY_ONE.append((column_type, neg_val))
+
+TYPE_TUPLES_FOR_MOCKS = {
+    "bool": ['ftBool', 1, 0, 0],
+    "tinyint": ['ftUByte', 1, 0, 0],
+    "smallint": ['ftShort', 2, 0, 0],
+    "int": ['ftInt', 4, 0, 0],
+    "bigint": ['ftLong', 8, 0, 0],
+    "real": ['ftFloat', 4, 0, 0],
+    "double": ['ftDouble', 8, 0, 0],
+    "date": ['ftDate', 4, 0, 0],
+    "datetime": ['ftDateTime', 8, 0, 0],
+    f"varchar({VARCHAR_LENGTH})": ['ftVarchar', VARCHAR_LENGTH, 0, 0],
+    f"nvarchar({VARCHAR_LENGTH})": ['ftBlob', 0, 0, 0],
+    f"numeric({NUMERIC_PRECISION},{NUMERIC_SCALE})": [
+        'ftNumeric', 16, NUMERIC_SCALE, NUMERIC_PRECISION],
+}
 
 
-class TestPositive(TestBase):
+# TODO: Separate by functionality, not by positive & negative cases
+# class TestNetworkInsert:
+#     """
+#     Test insertion of data via network insert
 
-    def test_positive(self):
+#     It implies insertion by next flow:
+#         >>> data = [
+#         ...     (5, "Text1"),  # row 1 (col1, col2)
+#         ...     (9, "Text2"),  # row 2
+#         ...     ...  # other rows
+#         ... ]
+#         >>> cursor.executemany("INSERT INTO table VALUES (?, ?)", data)
+#         >>> # (?, ?) means values into 2 columns
+#     """
 
-        cur = self.con.cursor()
-        Logger().info('positive tests')
-        for col_type in col_types:
-            trimmed_col_type = col_type.split('(')[0]
 
-            Logger().info(f'Inserted values test for column type {col_type}')
-            cur.execute(f"create or replace table test (t_{trimmed_col_type} {col_type})")
-            for val in pos_test_vals[trimmed_col_type]:
-                cur.execute('truncate table test')
-                rows = [(val,)]
-                cur.executemany("insert into test values (?)", rows)
-                res = cur.execute("select * from test").fetchall()[0][0]
-                # Compare
-                error = False
-                assert (
-                        val == res or
-                        (val != res and trimmed_col_type == 'bool' and val != 0 and res == True) or
-                        (val != res and trimmed_col_type == 'varchar' and val != 0 and val.strip() == res) or
-                        (val != res and trimmed_col_type == 'real' and val != 0 and abs(res - val) <= 0.1)
-                )
+# Move those to integration tests
+# Logging scenarios from TestBase are not needed anymore, because tests
+# are verbose by themselves because of tests names and parametrization
+class TestPositive:
+    """Test get & set works with valid values"""
 
-            Logger().info(f'Null test for column type: {col_type}')
-            cur.execute("create or replace table test (t_{} {})".format(trimmed_col_type, col_type))
-            cur.executemany('insert into test values (?)', [(None,)])
-            res = cur.execute('select * from test').fetchall()[0][0]
-            assert res == None
+    @pytest.mark.slow
+    @pytest.mark.parametrize("col_type, data", POSITIVE_TEST_PARAMS)
+    def test_positive_insert(self, cursor, col_type, data):
+        """Test network insert works while inserting data"""
+        ensure_empty_table(cursor, TEMP_TABLE, f"t {col_type}")
+        to_insert = [(val,) for val in data]
+        cursor.executemany(f"insert into {TEMP_TABLE} values (?)", to_insert)
+        res = select(cursor, TEMP_TABLE)
 
-        cur.close()
+        trimmed_col_type = col_type.split('(', maxsplit=1)[0]
+        func = COMPARISON_TRANSFORM_FUNCS[trimmed_col_type]
+        to_compare = [(func(val), ) for val in data]
+        assert res == to_compare
 
-    def test_nulls(self):
+    @pytest.mark.slow
+    @pytest.mark.parametrize("col_type, val", POSITIVE_TEST_PARAMS_BY_ONE)
+    def test_positive_insert_by_one(self, cursor, col_type, val):
+        """Test network insert works while inserting data by one"""
+        ensure_empty_table(cursor, TEMP_TABLE, f"t {col_type}")
+        rows = [(val,)]
+        cursor.executemany(f"insert into {TEMP_TABLE} values (?)", rows)
+        res = select(cursor, TEMP_TABLE)
 
-        cur = self.con.cursor()
-        Logger().info("Case statement with nulls")
-        cur.execute("create or replace table test (xint int)")
-        cur.executemany('insert into test values (?)', [(5,), (None,), (6,), (7,), (None,), (8,), (None,)])
-        cur.executemany("select case when xint is null then 1 else 0 end from test")
+        trimmed_col_type = col_type.split('(', maxsplit=1)[0]
+        to_compare = COMPARISON_TRANSFORM_FUNCS[trimmed_col_type](val)
+        assert res == [(to_compare, )]
+
+    @pytest.mark.slow
+    @pytest.mark.parametrize("col_type", COLUMN_TYPES)
+    def test_positive_insert_nulls_by_one(self, cursor, col_type):
+        """Test network insert works while inserting None"""
+        # logging does not require because type will be printed with test
+        ensure_empty_table(cursor, TEMP_TABLE, f"t {col_type}")
+        cursor.executemany(f'insert into {TEMP_TABLE} values (?)', [(None,)])
+        res = select(cursor, TEMP_TABLE)
+        assert res == [(None, )]
+
+    def test_case_statement_with_nulls(self, cursor):
+        """Test network insert works while inserting None"""
+        ensure_empty_table(cursor, TEMP_TABLE, "xint int")
+        cursor.executemany(f'insert into {TEMP_TABLE} values (?)',
+                           [(5,), (None,), (6,), (7,), (None,), (8,), (None,)])
+        cursor.executemany(f"select case when xint is null then 1 else 0 end "
+                           f"from {TEMP_TABLE}")
         expected_list = [0, 1, 0, 0, 1, 0, 1]
-        res_list = []
-        res_list += [x[0] for x in cur.fetchall()]
-        cur.close()
+        res_list = [x[0] for x in cursor.fetchall()]
         assert expected_list == res_list
 
-    def test_bool(self):
+    @pytest.mark.parametrize('value', (True, False))
+    def test_select_bool_literals(self, cursor, value):
+        """Test select true/false returns integer value"""
+        cursor.execute(f"select {value}")
+        res = cursor.fetchall()
+        assert res == [(int(value), )]
 
-        cur = self.con.cursor()
-        Logger().info("Testing select true/false")
-        cur.execute("select false")
-        res = cur.fetchall()[0][0]
-        assert res == 0
-
-        cur.execute("select true")
-        res = cur.fetchall()[0][0]
-        cur.close()
-        assert res == 1
-
-    def test_when_running(self):
-
-        cur = self.con.cursor()
-        Logger().info("Running a statement when there is an open statement")
-        cur.execute("select 1")
-        sleep(10)
-        res = cur.execute("select 1").fetchall()[0][0]
-        cur.close()
-        assert res == 1
+    def test_running_statement_while_open_statement(self, cursor):
+        """Open statement should not impact new statement"""
+        cursor.execute("select 1")
+        # don't need to sleep, it's only slowing tests.  Code is synchronous.
+        res = cursor.execute("select 2").fetchall()  # Change value to be sure
+        assert res == [(2, )]
 
 
-class TestNegative(TestBase):
-    ''' Negative Set/Get tests '''
+@pytest.mark.mock_connection
+class TestNegativeGetSetWithMockConnection:
+    """
+    Negative Set/Get tests using mocked connection
 
-    def test_negative(self):
+    Real connection is no required for this tests, could use mocks,
+    because actual errors are raised by validation at pysqream side
+    """
 
-        cur = self.con.cursor()
-        Logger().info('Negative tests')
-        for col_type in col_types:
-            if col_type == 'bool':
-                continue
-            trimmed_col_type = col_type.split('(')[0]
-            cur.execute("create or replace table test (t_{} {})".format(trimmed_col_type, col_type))
-            for val in neg_test_vals[trimmed_col_type]:
-                rows = [(val,)]
-                with pytest.raises(Exception) as e:
-                    cur.executemany("insert into test values (?)", rows)
-                assert "Error packing columns. Check that all types match the respective column types" in str(e.value)
-        cur.close()
+    @pytest.fixture
+    def mock_cursor_exec(self, mock_cursor, monkeypatch):
+        """
+        Mocks execute method of cursor, for those checks errors after it
+        Use global fixture mock_cursor which does not create real connection,
+        so works faster
+        """
+        monkeypatch.setattr(mock_cursor, 'execute', lambda x: None)
+        yield mock_cursor
 
-    def test_incosistent_sizes(self):
+    def assert_insert_raises_pack(self, cursor, table_name: str, data):
+        """
+        Asserts that insertion of data into table_name raises ProgrammingError
+        """
+        __tracebackhide__ = True  # pylint: disable=unused-variable
+        self._assert_insert_raises(
+            cursor, table_name, data, ProgrammingError,
+            "Error packing columns. Check that all types match the respective "
+            "column types"
+        )
 
-        cur = self.con.cursor()
-        Logger().info("Inconsistent sizes test")
-        cur.execute("create or replace table test (xint int, yint int)")
-        with pytest.raises(Exception) as e:
-            cur.executemany('insert into test values (?, ?)', [(5,), (6, 9), (7, 8)])
-        cur.close()
-        assert "Incosistent data sequences passed for inserting. Please use rows/columns of consistent length" in str(
-            e.value)
+    @staticmethod
+    def _assert_insert_raises(
+            cursor, table_name: str, data,
+            exception=ProgrammingError, error_msg=""
+    ):
+        with pytest.raises(exception, match=error_msg):
+            cursor.executemany(f"insert into {table_name} values (?)", data)
 
-    def test_varchar_conversion(self):
+    @pytest.mark.parametrize("col_type, data", NEGATIVE_TEST_PARAMS)
+    def test_negative_insert(self, mock_cursor_exec, col_type, data):
+        """Test that insertion of bunch of invalid values raises"""
+        mock_col_metadata_for_column(mock_cursor_exec, col_type)
+        to_insert = [(value, ) for value in data]
+        self.assert_insert_raises_pack(mock_cursor_exec, TEMP_TABLE, to_insert)
 
-        cur = self.con.cursor()
-        Logger().info("Varchar - Conversion of a varchar to a smaller length")
-        cur.execute("create or replace table test (test varchar(10))")
-        with pytest.raises(Exception) as e:
-            cur.executemany("insert into test values ('aa12345678910')")
-        cur.close()
-        assert "expected response statementPrepared but got" in str(e.value)
+    @pytest.mark.parametrize("col_type, value", NEGATIVE_TEST_PARAMS_BY_ONE)
+    def test_negative_insert_by_one(self, mock_cursor_exec, col_type, value):
+        """Test that insertion of single invalid value raises"""
+        mock_col_metadata_for_column(mock_cursor_exec, col_type)
+        data = [(value,)]
+        self.assert_insert_raises_pack(mock_cursor_exec, TEMP_TABLE, data)
 
-    def test_nvarchar_conversion(self):
+    def test_inconsistent_sizes(self, mock_cursor_exec):
+        """Test inconsistent insertion data """
+        error_msg = "Incosistent data sequences passed for inserting. Please "\
+                    "use rows/columns of consistent length"
+        data = [(5,), (6, 9), (7, 8)]
+        with pytest.raises(ProgrammingError, match=error_msg):
+            mock_cursor_exec.executemany(
+                f'insert into {TEMP_TABLE} values (?, ?)', data)
 
-        cur = self.con.cursor()
-        Logger().info("Nvarchar - Conversion of a varchar to a smaller length")
-        cur.execute("create or replace table test (test nvarchar(10))")
-        with pytest.raises(Exception) as e:
-            cur.executemany("insert into test values ('aa12345678910')")
-        cur.close()
-        assert "expected response executed but got" in str(e.value)
+    @pytest.mark.parametrize("stmt", ["DML", "INSERT"])
+    def test_incorrect_fetchmany_wrong_statement(self, mock_cursor_exec, stmt):
+        """fetchmany is allowed only after SELECT statement"""
+        mock_cursor_exec.statement_type = stmt
+        with pytest.raises(
+                ProgrammingError,
+                match="No open statement while attempting fetch operation"):
+            mock_cursor_exec.fetchmany(2)
 
-    def test_incorrect_fetchmany(self):
+    @pytest.mark.parametrize("method", ["fetchall", "fetchone"])
+    def test_incorrect_fetch_all_one_args(self, mock_cursor_exec, method):
+        """
+        fetchall/fetchone does not support any arguments except "rows"
+        """
+        func = getattr(mock_cursor_exec, method)
+        with pytest.raises(Exception, match="Bad argument to fetch(all|one)"):
+            func(5)
 
-        cur = self.con.cursor()
-        Logger().info("Incorrect usage of fetchmany - fetch without a statement")
-        cur.execute("create or replace table test (xint int)")
-        with pytest.raises(Exception) as e:
-            cur.fetchmany(2)
-        cur.close()
-        assert "No open statement while attempting fetch operation" in str(e.value)
+    def test_parametered_query(self, mock_cursor):
+        """Parametered queries not supported by pysqream"""
+        with pytest.raises(
+                Exception, match="Parametered queries not supported"):
+            mock_cursor.execute('select * from test where xint > ?', "6")
 
-    def test_incorrect_fetchall(self):
-
-        cur = self.con.cursor()
-        Logger().info("Incorrect usage of fetchall")
-        cur.execute("create or replace table test (xint int)")
-        cur.executemany("select * from test")
-        with pytest.raises(Exception) as e:
-            cur.fetchall(5)
-        cur.close()
-        assert "Bad argument to fetchall" in str(e.value)
-
-    def test_incorrect_fetchone(self):
-
-        cur = self.con.cursor()
-        Logger().info("Incorrect usage of fetchone")
-        cur.execute("create or replace table test (xint int)")
-        cur.executemany("select * from test")
-        with pytest.raises(Exception) as e:
-            cur.fetchone(5)
-        cur.close()
-        assert "Bad argument to fetchone" in str(e.value)
-
-    def test_multi_statement(self):
-
-        cur = self.con.cursor()
-        Logger().info("Multi statements test")
-        with pytest.raises(Exception) as e:
-            cur.execute("select 1; select 1;")
-        cur.close()
-        assert "expected one statement, got" in str(e.value)
-
-    def test_parametered_query(self):
-
-        cur = self.con.cursor()
-        Logger().info("Parametered query tests")
-        params = 6
-        cur.execute("create or replace table test (xint int)")
-        cur.executemany('insert into test values (?)', [(5,), (6,), (7,)])
-        with pytest.raises(Exception) as e:
-            cur.execute('select * from test where xint > ?', str(params))
-        cur.close()
-        assert "Parametered queries not supported" in str(e.value)
-
-    def test_execute_closed_cursor(self):
-
-        cur = self.con.cursor()
-        Logger().info("running execute on a closed cursor")
-        cur.close()
-        try:
-            cur.execute("select 1")
-        except Exception as e:
-            if "Cursor has been closed" not in repr(e):
-                raise Exception(f'bad error message')
+    def test_execute_closed_cursor(self, mock_cursor):
+        """Attempt to execute on closed cursor raises ProgrammingError"""
+        mock_cursor.close()
+        with pytest.raises(ProgrammingError, match="Cursor has been closed"):
+            mock_cursor.execute("select 1")
 
 
-class TestFetch(TestBase):
+class TestNegative:
+    """Negative Set/Get for DB responses"""
 
-    def test_fetch(self):
+    @pytest.mark.parametrize("char_type, error", [
+        ("varchar", "Conversion of a varchar to a smaller length is not sup"),
+        ("nvarchar", "is too long for column")
+    ])
+    def test_varchars_conversion_not_supported(self, cursor, char_type, error):
+        """
+        Conversion of a (n)varchar to a smaller length is not supported by DB
+        """
+        ensure_empty_table(cursor, TEMP_TABLE, f"data {char_type}(10)")
+        with pytest.raises(Exception, match=error):
+            cursor.executemany(
+                f"insert into {TEMP_TABLE} values ('aa12345678910')")
 
-        cur = self.con.cursor()
-        cur.execute("create or replace table test (xint int)")
-        cur.executemany('insert into test values (?)', [(1,), (2,), (3,), (4,), (5,), (6,), (7,), (8,), (9,), (10,)])
-        # fetchmany(1) vs fetchone()
-        cur.execute("select * from test")
-        res = cur.fetchmany(1)[0][0]
-        cur.execute("select * from test")
-        res2 = cur.fetchone()[0]
-        cur.close()
+    def test_multi_statement_are_not_supported(self, cursor):
+        """DB does not support multiple statement in one execution"""
+        with pytest.raises(Exception, match="expected one statement, got"):
+            cursor.execute("select 1; select 1;")
+
+
+@pytest.mark.mock_connection
+class TestFetch:
+    """Test fetch methods using mocked connection"""
+
+    @pytest.fixture
+    def cursor_with_data(self, monkeypatch, mock_cursor):
+        """
+        Fixture that set range 1 - 11 on call Cursor._fetch_and_parse
+
+        All fetch methods call _fetch_and_parse under the hood, where the
+        minimum requested data depends on the server response and does not
+        depend on requested row amount (until it is greater)
+        """
+
+        def m_execute(obj, *_, **__):
+            """Mock for execute to reset parsed_rows"""
+            obj.more_to_fetch = True
+            obj.parsed_rows = []
+
+        monkeypatch.setattr(mock_cursor, '_fetch', lambda *_: False)
+        monkeypatch.setattr(
+            mock_cursor, '_parse_fetched_cols', lambda *_: [range(1, 11)])
+        monkeypatch.setattr(Cursor, 'execute', m_execute)
+        yield mock_cursor
+
+    def test_consistent_results_fetchone_fetchmany(self, cursor_with_data):
+        """fetchmany(1) vs fetchone() should produce consistent results"""
+        cursor_with_data.execute(f"select * from {TEMP_TABLE}")
+        res = cursor_with_data.fetchmany(1)[0][0]
+        cursor_with_data.execute(f"select * from {TEMP_TABLE}")
+        res2 = cursor_with_data.fetchone()[0]
+        assert res == res2 == 1
+
+    def test_consistent_results_fetchall_fetchmany(self, cursor_with_data):
+        """fetchmany(-1) vs fetchall() should produce consistent results"""
+        cursor_with_data.execute(f"select * from {TEMP_TABLE}")
+        res = cursor_with_data.fetchmany(-1)
+        cursor_with_data.execute(f"select * from {TEMP_TABLE}")
+        res2 = cursor_with_data.fetchall()
         assert res == res2
 
-        # fetchmany(-1) vs fetchall()
-        cur = self.con.cursor()
-        cur.execute("select * from test")
-        res3 = cur.fetchmany(-1)
-        cur.execute("select * from test")
-        res4 = cur.fetchall()
-        cur.close()
-        assert res3 == res4
-
-        # fetchone() loop
-        cur = self.con.cursor()
-        cur.execute("select * from test")
+    def test_fetchone_loop(self, cursor_with_data):
+        """fetchone() should continue retrieve the data"""
+        cursor_with_data.execute(f"select * from {TEMP_TABLE}")
         for i in range(1, 11):
-            x = cur.fetchone()[0]
-            assert x == i
-        cur.close()
+            assert cursor_with_data.fetchone()[0] == i
 
-    def test_combined_fetch(self):
+    def test_combined_fetch(self, cursor_with_data):
+        """fetchone() and fetchmany(custom_value) should continue retrieval"""
+        cursor_with_data.execute(f"select * from {TEMP_TABLE}")
+        res_list = [cursor_with_data.fetchone()[0]]
+        assert res_list == [1]
+        res_list += [x[0] for x in cursor_with_data.fetchmany(2)]
+        assert res_list == [1, 2, 3]
+        res_list.append(cursor_with_data.fetchone()[0])
+        assert res_list == [1, 2, 3, 4]
+        res_list += [x[0] for x in cursor_with_data.fetchall()]
+        assert res_list == [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
 
-        cur = self.con.cursor()
-        cur.execute("create or replace table test (xint int)")
-        cur.executemany('insert into test values (?)', [(1,), (2,), (3,), (4,), (5,), (6,), (7,), (8,), (9,), (10,)])
-        cur.execute("select * from test")
-        expected_list = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
-        res_list = []
-        res_list.append(cur.fetchone()[0])
-        res_list += [x[0] for x in cur.fetchmany(2)]
-        res_list.append(cur.fetchone()[0])
-        res_list += [x[0] for x in cur.fetchall()]
-        cur.close()
-        assert expected_list == res_list
+    def test_fetch_after_data_read(self, cursor_with_data):
+        """Test data is still """
+        cursor_with_data.execute("select * from test")
+        res = cursor_with_data.fetchmany(9)
+        assert res == [(v, ) for v in range(1, 10)]
+        res2 = cursor_with_data.fetchone()[0]
+        assert res2 == 10
+        res3 = cursor_with_data.fetchone()
+        assert res3 is None
 
-    def test_fetch_after_data_read(self):
+        res4 = cursor_with_data.fetchall()
+        assert res4 == []
 
-        cur = self.con.cursor()
-        cur.execute("create or replace table test (xint int)")
-        cur.executemany('insert into test values (?)', [(1,)])
-        cur.execute("select * from test")
-        x = cur.fetchone()[0]
-        res = cur.fetchone()
-        assert res is None
-
-        res = cur.fetchall()
-        assert res == []
-
-        res = cur.fetchmany(1)
-        assert res == []
-
-        cur.close()
+        res5 = cursor_with_data.fetchmany(1)
+        assert res5 == []
 
 
-class TestCursor(TestBaseWithoutBeforeAfter):
+class TestCursor:
+    """Tests for pysqream.cursor.Cursor"""
+    # TODO: Move in tests/cursor folder
 
-    def test_cursor_through_clustered(self):
-        con_clustered = pysqream.connect(self.ip, 3108, 'master', 'sqream', 'sqream', clustered=True)
+    def test_cursor_through_clustered(self, ip_address, cport):
+        """Test for cursor working with clustered connection"""
+        # TODO: should be tested not from Cursor, but as part of
+        # Connection._open_connection
+        con_clustered = pysqream.connect(
+            ip_address, cport, 'master', 'sqream', 'sqream', clustered=True)
         cur = con_clustered.cursor()
         assert cur.execute("select 1").fetchall()[0][0] == 1
         cur.close()
+        con_clustered.close()
 
-    def test_two_statements_same_cursor(self):
-        vals = [1]
-        con = connect_dbapi(self.ip)
-        cur = con.cursor()
-        cur.execute("select 1")
-        res1 = cur.fetchall()[0][0]
-        vals.append(res1)
-        cur.execute("select 1")
-        res2 = cur.fetchall()[0][0]
-        vals.append(res2)
-        cur.close()
-        con.close()
-        assert all(x == vals[0] for x in vals)
+    @pytest.mark.slow
+    def test_two_statements_same_cursor(self, cursor):
+        """Test two statements work using the same cursor"""
+        # Seems to be tested while others tests runs
+        res1 = cursor.execute("select 1").fetchall()[0][0]
+        assert res1 == 1
+        res2 = cursor.execute("select 2").fetchall()[0][0]
+        assert res2 == 2
 
-    def test_cursor_when_open_statement(self):
-        con = connect_dbapi(self.ip)
-        cur = con.cursor()
-        cur.execute("select 1")
-        sleep(10)
-        cur.execute("select 1")
-        res = cur.fetchall()[0][0]
-        cur.close()
-        con.close()
-        assert res == 1
+    # Duplcated tests removed here:
+    # test_cursor_when_open_statement was tested
+    # in test_running_statement_while_open_statement
 
-    def test_fetch_after_all_read(self):
-        con = connect_dbapi(self.ip)
-        cur = con.cursor()
-        cur.execute("create or replace table test (xint int)")
-        cur.executemany('insert into test values (?)', [(1,)])
-        cur.execute("select * from test")
-        x = cur.fetchone()[0]
-        res = cur.fetchone()
-        assert res is None
-
-        res = cur.fetchall()
-        assert res == []
-
-        res = cur.fetchmany(1)
-        assert res == []
-        cur.close()
-        con.close()
+    # test_fetch_after_all_read was tested in test_fetch_after_data_read
 
 
-class TestString(TestBase):
+# TestString is tested while testing of all types, including special symbols
+# But seems should be part of testing of converters
 
-    def test_insert_return_utf8(self):
-        cur = self.con.cursor()
-        cur.execute("create or replace table test (xvarchar varchar(20))")
-        cur.executemany('insert into test values (?)', [(u"hello world",), ("hello world",)])
-        cur.execute("select * from test")
-        res = cur.fetchall()
-        cur.close()
-        assert res[0][0] == res[1][0]
 
-    def test_strings_with_escaped_chars(self):
-        cur = self.con.cursor()
-        cur.execute("create or replace table test (xvarchar varchar(20))")
-        values = [("\t",), ("\n",), ("\\n",), ("\\\n",), (" \\",), ("\\\\",), (" \nt",), ("'abd''ef'",), ("abd""ef",),
-                  ("abd\"ef",)]
-        cur.executemany('insert into test values (?)', values)
-        cur.executemany("select * from test")
-        expected_list = ['', '', '\\n', '\\', ' \\', '\\\\', ' \nt', "'abd''ef'", 'abdef', 'abd"ef']
-        res_list = []
-        res_list += [x[0] for x in cur.fetchall()]
-        cur.close()
-        assert expected_list == res_list
+def mock_col_metadata_for_column(cursor: Cursor, col_type: str):
+    """
+    Adds col_types, col_sizes, col_scales, col_nul, col_tvc to cursor
+    """
+    ft_type, size, scale, _ = TYPE_TUPLES_FOR_MOCKS[col_type]
+    # mocking column metadata retrieving. monkeypatch is not required,
+    # because those attributes are reset each execute
+    cursor.col_types = [ft_type]
+    cursor.col_sizes = [size]
+    cursor.col_scales = [scale]
+    cursor.col_nul = [True]
+    cursor.col_tvc = ["nvarchar" in col_type]

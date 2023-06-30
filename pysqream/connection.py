@@ -1,19 +1,37 @@
-import logging
+"""Contain Connection, which is used to interact with SQream DB
 
-from pysqream.column_buffer import ColumnBuffer
-from pysqream.SQSocket import SQSocket, Client
-from ping import PingLoop, _end_ping_loop
-from pysqream.globals import BUFFER_SIZE, FETCH_MANY_DEFAULT, CYTHON
-from pysqream.logger import *
+Gets connection parameters and establishes connection via Socket.
+Responsible for opening network connections, establishing connections
+to DB, creation cursors
+
+Usage example:
+    >>> from pysqream.connection import Connection
+    >>> with Connection("192.168.0.35", 5000, False) as conn:
+    ...     conn.connect_database("db_name", "username", "password")
+    ...     cur = conn.cursor()
+    ...     # executing commands
+    ...
+    >>> # connection and cursor are closed
+"""
 import json
-import time
-from queue import Queue, Empty
-from struct import unpack
+import logging
 import socket
-from pysqream.utils import NotSupportedError, ProgrammingError, InternalError, IntegrityError, OperationalError, DataError, \
-    DatabaseError, InterfaceError, Warning, Error
-from pysqream.casting import date_to_int as pydate_to_int, datetime_to_long as pydt_to_long, sq_date_to_py_date as date_to_py, sq_datetime_to_py_datetime as dt_to_py
-from pysqream.cursor import Cursor
+import time
+from queue import Queue
+from struct import unpack
+
+from .column_buffer import ColumnBuffer
+from .SQSocket import SQSocket, Client
+from .globals import BUFFER_SIZE, CYTHON
+from .logger import log_and_raise, logger
+from .errors import NotSupportedError, ProgrammingError, Error
+from .casting import (
+    date_to_int as pydate_to_int,
+    datetime_to_long as pydt_to_long,
+    sq_date_to_py_date as date_to_py,
+    sq_datetime_to_py_datetime as dt_to_py,
+)
+from .cursor import Cursor
 
 
 class Connection:
@@ -72,8 +90,7 @@ class Connection:
             picker_socket.timeout(5)
             try:
                 read_len = unpack('i', self.client.receive(4))[0]
-            except socket.timeout:
-
+            except (socket.timeout, TimeoutError):  # For compatibility
                 log_and_raise(ProgrammingError, f'Connected with clustered=True, but apparently not a server picker port')
             picker_socket.timeout(None)
 
@@ -153,10 +170,6 @@ class Connection:
     #
     #     if self.con_closed:
     #         log_and_raise(ProgrammingError, 'Connection has been closed')
-
-    def _verify_cur_open(self):
-        if self.cur_closed:
-            log_and_raise(ProgrammingError, 'Cursor has been closed')
 
     def _verify_con_open(self):
         if self.con_closed:

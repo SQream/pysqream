@@ -2,10 +2,11 @@
 from datetime import date, datetime
 from decimal import Decimal
 from string import ascii_lowercase, ascii_uppercase
+from typing import Tuple, Union
 
 import pytest
 
-from .utils import ensure_empty_table, select
+from ..utils import ensure_empty_table, select
 
 TEMP_TABLE = "test_array_fetch_temp"
 
@@ -39,7 +40,7 @@ def str_to_decimal(value: str):
     return Decimal(value)
 
 
-def tuple_to_datetime(values: tuple):
+def tuple_to_datetime(values: Union[None, Tuple[int, ...]]):
     """Utility to tuple of values to datetime"""
     if values is None:
         return None
@@ -79,7 +80,7 @@ DATA = [
 
     [([date(1955, 11, 5), None, date(9999, 12, 31)],)],
     [([datetime(1955, 11, 5, 1, 24),
-        datetime(9999, 12, 31, 23, 59, 59, 999), None],)],
+        datetime(9999, 12, 31, 23, 59, 59, 999000), None],)],
 ]
 
 TEXT_VALUES = [
@@ -175,14 +176,18 @@ NUMERICS_GTE8 = [
 
 DATETIME_GTE8 = [
     [tuple_to_datetime(vals) for vals in
-        [(1955, 11, 5, 1, 24), None, (9999, 12, 31, 23, 59, 59, 999), None,
-         (5245, 8, 19, 7, 13, 16, 250), (2020, 5, 22, 15, 21, 51, 772),
-         None, (1998, 1, 1)]],
+        [(1955, 11, 5, 1, 24, 0, 0), None,
+         (9999, 12, 31, 23, 59, 59, 999000), None,
+         (5245, 8, 19, 7, 13, 16, 250000),
+         (2020, 5, 22, 15, 21, 51, 772000), None,
+         (1998, 1, 1, 0, 0, 0, 0)]],
     [tuple_to_datetime(vals) for vals in
-        [(3657, 6, 3, 15, 7, 38, 150), (6841, 3, 27, 17, 10, 45, 311),
-         None, None, (1945, 10, 4, 21, 3, 7, 315),
-         (2154, 9, 1, 9, 00, 30, 150), None, (1998, 1, 1),
-         (5000, 5, 5, 5, 5, 55, 555)]]
+        [(3657, 6, 3, 15, 7, 38, 150000),
+         (6841, 3, 27, 17, 10, 45, 311000), None, None,
+         (1945, 10, 4, 21, 3, 7, 315000),
+         (2154, 9, 1, 9, 0, 30, 150000), None,
+         (1998, 1, 1, 0, 0, 0, 0),
+         (5000, 5, 5, 5, 5, 55, 555000)]]
 ]
 
 
@@ -222,18 +227,10 @@ DATATYPES_DATA_GTE8 = [
      [','.join([d.strftime("'%F'") if d else "null" for d in r])
       for r in DATETIME_GTE8]],
     ["DATETIME",
-     # There is an issue when sqream response using time with ms,
-     # but pysqream passes it to datetime as microseconds
-     # So 2015-05-23 15:48:25.564 should be:
-     # datetime(2015, 05, 23, 15, 45, 25, 564000), but it 564 which
-     # represent value of 2015-05-23 15:48:25.000564
-     # After discussion with danielg decided to pass it as it for
-     # compatibility
-     [','.join([f"'{d.strftime('%F %H:%M:%S')}.{d.microsecond*1000:03.0f}'"
+     [','.join([f"'{d.isoformat(sep=' ', timespec='microseconds')}'"
                 if d else "null" for d in r])
       for r in DATETIME_GTE8]],
 ]
-
 
 DATA_GTE8 = [
     [([False, True, None, False, True, True, True, True],),
@@ -310,6 +307,7 @@ def test_fetch_empty_array(cursor, data_type):
     assert select(cursor, TEMP_TABLE) == EMPTY_ARRAY_DATA
 
 
+@pytest.mark.slow
 @pytest.mark.parametrize("num", ["NUMERIC(38,38)", "NUMERIC(12,4)"])
 def test_fetch_empty_array_numeric_one_row(cursor, num):
     """Test empty array works fine for NUMERICs"""

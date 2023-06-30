@@ -7,45 +7,36 @@ impression of success.
 """
 import pytest
 
-from pysqream.cursor import Cursor
-from pysqream.SQSocket import Client
-from pysqream.utils import OperationalError, ProgrammingError
+from pysqream.errors import OperationalError, ProgrammingError
 
 
-class ConnectionMock:
-    """Mock of pysqream.connection.Connection to prevent real connection"""
-    # pylint: disable=too-few-public-methods; they are not need for Mocks
-    s = None
-    version = 'Mock1'
+def _patch_send(monkeypatch, mock_cursor, response):
+    monkeypatch.setattr(mock_cursor.client, "send_string", lambda *_: response)
 
 
-def test_raise_on_error_from_sqream(monkeypatch):
+def test_raise_on_error_from_sqream(monkeypatch, mock_cursor):
     """JSON with error from SQREAM on closeStatement raises OperationalError"""
-    monkeypatch.setattr(
-        Client, "send_string", lambda *_: '{"error": "mock SQREAM error"}')
-    cur = Cursor(ConnectionMock(), [])
-    cur.open_statement = True
+    _patch_send(monkeypatch, mock_cursor, '{"error": "mock SQREAM error"}')
+    mock_cursor.open_statement = True
     with pytest.raises(OperationalError):
-        cur.close_stmt()
+        mock_cursor.close_stmt()
 
 
-def test_raise_on_invalid_json(monkeypatch):
+def test_raise_on_invalid_json(monkeypatch, mock_cursor):
     """
     Test if SQREAM sends invalid json on closeStatement raises ProgrammingError
     """
-    monkeypatch.setattr(Client, "send_string", lambda *_: "I'm invalid json")
-    cur = Cursor(ConnectionMock(), [])
-    cur.open_statement = True
+    _patch_send(monkeypatch, mock_cursor, "I'm invalid json")
+    mock_cursor.open_statement = True
     with pytest.raises(ProgrammingError):
-        cur.close_stmt()
+        mock_cursor.close_stmt()
 
 
-def test_raise_if_json_not_obj(monkeypatch):
+def test_raise_if_json_not_obj(monkeypatch, mock_cursor):
     """
     Test if SQREAM sends not object on closeStatement raises ProgrammingError
     """
-    monkeypatch.setattr(Client, "send_string", lambda *_: '["valid array"]')
-    cur = Cursor(ConnectionMock(), [])
-    cur.open_statement = True
+    _patch_send(monkeypatch, mock_cursor, '["valid array"]')
+    mock_cursor.open_statement = True
     with pytest.raises(ProgrammingError):
-        cur.close_stmt()
+        mock_cursor.close_stmt()

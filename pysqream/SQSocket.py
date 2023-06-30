@@ -7,6 +7,7 @@ from threading import Lock
 
 from .globals import PROTOCOL_VERSION, SUPPORTED_PROTOCOLS, clean_sqream_errors
 from .logger import printdbg, log_and_raise
+from .errors import NonSSLPortError
 
 
 class SQSocket:
@@ -34,19 +35,24 @@ class SQSocket:
         try:
             self.timeout(10)
             self.s.connect((ip, port))
-        except ConnectionRefusedError as e:
-            log_and_raise(ConnectionRefusedError, "Connection refused, perhaps wrong IP?")
+        except ConnectionRefusedError as exc:
+            raise ConnectionRefusedError(
+                "Connection refused, perhaps wrong IP?") from exc
         except ConnectionResetError:
             log_and_raise(Exception, 'Trying to connect to an SSL port with use_ssl = False')
+        except (socket.timeout, TimeoutError) as exc:  # For compatibility
+            raise TimeoutError("Timeout when connecting to "
+                               "SQream, perhaps wrong IP?") from exc
+        except ssl.SSLError as exc:
+            raise NonSSLPortError() from exc
         except Exception as e:
-            if 'timeout' in repr(e).lower():
-                log_and_raise(Exception, "Timeout when connecting to SQream, perhaps wrong IP?")
-            elif '[SSL: UNKNOWN_PROTOCOL] unknown protocol' in repr(e) or '[SSL: WRONG_VERSION_NUMBER]' in repr(e):
-                log_and_raise(Exception, 'Using use_ssl=True but connected to non ssl sqreamd port')
-            elif 'EOF occurred in violation of protocol (_ssl.c:' in repr(e):
+            error_msg = str(e)
+            # TODO: review necessity of reraising, replace all comparisons
+            # with catching if really needed
+            if '[SSL: UNKNOWN_PROTOCOL] unknown protocol' in error_msg or '[SSL: WRONG_VERSION_NUMBER]' in repr(e):
                 log_and_raise(Exception, 'Using use_ssl=True but connected to non ssl sqreamd port')
             else:
-                log_and_raise(Exception, e)
+                log_and_raise(Exception, error_msg)
         else:
             self.timeout(None)
 

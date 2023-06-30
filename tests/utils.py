@@ -4,6 +4,9 @@ from decimal import Decimal
 from typing import Any, List
 
 
+# Hide traceback for pylint, so it show only function at place it called
+__tracebackhide__ = True  # pylint: disable=unused-variable
+
 ALL_TYPES = [
     "BOOL",
     "TINYINT",

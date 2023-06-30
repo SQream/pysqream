@@ -12,7 +12,7 @@ setup_params = dict(
     url = "https://github.com/SQream/pysqream",
     author = "SQream",
     author_email = "info@sqream.com",
-    packages = find_packages(),
+    packages=find_packages(exclude=["tests*"]),  # Tests shouldn't be in
     classifiers = [
         "Programming Language :: Python :: 3.9",
         "License :: OSI Approved :: BSD License",
