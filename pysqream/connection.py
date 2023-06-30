@@ -90,8 +90,7 @@ class Connection:
             picker_socket.timeout(5)
             try:
                 read_len = unpack('i', self.client.receive(4))[0]
-            except socket.timeout:
-
+            except (socket.timeout, TimeoutError):  # For compatibility
                 log_and_raise(ProgrammingError, f'Connected with clustered=True, but apparently not a server picker port')
             picker_socket.timeout(None)
 

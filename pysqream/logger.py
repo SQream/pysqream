@@ -37,6 +37,9 @@ def stop_logging():
 def log_and_raise(exception_type, error_msg):
     # TODO: remove redundant logging, python handle logging by itself
     # Should raise directly
+
+    # Allows to show place of calling in pytest
+    __tracebackhide__ = True  # pylint: disable=unused-variable
     logger.warning("log_and_raise is deprecated, use direct raise")
     if logger.isEnabledFor(logging.ERROR):
         logger.error(error_msg, exc_info=True)

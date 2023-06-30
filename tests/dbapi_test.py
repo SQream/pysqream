@@ -8,8 +8,7 @@ from collections import defaultdict
 from datetime import datetime, date
 from decimal import Decimal, getcontext
 # better use the same standard library, then numpy
-from random import randint, uniform, choice
-from string import printable
+from string import ascii_letters, punctuation, whitespace
 
 import pytest
 
@@ -22,8 +21,7 @@ from .utils import ensure_empty_table, select
 logger = logging.getLogger(__name__)
 
 
-VARCHAR_LENGTH = 10
-NVARCHAR_LENGTH = 10
+VARCHAR_LENGTH = 34  # size of punctuations + 2
 NUMERIC_PRECISION = 38
 NUMERIC_SCALE = 10
 # Python doesn't have limits on integers, so use SQream specified value
@@ -39,19 +37,10 @@ COMPARISON_TRANSFORM_FUNCS = defaultdict(
     lambda: lambda x: x,
     {
         'bool': lambda x: bool(x),  # pylint: disable=unnecessary-lambda
-        'varchar': lambda x: x.strip(),
+        'varchar': lambda x: x.rstrip(),
         'real': lambda x: struct.unpack('f', struct.pack('f', x))[0],
     }
 )
-
-
-def generate_varchar(length):
-    """
-    Generate string of size `length` from random printable ASCII chars
-    """
-    # Should not rely on int representation of letters because it
-    # depends on OS
-    return ''.join(choice(printable) for _ in range(length))
 
 
 getcontext().prec = 38
@@ -67,25 +56,26 @@ COLUMN_TYPES = [
 POSITIVE_TEST_VALUES = {
     'bool': (0, 1, True, False, 2, 3.6, 'test', (1997, 5, 9),
              (1997, 12, 12, 10, 10, 10)),
-    'tinyint': (randint(0, 255), randint(0, 255), 0, 255, True, False),
-    'smallint': (randint(-32768, 32767), 0, -32768, 32767, True, False),
-    'int': (randint(-2147483648, 2147483647), 0, -2147483648,
-            2147483647, True, False),
-    'bigint': (randint(1 - MAX_BIGINT, MAX_BIGINT), 0,
+    'tinyint': (195, 228, 0, 255, True, False),
+    'smallint': (-14333, 0, -32768, 32767, True, False),
+    'int': (-1461491554, 0, -2147483648, 2147483647, True, False),
+    'bigint': (-4952819090345871336, 0,
                1 - MAX_BIGINT, MAX_BIGINT, True, False),
     'real': (float('inf'), float('-inf'), float('+0'), float('-0'),
-             round(uniform(1e-6, 1e6), 5), 837326.52428, True, False),
+             486963.45377, 837326.52428, True, False),
     'double': (float('inf'), float('-inf'), float('+0'), float('-0'),
-               uniform(1e-6, 1e6), True, False),  # float('nan')
+               413505.7291803785, True, False),  # float('nan')
     'date': (date(1998, 9, 24), date(2020, 12, 1), date(1997, 5, 9),
              date(1993, 7, 13), date(1001, 1, 1)),
     'datetime': (datetime(1001, 1, 1, 10, 10, 10),
                  datetime(1997, 11, 30, 10, 10, 10),
                  datetime(1987, 7, 27, 20, 15, 45),
                  datetime(1993, 12, 20, 17, 25, 46)),
-    'varchar': (generate_varchar(VARCHAR_LENGTH),
-                generate_varchar(VARCHAR_LENGTH),
-                generate_varchar(VARCHAR_LENGTH), 'b   '),
+    # Usage of random values is bad practice which is even incompatible with
+    # testing in parallel
+    'varchar': [
+        ascii_letters[:VARCHAR_LENGTH], ascii_letters[-VARCHAR_LENGTH:],
+        punctuation, whitespace, 'b  ', '  b', '  b  '],
     'nvarchar': ('א', 'א  ', '', 'ab א'),
     'numeric': (Decimal("0"), Decimal("1"), Decimal("1.1"),
                 Decimal("-1"), Decimal("-1.0"),
