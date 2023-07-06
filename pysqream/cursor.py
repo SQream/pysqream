@@ -1,15 +1,30 @@
-from pysqream.utils import version_compare
+"""Contain Cursor, which is used to manage the context of a fetch.
+
+Gets statement, send it to SQream then check if statement ready and
+send it again for exectuion.
+Responsible for both fetching and extracting data.
+
+Should be used only by .connection.Connection
+"""
+
+import functools
 import json
-from pysqream.globals import BUFFER_SIZE, ROWS_PER_FLUSH, DEFAULT_CHUNKSIZE, FETCH_MANY_DEFAULT, typecodes, type_to_letter, \
-    ARROW, pa, csv
-from pysqream.column_buffer import ColumnBuffer
-from pysqream.ping import PingLoop, _start_ping_loop, _end_ping_loop
-from pysqream.logger import *
-# So it won't silently merge with array feature branch
-from pysqream.utils import NotSupportedError, ProgrammingError, OperationalError
-from pysqream.casting import lengths_to_pairs, sq_date_to_py_date, sq_datetime_to_py_datetime, sq_numeric_to_decimal
-from pysqream.SQSocket import Client
-import time
+import logging
+import struct
+
+from typing import List, Any, Union
+
+from .utils import version_compare
+from .globals import BUFFER_SIZE, ROWS_PER_FLUSH, DEFAULT_CHUNKSIZE, \
+    FETCH_MANY_DEFAULT, typecodes, type_to_letter
+from .column_buffer import ColumnBuffer
+from .ping import _start_ping_loop, _end_ping_loop
+from .logger import log_and_raise, logger, printdbg
+from .utils import NotSupportedError, ProgrammingError, get_array_size, \
+    false_generator, ArraysAreDisabled, OperationalError
+from .casting import lengths_to_pairs, sq_date_to_py_date, \
+    sq_datetime_to_py_datetime, sq_numeric_to_decimal, arr_lengths_to_pairs
+from .SQSocket import Client
 
 
 def _is_null(nullable):
@@ -17,6 +32,17 @@ def _is_null(nullable):
 
 
 class Cursor:
+    """
+    Represent a database cursor, which is used to manage the context of
+    a fetch operation.
+
+    Cursors created from the same connection are not
+    isolated, i.e., any changes done to the database by a cursor are
+    immediately visible by the other cursors.
+
+    Base PEP 249 – Python Database API Specification v2.0
+    https://peps.python.org/pep-0249/#id12
+    """
 
     def __init__(self, conn, cursors):
 
@@ -39,7 +65,7 @@ class Cursor:
         self.rows_per_flush = 0
         self.lastrowid = None
         self.base_connection_closed = False
-    
+
     def get_statement_type(self):
 
         return self.statement_type
@@ -104,6 +130,11 @@ class Cursor:
         else:
             self.statement_type = 'INSERT'
 
+        # Check if arrays are allowed before executing the rest
+        if not self._validate_arrays_usage():
+            log_and_raise(
+                ArraysAreDisabled, "Arrays are disabled in this connection.")
+
         # {"isTrueVarChar":false,"nullable":true,"type":["ftInt",4,0]}
         self.col_names, self.col_tvc, self.col_nul, self.col_type_tups = \
             list(zip(*[(col.get("name", ""), col["isTrueVarChar"], col["nullable"], col["type"]) for col in self.column_list]))
@@ -113,9 +144,25 @@ class Cursor:
         }
 
         if self.statement_type == 'INSERT':
-            self.col_types = [type_tup[0] for type_tup in self.col_type_tups]
-            self.col_sizes = [type_tup[1] for type_tup in self.col_type_tups]
-            self.col_scales = [type_tup[2] for type_tup in self.col_type_tups]
+            # variables should not be defined outside __init__
+            # TODO: get rid of definition of attributes outside __init__
+            self.col_types = []
+            self.col_sizes = []
+            self.col_scales = []
+            for type_tup in self.col_type_tups:
+                is_array = 'ftArray' in type_tup
+                offset = 0
+                _type = type_tup[0]
+                if is_array:
+                    # for array other stuff like scale is shifted in type_tup
+                    offset = 1
+                    # Use tuple for ftArray that will be checked
+                    # only in buffer like 'ftArray' in col_type
+                    _type = type_tup[0:2]
+                self.col_types.append(_type)
+                self.col_sizes.append(type_tup[1 + offset])
+                self.col_scales.append(type_tup[2 + offset])
+
             self.row_size = sum(self.col_sizes) + sum(
                 self.col_nul) + 4 * sum(self.col_tvc)
             self.rows_per_flush = ROWS_PER_FLUSH
@@ -130,6 +177,20 @@ class Cursor:
         if logger.isEnabledFor(logging.INFO):
             logger.info \
                 (f'Executing statement over connection {self.conn.connection_id} with statement id {self.stmt_id}:\n{stmt}')
+
+    def _validate_arrays_usage(self) -> bool:
+        """
+        Checks if the executing statement uses arrays and if they are allowed.
+
+        Returns:
+            bool: False if arrays are not allowed by connection, but used in
+              statement, True otherwise.
+        """
+        if not self.conn.allow_array:
+            for col in self.column_list:
+                if "ftArray" in col["type"]:
+                    return False
+        return True
 
     def _fill_description(self):
         """Getting parameters for the cursor's 'description' attribute, even for
@@ -168,8 +229,7 @@ class Cursor:
         packed_cols = self.buffer.pack_columns(cols, capacity, self.col_types,
                                                self.col_sizes, self.col_nul,
                                                self.col_tvc, self.col_scales)
-        del cols
-        byte_count = sum(len(packed_col) for packed_col in packed_cols)
+        byte_count = functools.reduce(lambda c, n: c + len(n), packed_cols, 0)
 
         # Sending put message and binary header
         self.client.send_string(f'{{"put":{capacity}}}', False)
@@ -177,10 +237,10 @@ class Cursor:
 
         # Sending packed data (binary buffer)
         for packed_col in packed_cols:
+            printdbg("Packed data sent:", packed_col)
             self.s.send((packed_col))
 
         self.client.validate_response(self.client.get_response(), '{"putted":"putted"}')
-        del packed_cols
 
     def _fetch(self, sock=None):
 
@@ -205,25 +265,34 @@ class Cursor:
 
         for type_tup, nullable, tvc in zip(self.col_type_tups, self.col_nul,
                                            self.col_tvc):
-            column = {'nullable': False, 'true_nvarchar': False, 'data_column': False}
+            column = {'nullable': False, 'true_nvarchar': False}
+
+            is_array = 'ftArray' in type_tup
 
             if nullable:
                 column['nullable'] = unsorted_data_columns.pop(0)
-            if tvc:
-                column['true_nvarchar'] = unsorted_data_columns.pop(0).cast('i')
+            if is_array:
+                column['array_lengths'] = unsorted_data_columns\
+                    .pop(0).cast('i')
+            elif tvc:
+                column['true_nvarchar'] = unsorted_data_columns\
+                    .pop(0).cast('i')
 
             column['data_column'] = unsorted_data_columns.pop(0)
-            if type_tup[0] not in ('ftVarchar', 'ftBlob', 'ftNumeric'):
-                column['data_column'] = column['data_column'].cast(type_to_letter[type_tup[0]])
-            else:
+
+            if type_tup[0] in ('ftVarchar', 'ftBlob', 'ftNumeric'):
                 column['data_column'] = column['data_column'].tobytes()
+            elif not is_array:
+                column['data_column'] = column['data_column'].cast(
+                    type_to_letter[type_tup[0]])
+
             self.data_columns.append(column)
 
         self.unparsed_row_amount = num_rows_fetched
 
         return num_rows_fetched
 
-    def _parse_fetched_cols(self, queue=None):
+    def _parse_fetched_cols(self):
         """Used by _fetch_and_parse"""
 
         self.extracted_cols = []
@@ -234,8 +303,11 @@ class Cursor:
         for idx, raw_col_data in enumerate(self.data_columns):
 
             # Extract data according to column type
-            if self.col_tvc[idx]:  # nvarchar
-                col = self._extract_nvarchar(idx , raw_col_data)
+            if self.col_type_tups[idx][0] == "ftArray":
+                col = self._extract_array(idx, raw_col_data)
+
+            elif self.col_tvc[idx]:  # nvarchar
+                col = self._extract_nvarchar(idx, raw_col_data)
 
             elif self.col_type_tups[idx][0] == "ftVarchar":
                 col = self._extract_varchar(idx, raw_col_data)
@@ -560,6 +632,225 @@ class Cursor:
         else:
             col = raw_col_data['data_column']
         return col
+
+    def _extract_array(
+            self, idx: int, raw_col_data: memoryview) -> List[List[Any]]:
+        """Extract array data from buffer
+
+        Args:
+            idx: integer index of extracting column in response
+            raw_col_data: memoryview (bytes represenation) of data of
+              column
+
+        Returns:
+            A list with Arrays of data. Array represented as python
+            lists also.
+
+            [[1, 5, 7], None, [31, 2, None, 6]]
+        """
+        sub_type_tup = self.col_type_tups[idx]
+        typecode = typecodes.get(sub_type_tup[1])
+
+        if typecode == "STRING":
+            return self._extract_unfixed_array(raw_col_data)
+
+        if typecode not in ("NUMBER", "DATETIME"):
+            log_and_raise(
+                NotSupportedError,
+                f'Array of "{sub_type_tup[1]}" is not supported',
+            )
+
+        return self._extract_fixed_array(idx, raw_col_data)
+
+    def _extract_fixed_array(
+            self, idx: int, raw_col_data: memoryview) -> List[List[Any]]:
+        """Extract array with data of fixed size
+
+        Extract array from binary data of an Array with types of fixed
+        size (BOOL, TINYINT, SMALLINT, INT, BIGINT, REAL, DOUBLE,
+        NUMERIC, DATE, DATETIME). But not with TEXT
+
+        Raw data contains binary data of nulls at each index in array
+        and data separated by optional padding (trailing zeros at the
+        end for portions of data whose lengths are not dividable by 8)
+
+        Example for binary data for 1 row of boolean array[true, null,
+        false]:
+        `010 00000 100` -> replace paddings with _ `010_____100` where
+        `010` are flag of null data inside array. Then `00000` is a
+        padding to make lengths of data about nulls to be dividable by 8
+        in case of array of length 8, 16, 24, 32 ... there won't be a
+        padding then `100` is a binary representation of 3 boolean
+        values itself
+
+        Args:
+            idx: integer index of extracting column in response
+            raw_col_data: memoryview (bytes represenation) of data of
+              column
+
+        Returns:
+            A list with Arrays of data. Array represented as python
+            lists also.
+
+            [[1, 5, 7], None, [31, 2, None, 6]]
+        """
+        buffer = raw_col_data['data_column']
+        nulls_buffer = raw_col_data['nullable'] or false_generator()
+
+        # Calculate size based on data_format
+        data_size = struct.calcsize(type_to_letter[self.col_type_tups[idx][1]])
+        trasform = self._get_trasform_func(idx)
+
+        def _get_array(data: memoryview, nulls: memoryview, arr_size: int):
+            """Construct one single array from data of type with fixed size"""
+            # Do not use direct data.cast(data_format) to skip nulls
+            # and process all data (including Numeric) by the same pattern
+            return [
+                trasform(data[i * data_size:(i + 1) * data_size], nulls[i])
+                for i in range(arr_size)
+            ]
+
+        col = []
+        start = 0
+        for buf_len, null in zip(raw_col_data['array_lengths'], nulls_buffer):
+            if null:
+                col.append(None)
+            else:
+                array_size = get_array_size(data_size, buf_len)
+                padding = (8 - array_size % 8) % 8
+
+                # Slices of memoryview do not copy underlying data
+                data = buffer[start + array_size + padding:start + buf_len]
+                nulls = buffer[start:start + array_size]
+
+                col.append(_get_array(data, nulls, array_size))
+            start += buf_len
+        return col
+
+    def _extract_unfixed_array(
+            self, raw_col_data: memoryview) -> List[List[Union[str, None]]]:
+        """Extract array with data of unfixed size
+
+        Extract array from binary data of an Array with types of TEXT
+        - unfixed size
+
+        Contains 8 bytes (long) that contains length of whole array
+        (including nulls), binary data of nulls at each index in array
+        and data separated by optional padding. Data here represents
+        chunked info of each element inside array
+
+        At the beginning, the data contains **cumulative** lengths
+        (however is better to say indexes of their ends at data buffer)
+        of all data strings (+ their paddings) of array as integers.
+        The number of those int lengths is equal to the array length
+        (those was in 8 bytes above) and because int take 4 bytes it all
+        takes N * 4 bytes. Then if it is not divisible by 8 -> + padding
+        Then the strings data also separated by optional padding
+
+        Example for binary data for 1 row of text array['ABC','ABCDEF',null]:
+        (padding zeros replaced with _)
+        Whole buffer data: `3000000 001_____ 3000 14000 16000 ____ `
+                           `65 66 67 _____ 65 66 67 68 69 70 __`
+        Length of array: `3000000` -> long 3
+        Nulls: `001_____`
+        Length of strings: `3000 14000 16000 ____` -> 3,14,16 + padding
+        Strings: `65, 66, 67, _____ 65, 66, 67, 68, 69, 70, __`
+        L1 = 3, so [0 - 3) is string `65 66 67` -> ABC, padding P1=5
+        L2 = 14 (which is L1 + padding + current_length), so
+        current_length = L2 - (L1 + P1) = 14 - (5 + 3) = 6, P2=2
+        => [5 + 3, 14) is string `65, 66, 67, 68, 69, 70` -> ABCDEF
+        L3 = 16 => current_length = L3 - (L2 + P2) = 16 - (14 + 2) = 0
+        thus string is empty, and considering Nulls -> it is a null
+
+        Args:
+            idx: integer index of extracting column in response
+            raw_col_data: memoryview (bytes represenation) of data of
+              column
+
+        Returns:
+            A list with Arrays of data. Array represented as python
+            lists also.
+
+            [["ABC", "ABCDEF", None], None, ["A", None, ""]]
+        """
+        # Code duplication with _extract_fixed_array could be eliminated
+        # using template method with using separate Extractor classes
+        buffer = raw_col_data['data_column']
+        nulls_buffer = raw_col_data['nullable'] or false_generator()
+
+        def _get_array(data: memoryview, nulls: memoryview, dlen: memoryview):
+            """Construct one single array from data with dlen right bounds"""
+            arr = []
+            # lengths_to_pairs is not appropriate due to differences
+            # in lengths representation
+            for is_null, (strt, end) in zip(nulls, arr_lengths_to_pairs(dlen)):
+                if is_null:
+                    arr.append(None)
+                else:
+                    arr.append(data[strt:end].tobytes().decode('utf8'))
+            return arr
+
+        col = []
+        start = 0
+        for buf_len, null in zip(raw_col_data['array_lengths'], nulls_buffer):
+            if null:
+                col.append(None)
+            elif not buf_len:
+                col.append([])
+            else:
+                array_size = buffer[start: start + 8].cast('q')[0]  # Long
+                padding = (8 - array_size % 8) % 8
+                cur = start + 8 + array_size + padding
+                # data lengths
+                d_len = buffer[cur:cur + array_size * 4].cast('i')
+                cur += (array_size + array_size % 2) * 4
+
+                # Slices of memoryview do not copy underlying data
+                data = buffer[cur:start + buf_len]
+                nulls = buffer[start + 8:start + 8 + array_size]
+
+                col.append(_get_array(data, nulls, d_len))
+
+            start += buf_len
+        return col
+
+    def _get_trasform_func(self, idx: int) -> callable:
+        """Provide function for casting bytes data to real data
+
+        Args:
+            idx: integer index of extracting column in response
+
+        Returns:
+            A function that cast simple portion of data to appropriate
+            value.
+        """
+        type_tup = self.col_type_tups[idx]
+
+        # Array's type_tup differs from others by adding extra string
+        # at the beginning
+        offset = 1 if type_tup[0] == 'ftArray' else 0
+        data_format = type_to_letter[type_tup[offset]]
+        wrappers = {
+            'ftDate': sq_date_to_py_date,
+            'ftDateTime': sq_datetime_to_py_datetime
+        }
+
+        if type_tup[offset] == 'ftNumeric':
+            scale = type_tup[offset + 2]
+
+            def cast(data):
+                return sq_numeric_to_decimal(data, scale)
+        elif type_tup[offset] in wrappers:
+            def cast(data):
+                return wrappers[type_tup[offset]](data.cast(data_format)[0])
+        else:
+            def cast(data):
+                return data.cast(data_format)[0]
+
+        def trasform(mem: memoryview, is_null: bool = False):
+            return None if is_null else cast(mem)
+
+        return trasform
 
     def close(self, sock=None):
         self.close_stmt()

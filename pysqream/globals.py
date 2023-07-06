@@ -1,10 +1,15 @@
-from pysqream.utils import get_ram_windows, get_ram_linux
+"""Contains pysqream global variables"""
+import numbers
 import sys
+from datetime import datetime, date
+from decimal import Decimal
+
+from .utils import get_ram_windows, get_ram_linux
 
 __version__ = '3.2.5'
 buf_maps, buf_views = [], []
-WIN = True if sys.platform in ('win32', 'cygwin') else False
-MAC = True if sys.platform in ('darwin') else False
+WIN = sys.platform in ('win32', 'cygwin')
+MAC = sys.platform in ('darwin')
 PROTOCOL_VERSION = 8
 SUPPORTED_PROTOCOLS = 6, 7, 8
 BUFFER_SIZE = 100 * int(1e6)  # For setting auto-flushing on netrwork insert
@@ -25,12 +30,14 @@ elif MAC:
 else:
     get_ram = get_ram_linux()
 
+# TODO: replace strings ftBool, ... with enum
+
 try:
     import pyarrow as pa
     from pyarrow import csv
     import numpy as np
     ARROW = True
-except:
+except ImportError:
     ARROW = False
 else:
     sqream_to_pa = {
@@ -45,7 +52,8 @@ else:
         'ftDateTime': pa.timestamp('ns'),
         'ftVarchar':  pa.string(),
         'ftBlob':     pa.utf8(),
-        'ftNumeric':  pa.decimal128(38, 11)
+        'ftNumeric':  pa.decimal128(38, 11),
+        'ftArray': list,
     }
 
 # For encoding data to be sent to SQream using struct.pack() and for type checking by _set_val()
@@ -76,5 +84,23 @@ typecodes = {
     'ftDateTime': 'DATETIME',
     'ftVarchar': 'STRING',
     'ftBlob': 'STRING',
-    'ftNumeric': 'NUMBER'
+    'ftNumeric': 'NUMBER',
+    'ftArray': 'ARRAY',
+}
+
+
+PYTYPES = {
+    'ftBool': (bool, np.bool_),
+    'ftUByte': numbers.Integral,
+    'ftInt': numbers.Integral,
+    'ftShort': numbers.Integral,
+    'ftLong': numbers.Integral,
+    'ftDouble': numbers.Real,
+    'ftFloat': numbers.Real,
+    'ftDate': date,
+    'ftDateTime': datetime,
+    'ftVarchar': str,
+    'ftBlob': str,
+    'ftNumeric': (Decimal, numbers.Real),
+    'ftArray': list,
 }

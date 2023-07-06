@@ -1,4 +1,8 @@
-from datetime import datetime, date, time as t
+"""
+Support functions for converting py values to sqream compatible values
+and vice versa
+"""
+from datetime import datetime, date
 from decimal import Decimal, getcontext
 from math import floor, ceil, pow
 
@@ -51,25 +55,35 @@ def sq_datetime_to_py_datetime(sqream_datetime, is_null=False, dt_convert_func=d
                                                                      # miliseconds while SQream returns 3.
 
 
-def date_to_int(d: date) -> int:
-    year, month, day = d.timetuple()[:3]
-    mth: int = (month + 9) % 12
-    yr: int = year - mth // 10
+def _get_date_int(year: int, month: int, day: int) -> int:
+    """Convert year, month and day to integer compatible with SQREAM"""
+    month: int = (month + 9) % 12
+    year: int = year - month // 10
+    return (
+        365 * year + year // 4 - year // 100 + year // 400
+        + (month * 306 + 5) // 10 + (day - 1)
+    )
 
-    return 365 * yr + yr // 4 - yr // 100 + yr // 400 + (mth * 306 + 5) // 10 + (day - 1)
+
+def date_to_int(dat: date) -> int:
+    """Convert datetime.date to integer compatible with SQREAM interface"""
+    # datetime is also supported because it is descendant of date
+    # date_to_int(date(1900, 1, 1)) is 693901 which is the oldest date that
+    # sqream supports, so for None use the same
+    return 693901 if dat is None else _get_date_int(*dat.timetuple()[:3])
 
 
-def datetime_to_long(dt: datetime) -> int:
-    ''' self contained to avoid function calling overhead '''
+def datetime_to_long(dat: datetime) -> int:
+    """Convert datetime.datetime to integer (LONG) compatible with SQREAM"""
+    if dat is None:
+        # datetime_to_long(datetime(1900, 1, 1)) is 2980282101661696 which is
+        # the oldest date that sqream supports, so for None use the same
+        return 2980282101661696
+    year, month, day, hour, minute, second = dat.timetuple()[:6]
+    msec = dat.microsecond
 
-    year, month, day, hour, minute, second = dt.timetuple()[:6]
-    msecond = dt.microsecond
-
-    mth: int = (month + 9) % 12
-    yr: int = year - mth // 10
-    date_int: int = 365 * yr + yr // 4 - yr // 100 + yr // 400 + (
-            mth * 306 + 5) // 10 + (day - 1)
-    time_int: int = hour * 3600 * 1000 + minute * 60 * 1000 + second * 1000 + msecond // 1000
+    date_int: int = _get_date_int(year, month, day)
+    time_int: int = 1000 * (hour * 3600 + minute * 60 + second) + msec // 1000
 
     return (date_int << 32) + time_int
 
@@ -105,6 +119,14 @@ def lengths_to_pairs(nvarc_lengths):
         new_idx += length
         yield idx, new_idx
         idx = new_idx
+
+
+def arr_lengths_to_pairs(text_lengths):
+    """Generator for parsing ARRAY TEXT columns' data"""
+    start = 0
+    for length in text_lengths:
+        yield start, length
+        start = length + (8 - length % 8) % 8
 
 
 def numpy_datetime_str_to_tup(numpy_dt):

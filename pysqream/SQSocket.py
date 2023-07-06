@@ -1,12 +1,12 @@
 
-from pysqream.logger import *
-from pysqream.globals import PROTOCOL_VERSION, SUPPORTED_PROTOCOLS, clean_sqream_errors
 import socket
 import ssl
 import sys
-import array
 from struct import pack, unpack
 from threading import Lock
+
+from .globals import PROTOCOL_VERSION, SUPPORTED_PROTOCOLS, clean_sqream_errors
+from .logger import printdbg, log_and_raise
 
 
 class SQSocket:
@@ -39,7 +39,7 @@ class SQSocket:
         except ConnectionResetError:
             log_and_raise(Exception, 'Trying to connect to an SSL port with use_ssl = False')
         except Exception as e:
-            if 'timeout' in repr(e):
+            if 'timeout' in repr(e).lower():
                 log_and_raise(Exception, "Timeout when connecting to SQream, perhaps wrong IP?")
             elif '[SSL: UNKNOWN_PROTOCOL] unknown protocol' in repr(e) or '[SSL: WRONG_VERSION_NUMBER]' in repr(e):
                 log_and_raise(Exception, 'Using use_ssl=True but connected to non ssl sqreamd port')
@@ -61,13 +61,10 @@ class SQSocket:
             log_and_raise(ConnectionRefusedError, f"Connection to SQream interrupted")
 
     def send(self, data):
-
-        # print ("sending: ", data)
-        # try:
-        return self.s.send(data)
-
-        # except BrokenPipeError:
-        #    raise BrokenPipeError('No connection to SQream. Try reconnecting')
+        """Send data via open socket"""
+        res = self.s.send(data)
+        printdbg("Message sent: ", data)
+        return res
 
     def close(self):
         return self.s.close()
