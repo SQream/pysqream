@@ -14,17 +14,15 @@ import struct
 
 from typing import List, Any, Union
 
-from .utils import version_compare
 from .globals import BUFFER_SIZE, ROWS_PER_FLUSH, DEFAULT_CHUNKSIZE, \
-    FETCH_MANY_DEFAULT, typecodes, type_to_letter
+    FETCH_MANY_DEFAULT, typecodes, type_to_letter, BYTES_PER_FLUSH_LIMIT, TEXT_ITEM_SIZE
 from .column_buffer import ColumnBuffer
-from .ping import _start_ping_loop, _end_ping_loop
 from .logger import log_and_raise, logger, printdbg
 from .utils import NotSupportedError, ProgrammingError, get_array_size, \
     false_generator, ArraysAreDisabled, OperationalError
 from .casting import lengths_to_pairs, sq_date_to_py_date, \
     sq_datetime_to_py_datetime, sq_numeric_to_decimal, arr_lengths_to_pairs
-from .SQSocket import Client
+from .ping import _start_ping_loop, _end_ping_loop
 
 
 def _is_null(nullable):
@@ -48,18 +46,19 @@ class Cursor:
 
         self.conn = conn
         self.cursors = cursors
-        self.s = self.conn.s
-        self.client = Client(self.s)
+        self.socket = self.conn.socket
+        self.client = self.conn.client
         self.version = self.conn.version
+        self.connection_id = self.conn.connection_id
         self.open_statement = False
         self.closed = False
         self.buffer = ColumnBuffer(BUFFER_SIZE)  # flushing buffer every BUFFER_SIZE bytes
-        self.ping_loop = None
         self.stmt_id = None  # For error handling when called out of order
         self.statement_type = None
         self.arraysize = FETCH_MANY_DEFAULT
         self.rowcount = -1  # DB-API property
         self.more_to_fetch = False
+        self.ping_loop = self.conn.ping_loop
         self.parsed_rows = []
         self.row_size = 0
         self.rows_per_flush = 0
@@ -84,9 +83,6 @@ class Cursor:
         self.more_to_fetch = True
 
         self.stmt_id = json.loads(self.client.send_string('{"getStatementId" : "getStatementId"}'))["statementId"]
-        comp = version_compare(self.version, "2020.3.1")
-        if (comp is not None and comp > -1):
-            self.ping_loop = _start_ping_loop(self.conn)
         stmt_json = json.dumps({"prepareStatement": stmt, "chunkSize": DEFAULT_CHUNKSIZE})
         res = self.client.send_string(stmt_json)
 
@@ -95,7 +91,7 @@ class Cursor:
         if self.lb_params.get('reconnect'):  # Reconnect exists and issued, otherwise False / None
 
             # Close socket, open a new socket with new port/ip sent be the reconnect response
-            self.s.reconnect(
+            self.socket.reconnect(
                 self.lb_params['ip'], self.lb_params['port_ssl']
                 if self.conn.use_ssl else self.lb_params['port'])
 
@@ -160,20 +156,19 @@ class Cursor:
                     # only in buffer like 'ftArray' in col_type
                     _type = type_tup[0:2]
                 self.col_types.append(_type)
-                self.col_sizes.append(type_tup[1 + offset])
+                self.col_sizes.append(type_tup[1 + offset] if type_tup[1 + offset] != 0 else TEXT_ITEM_SIZE)
                 self.col_scales.append(type_tup[2 + offset])
 
             self.row_size = sum(self.col_sizes) + sum(
-                self.col_nul) + 4 * sum(self.col_tvc)
-            self.rows_per_flush = ROWS_PER_FLUSH
+                null for null in self.col_nul if null is True) + sum(tvc for tvc in self.col_tvc if tvc is True)
+
+            self.rows_per_flush = int(ROWS_PER_FLUSH if self.row_size * ROWS_PER_FLUSH <= BYTES_PER_FLUSH_LIMIT else BYTES_PER_FLUSH_LIMIT / self.row_size)
             self.buffer.init_buffers(self.col_sizes, self.col_nul)
 
-        # if self.statement_type == 'SELECT':
-        self.parsed_rows = []
-        self.parsed_row_amount = 0
+        if self.statement_type == 'SELECT':
+            self.parsed_rows = []
+            self.parsed_row_amount = 0
 
-        if self.ping_loop is not None:
-            _end_ping_loop(self.ping_loop)
         if logger.isEnabledFor(logging.INFO):
             logger.info \
                 (f'Executing statement over connection {self.conn.connection_id} with statement id {self.stmt_id}:\n{stmt}')
@@ -224,27 +219,33 @@ class Cursor:
         cols = cols if isinstance(cols, (list, tuple, set, dict)) else list(cols)
 
         capacity = capacity or self.capacity
-
         # Send columns and metadata to be packed into our buffer
         packed_cols = self.buffer.pack_columns(cols, capacity, self.col_types,
                                                self.col_sizes, self.col_nul,
                                                self.col_tvc, self.col_scales)
         byte_count = functools.reduce(lambda c, n: c + len(n), packed_cols, 0)
 
+        # Stop and start ping is must between sending message to the server, this is part of the protocol.
+        _end_ping_loop(self.ping_loop)
         # Sending put message and binary header
         self.client.send_string(f'{{"put":{capacity}}}', False)
-        self.s.send((self.client.generate_message_header(byte_count, False)))
+        self.ping_loop = _start_ping_loop(self.client, self.socket)
+
+        _end_ping_loop(self.ping_loop)
+        self.socket.send((self.client.generate_message_header(byte_count, False)))
+        self.ping_loop = _start_ping_loop(self.client, self.socket)
 
         # Sending packed data (binary buffer)
+        _end_ping_loop(self.ping_loop)
         for packed_col in packed_cols:
             printdbg("Packed data sent:", packed_col)
-            self.s.send((packed_col))
+            self.socket.send((packed_col))
 
         self.client.validate_response(self.client.get_response(), '{"putted":"putted"}')
+        self.ping_loop = _start_ping_loop(self.client, self.socket)
 
-    def _fetch(self, sock=None):
+    def _fetch(self):
 
-        sock = sock or self.s
         # JSON correspondence
         res = self.client.send_string('{"fetch" : "fetch"}')
         self.client.validate_response(res, "colSzs")
@@ -852,14 +853,12 @@ class Cursor:
 
         return trasform
 
-    def close(self, sock=None):
+    def close(self):
         self.close_stmt()
-        sock = sock or self.s
         self.conn.cur_closed = True
         self.conn.close_connection()
         self.closed = True
         self.buffer.close()
-        _end_ping_loop(self.ping_loop)
 
     def __enter__(self):
         return self
