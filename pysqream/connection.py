@@ -14,6 +14,7 @@ from pysqream.utils import NotSupportedError, ProgrammingError, InternalError, I
     DatabaseError, InterfaceError, Warning, Error
 from pysqream.casting import date_to_int as pydate_to_int, datetime_to_long as pydt_to_long, sq_date_to_py_date as date_to_py, sq_datetime_to_py_datetime as dt_to_py
 from pysqream.cursor import Cursor
+from .ping import _start_ping_loop, _end_ping_loop
 
 
 class Connection:
@@ -88,9 +89,10 @@ class Connection:
             self.ip, self.port = self.orig_ip, self.orig_port
 
         # Create socket and connect to actual SQreamd server
-        self.s = SQSocket(self.ip, self.port, use_ssl)
-        self.client = Client(self.s)
+        self.socket = SQSocket(self.ip, self.port, use_ssl)
+        self.client = Client(self.socket)
         self.connect_to_socket = True
+        self.ping_loop = _start_ping_loop(self.client, self.socket)
 
     def connect_database(self, database, username, password, service='sqream'):
         """Handle connection to database, with or without server picker"""
@@ -136,7 +138,8 @@ class Connection:
             log_and_raise(ProgrammingError, f"Trying to close a connection that's already closed for database "
                                             f"{self.database} and Connection ID: {self.connection_id}")
         self.client.send_string('{"closeConnection":  "closeConnection"}')
-        self.s.close()
+        _end_ping_loop(self.ping_loop)
+        self.socket.close()
         self.buffer.close()
         self.con_closed = True
 
@@ -179,7 +182,7 @@ class Connection:
 
         self._verify_con_open()
         cur = Cursor(conn, self.cursors)
-        self.cursors[cur.conn.connection_id] = cur
+        self.cursors[cur.connection_id] = cur
         return cur
 
     def commit(self):

@@ -12,6 +12,7 @@ def __init_logger():
     global initiated
 
     logger = logging.getLogger()
+    logging.getLogger('faker').setLevel(logging.ERROR)
     if not initiated:
         logger.setLevel(logging.DEBUG)
         fh = logging.FileHandler("test_log")

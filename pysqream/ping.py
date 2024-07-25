@@ -4,9 +4,9 @@ from pysqream.SQSocket import Client
 
 
 class PingLoop(threading.Thread):
-    def __init__(self, conn):
-        self.conn = conn
-        self.client = Client(self.conn)
+    def __init__(self, client, socket):
+        self.socket = socket
+        self.client = client
         super(PingLoop, self).__init__()
         self.done = False
 
@@ -14,9 +14,8 @@ class PingLoop(threading.Thread):
         json_cmd = '{"ping":"ping"}'
         binary = self.client.generate_message_header(len(json_cmd)) + json_cmd.encode('utf8')
         while self.sleep():
-            conn = self.conn
             try:
-                conn.s.send(binary)
+                self.socket.send(binary)
             except:
                 self.done = True
 
@@ -35,8 +34,8 @@ class PingLoop(threading.Thread):
         return True
 
 
-def _start_ping_loop(conn):
-    ping_loop = PingLoop(conn)
+def _start_ping_loop(client, socket):
+    ping_loop = PingLoop(client, socket)
     ping_loop.start()
     return ping_loop
 
