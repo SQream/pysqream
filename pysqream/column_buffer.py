@@ -1,7 +1,6 @@
 """Buffer representation and writer's logic"""
 import functools
 import logging
-# import multiprocessing as mp
 import operator
 import traceback
 from decimal import Decimal
@@ -18,13 +17,6 @@ from .utils import DataError, ProgrammingError
 from .logger import log_and_raise, logger, printdbg
 
 
-# def init_lock(lck):
-#     """To pass a lock to mp.Pool()"""
-#     # TODO: get rid of global variable, use getter
-#     global lock
-#     lock = lck
-
-
 class ColumnBuffer:
     ''' Buffer holding packed columns to be sent to SQream '''
 
@@ -33,48 +25,23 @@ class ColumnBuffer:
 
     def clear(self):
         if buf_maps:
-            print("clear buf map")
             [buf_map.close() for buf_map in buf_maps[0]]
-
-    def init_buffers(self, col_sizes, col_nul):
-        # if not WIN:
-        #     try:
-        #         print("pool close")
-        #         self.pool.close()
-        #         print("pool join")
-        #         self.pool.join()
-        #     except Exception as e:
-        #         pass
-        #
-        #     l = mp.Lock()
-        #     print("init mp.Pool")
-        #     self.pool = mp.Pool(initializer=init_lock, initargs=(l,))
-        #     print("done init mp.Pool")
-        print("start clear")
-        self.clear()
-        print("end clear")
 
     def pack_columns(self, cols, capacity, col_types, col_sizes, col_nul, col_tvc, col_scales):
         ''' Packs the buffer starting a given index with the column.
             Returns number of bytes packed '''
 
-        print("before pool_params")
         pool_params = list(zip(cols, range(len(col_types)), col_types,
                           col_sizes, col_nul, col_tvc, col_scales))
-        print("after pool_params")
+
         if WIN:
             packed_cols = []
             for param_tup in pool_params:
                 packed_cols.append(_pack_column(param_tup))
 
         else:
-            # self.pool = mp.Pool()
-            # To use multiprocess type packing, we call a top level function with a single tuple parameter
             try:
-                print("before pool map")
-                # packed_cols = self.pool.map(_pack_column, pool_params, chunksize=1)  # buf_end_indices
                 packed_cols = [_pack_column(x) for x in pool_params]
-                print("after pool map")
             except DataError:
                 raise  # Expected error, shouldn't be caught and wrapped
             except Exception as e:
@@ -87,14 +54,7 @@ class ColumnBuffer:
         return list(packed_cols)
 
     def close(self):
-        print("close")
         self.clear()
-        # try:
-        #     self.pool.close()
-        #     self.pool.join()
-        # except Exception as e:
-        #     # print (f'testing pool closing, got: {e}')
-        #     pass  # no pool was initiated
 
 
 ## A top level packing function for Python's MP compatibility
@@ -102,7 +62,6 @@ def _pack_column(col_tup, return_actual_data=True):
     ''' Packs the buffer starting a given index with the column.
         Returns number of bytes packed '''
 
-    print("start _pack_column")
     global CYTHON
     col, col_idx, col_type, size, nullable, tvc, scale = col_tup
     if "ftArray" in col_type:

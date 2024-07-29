@@ -163,7 +163,7 @@ class Cursor:
                 null for null in self.col_nul if null is True) + sum(tvc for tvc in self.col_tvc if tvc is True)
 
             self.rows_per_flush = int(ROWS_PER_FLUSH if self.row_size * ROWS_PER_FLUSH <= BYTES_PER_FLUSH_LIMIT else BYTES_PER_FLUSH_LIMIT / self.row_size)
-            self.buffer.init_buffers(self.col_sizes, self.col_nul)
+            self.buffer.clear()
 
         if self.statement_type == 'SELECT':
             self.parsed_rows = []
