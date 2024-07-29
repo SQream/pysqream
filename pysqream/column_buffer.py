@@ -83,8 +83,7 @@ def _pack_column(col_tup, return_actual_data=True):
 
         e.traceback = traceback.format_exc()
         error_msg = f'Trying to insert unsuitable types to column number {col_idx + 1} of type {col_type}'
-        # with lock:
-        #     logger.error(error_msg, exc_info=True)
+        logger.error(error_msg, exc_info=True)
         raise ProgrammingError(error_msg)
 
     # Numpy array for column
@@ -218,8 +217,7 @@ def _pack_column(col_tup, return_actual_data=True):
         pass
     else:
         error_msg = f'Bad column type passed: {col_type}'
-        # with lock:
-        #     logger.error(error_msg, exc_info=True)
+        logger.error(error_msg, exc_info=True)
         raise ProgrammingError(error_msg)
 
     CYTHON = False
