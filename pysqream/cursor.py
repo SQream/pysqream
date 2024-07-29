@@ -228,6 +228,8 @@ class Cursor:
         # Stop and start ping is must between sending message to the server, this is part of the protocol.
         _end_ping_loop(self.ping_loop)
         # Sending put message and binary header
+        logger.info(f"sending put to the server - 'put:{capacity}'")
+        print(f"sending put to the server - 'put:{capacity}'")
         self.client.send_string(f'{{"put":{capacity}}}', False)
         self.ping_loop = _start_ping_loop(self.client, self.socket)
 
@@ -399,6 +401,8 @@ class Cursor:
         while self.cols != [()]:
             col_chunk = [col[start_idx:start_idx + self.rows_per_flush] for col in self.cols]
             chunk_len = len(col_chunk[0])
+            logger.info(f'Chunk len = {chunk_len}')
+            print(f'Chunk len = {chunk_len}')
             if chunk_len == 0:
                 break
             self._send_columns(col_chunk, chunk_len)

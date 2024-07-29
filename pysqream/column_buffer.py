@@ -33,26 +33,35 @@ class ColumnBuffer:
 
     def clear(self):
         if buf_maps:
+            print("clear buf map")
             [buf_map.close() for buf_map in buf_maps[0]]
 
     def init_buffers(self, col_sizes, col_nul):
         if not WIN:
             try:
+                print("pool close")
                 self.pool.close()
+                print("pool join")
                 self.pool.join()
             except Exception as e:
                 pass
 
             l = mp.Lock()
+            print("init mp.Pool")
             self.pool = mp.Pool(initializer=init_lock, initargs=(l,))
+            print("done init mp.Pool")
+        print("start clear")
         self.clear()
+        print("end clear")
 
     def pack_columns(self, cols, capacity, col_types, col_sizes, col_nul, col_tvc, col_scales):
         ''' Packs the buffer starting a given index with the column.
             Returns number of bytes packed '''
 
+        print("before pool_params")
         pool_params = zip(cols, range(len(col_types)), col_types,
                           col_sizes, col_nul, col_tvc, col_scales)
+        print("after pool_params")
         if WIN:
             packed_cols = []
             for param_tup in pool_params:
@@ -62,7 +71,9 @@ class ColumnBuffer:
             # self.pool = mp.Pool()
             # To use multiprocess type packing, we call a top level function with a single tuple parameter
             try:
+                print("before pool map")
                 packed_cols = self.pool.map(_pack_column, pool_params, chunksize=2)  # buf_end_indices
+                print("after pool map")
             except DataError:
                 raise  # Expected error, shouldn't be caught and wrapped
             except Exception as e:
@@ -75,6 +86,7 @@ class ColumnBuffer:
         return list(packed_cols)
 
     def close(self):
+        print("close")
         self.clear()
         try:
             self.pool.close()
@@ -89,6 +101,7 @@ def _pack_column(col_tup, return_actual_data=True):
     ''' Packs the buffer starting a given index with the column.
         Returns number of bytes packed '''
 
+    print("start _pack_column")
     global CYTHON
     col, col_idx, col_type, size, nullable, tvc, scale = col_tup
     if "ftArray" in col_type:
