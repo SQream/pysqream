@@ -59,8 +59,9 @@ class ColumnBuffer:
             Returns number of bytes packed '''
 
         print("before pool_params")
-        pool_params = zip(cols, range(len(col_types)), col_types,
-                          col_sizes, col_nul, col_tvc, col_scales)
+        pool_params = list(zip(cols, range(len(col_types)), col_types,
+                          col_sizes, col_nul, col_tvc, col_scales))
+        print(f"pool_params={pool_params}")
         print("after pool_params")
         if WIN:
             packed_cols = []
