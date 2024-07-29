@@ -1,7 +1,7 @@
 """Buffer representation and writer's logic"""
 import functools
 import logging
-import multiprocessing as mp
+# import multiprocessing as mp
 import operator
 import traceback
 from decimal import Decimal
@@ -18,11 +18,11 @@ from .utils import DataError, ProgrammingError
 from .logger import log_and_raise, logger, printdbg
 
 
-def init_lock(lck):
-    """To pass a lock to mp.Pool()"""
-    # TODO: get rid of global variable, use getter
-    global lock
-    lock = lck
+# def init_lock(lck):
+#     """To pass a lock to mp.Pool()"""
+#     # TODO: get rid of global variable, use getter
+#     global lock
+#     lock = lck
 
 
 class ColumnBuffer:
@@ -37,19 +37,19 @@ class ColumnBuffer:
             [buf_map.close() for buf_map in buf_maps[0]]
 
     def init_buffers(self, col_sizes, col_nul):
-        if not WIN:
-            try:
-                print("pool close")
-                self.pool.close()
-                print("pool join")
-                self.pool.join()
-            except Exception as e:
-                pass
-
-            l = mp.Lock()
-            print("init mp.Pool")
-            self.pool = mp.Pool(initializer=init_lock, initargs=(l,))
-            print("done init mp.Pool")
+        # if not WIN:
+        #     try:
+        #         print("pool close")
+        #         self.pool.close()
+        #         print("pool join")
+        #         self.pool.join()
+        #     except Exception as e:
+        #         pass
+        #
+        #     l = mp.Lock()
+        #     print("init mp.Pool")
+        #     self.pool = mp.Pool(initializer=init_lock, initargs=(l,))
+        #     print("done init mp.Pool")
         print("start clear")
         self.clear()
         print("end clear")
@@ -61,7 +61,6 @@ class ColumnBuffer:
         print("before pool_params")
         pool_params = list(zip(cols, range(len(col_types)), col_types,
                           col_sizes, col_nul, col_tvc, col_scales))
-        print(f"pool_params={pool_params}")
         print("after pool_params")
         if WIN:
             packed_cols = []
@@ -73,7 +72,8 @@ class ColumnBuffer:
             # To use multiprocess type packing, we call a top level function with a single tuple parameter
             try:
                 print("before pool map")
-                packed_cols = self.pool.map(_pack_column, pool_params, chunksize=2)  # buf_end_indices
+                # packed_cols = self.pool.map(_pack_column, pool_params, chunksize=1)  # buf_end_indices
+                packed_cols = [_pack_column(x) for x in pool_params]
                 print("after pool map")
             except DataError:
                 raise  # Expected error, shouldn't be caught and wrapped
@@ -89,12 +89,12 @@ class ColumnBuffer:
     def close(self):
         print("close")
         self.clear()
-        try:
-            self.pool.close()
-            self.pool.join()
-        except Exception as e:
-            # print (f'testing pool closing, got: {e}')
-            pass  # no pool was initiated
+        # try:
+        #     self.pool.close()
+        #     self.pool.join()
+        # except Exception as e:
+        #     # print (f'testing pool closing, got: {e}')
+        #     pass  # no pool was initiated
 
 
 ## A top level packing function for Python's MP compatibility
@@ -124,8 +124,8 @@ def _pack_column(col_tup, return_actual_data=True):
 
         e.traceback = traceback.format_exc()
         error_msg = f'Trying to insert unsuitable types to column number {col_idx + 1} of type {col_type}'
-        with lock:
-            logger.error(error_msg, exc_info=True)
+        # with lock:
+        #     logger.error(error_msg, exc_info=True)
         raise ProgrammingError(error_msg)
 
     # Numpy array for column
@@ -259,8 +259,8 @@ def _pack_column(col_tup, return_actual_data=True):
         pass
     else:
         error_msg = f'Bad column type passed: {col_type}'
-        with lock:
-            logger.error(error_msg, exc_info=True)
+        # with lock:
+        #     logger.error(error_msg, exc_info=True)
         raise ProgrammingError(error_msg)
 
     CYTHON = False

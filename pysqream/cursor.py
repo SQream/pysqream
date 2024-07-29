@@ -399,6 +399,7 @@ class Cursor:
         # Slice a chunk of columns and pass to _send_columns()
         start_idx = 0
         while self.cols != [()]:
+            print(f"self.rows_per_flush={self.rows_per_flush}")
             col_chunk = [col[start_idx:start_idx + self.rows_per_flush] for col in self.cols]
             chunk_len = len(col_chunk[0])
             logger.info(f'Chunk len = {chunk_len}')
