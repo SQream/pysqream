@@ -1,7 +1,6 @@
 """Buffer representation and writer's logic"""
 import functools
 import logging
-import multiprocessing as mp
 import operator
 import traceback
 from decimal import Decimal
@@ -18,13 +17,6 @@ from .utils import DataError, ProgrammingError
 from .logger import log_and_raise, logger, printdbg
 
 
-def init_lock(lck):
-    """To pass a lock to mp.Pool()"""
-    # TODO: get rid of global variable, use getter
-    global lock
-    lock = lck
-
-
 class ColumnBuffer:
     ''' Buffer holding packed columns to be sent to SQream '''
 
@@ -35,34 +27,21 @@ class ColumnBuffer:
         if buf_maps:
             [buf_map.close() for buf_map in buf_maps[0]]
 
-    def init_buffers(self, col_sizes, col_nul):
-        if not WIN:
-            try:
-                self.pool.close()
-                self.pool.join()
-            except Exception as e:
-                pass
-
-            l = mp.Lock()
-            self.pool = mp.Pool(initializer=init_lock, initargs=(l,))
-        self.clear()
-
     def pack_columns(self, cols, capacity, col_types, col_sizes, col_nul, col_tvc, col_scales):
         ''' Packs the buffer starting a given index with the column.
             Returns number of bytes packed '''
 
-        pool_params = zip(cols, range(len(col_types)), col_types,
-                          col_sizes, col_nul, col_tvc, col_scales)
+        pool_params = list(zip(cols, range(len(col_types)), col_types,
+                          col_sizes, col_nul, col_tvc, col_scales))
+
         if WIN:
             packed_cols = []
             for param_tup in pool_params:
                 packed_cols.append(_pack_column(param_tup))
 
         else:
-            # self.pool = mp.Pool()
-            # To use multiprocess type packing, we call a top level function with a single tuple parameter
             try:
-                packed_cols = self.pool.map(_pack_column, pool_params, chunksize=2)  # buf_end_indices
+                packed_cols = [_pack_column(x) for x in pool_params]
             except DataError:
                 raise  # Expected error, shouldn't be caught and wrapped
             except Exception as e:
@@ -76,12 +55,6 @@ class ColumnBuffer:
 
     def close(self):
         self.clear()
-        try:
-            self.pool.close()
-            self.pool.join()
-        except Exception as e:
-            # print (f'testing pool closing, got: {e}')
-            pass  # no pool was initiated
 
 
 ## A top level packing function for Python's MP compatibility
@@ -110,8 +83,7 @@ def _pack_column(col_tup, return_actual_data=True):
 
         e.traceback = traceback.format_exc()
         error_msg = f'Trying to insert unsuitable types to column number {col_idx + 1} of type {col_type}'
-        with lock:
-            logger.error(error_msg, exc_info=True)
+        logger.error(error_msg, exc_info=True)
         raise ProgrammingError(error_msg)
 
     # Numpy array for column
@@ -245,8 +217,7 @@ def _pack_column(col_tup, return_actual_data=True):
         pass
     else:
         error_msg = f'Bad column type passed: {col_type}'
-        with lock:
-            logger.error(error_msg, exc_info=True)
+        logger.error(error_msg, exc_info=True)
         raise ProgrammingError(error_msg)
 
     CYTHON = False
