@@ -5,8 +5,6 @@
 Python connector for SQream DB
 ===================================
 
-* **Version:**  5.0.0
-
 * **Supported SQream DB versions:** >= 2.13, 2019.2 or newer recommended
 
 The Python connector for SQream DB is a Python DB API 2.0-compliant interface for developing Python applications with SQream DB.
