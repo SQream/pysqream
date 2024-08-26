@@ -100,8 +100,13 @@ class Cursor:
                 self.conn.service, self.conn.database, self.conn.connection_id,
                 self.lb_params['listener_id'], self.conn.username, self.conn.password)
             self.client.send_string(reconnect_str)
-            self.client.send_string('{{"reconstructStatement": {}}}'.format(
-                self.stmt_id))
+            # Since summer 2024 sqreamd worker could be configured with non-gpu (cpu) instance
+            # it raises exception here like `The query requires a GPU-Worker. Ensure the SQream Service has GPU . . .`
+            # This exception should be validated here. Otherwise, it will be validated at the next call which provides
+            # Unexpected behavior
+            self.client.validate_response(
+                self.client.send_string('{{"reconstructStatement": {}}}'.format(self.stmt_id)),
+                "statementReconstructed")
 
         # Reconnected/reconstructed if needed,  send  execute command
         self.client.validate_response(self.client.send_string('{"execute" : "execute"}'), 'executed')
