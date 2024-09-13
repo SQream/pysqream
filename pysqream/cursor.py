@@ -6,6 +6,7 @@ Responsible for both fetching and extracting data.
 
 Should be used only by .connection.Connection
 """
+from __future__ import annotations
 
 import functools
 import json
@@ -14,15 +15,28 @@ import struct
 
 from typing import List, Any, Union
 
-from .globals import BUFFER_SIZE, ROWS_PER_FLUSH, DEFAULT_CHUNKSIZE, \
-    FETCH_MANY_DEFAULT, typecodes, type_to_letter, BYTES_PER_FLUSH_LIMIT, TEXT_ITEM_SIZE
-from .column_buffer import ColumnBuffer
-from .logger import log_and_raise, logger, printdbg
-from .utils import NotSupportedError, ProgrammingError, get_array_size, \
-    false_generator, ArraysAreDisabled, OperationalError
-from .casting import lengths_to_pairs, sq_date_to_py_date, \
-    sq_datetime_to_py_datetime, sq_numeric_to_decimal, arr_lengths_to_pairs
-from .ping import _start_ping_loop, _end_ping_loop
+from pysqream.casting import (lengths_to_pairs,
+                              sq_date_to_py_date,
+                              sq_datetime_to_py_datetime,
+                              sq_numeric_to_decimal,
+                              arr_lengths_to_pairs)
+from pysqream.column_buffer import ColumnBuffer
+from pysqream.globals import (BUFFER_SIZE,
+                              ROWS_PER_FLUSH,
+                              DEFAULT_CHUNKSIZE,
+                              FETCH_MANY_DEFAULT,
+                              typecodes,
+                              type_to_letter,
+                              BYTES_PER_FLUSH_LIMIT,
+                              TEXT_ITEM_SIZE)
+from pysqream.logger import log_and_raise, logger, printdbg
+from pysqream.ping import _start_ping_loop, _end_ping_loop
+from pysqream.utils import (NotSupportedError,
+                            ProgrammingError,
+                            get_array_size,
+                            false_generator,
+                            ArraysAreDisabled,
+                            OperationalError)
 
 
 def _is_null(nullable):
@@ -348,20 +362,51 @@ class Cursor:
 
                 self.parsed_rows.extend(zip(*self._parse_fetched_cols()))
 
-    def execute(self, query, params=None):
-        """Execute a statement. Parameters are not supported"""
+    @staticmethod
+    def _compile_statement(statement: str, parameters: tuple[Any] | list[Any]):
+        if "insert" in statement.lower():
+            pass
+
+        for p in parameters:
+            for i, symbol in enumerate(statement):
+                if symbol == "?":
+                    statement = statement[:i] + str(p) + statement[i + 1:]
+                    break
+
+        print(statement)
+        return statement
+
+    def execute(self, query: str, params: list[Any] | tuple[Any] | None = None):
+        """Execute a statement. If params was provided - compile statement first
+        and replace all question marks on passed parameters.
+
+        query str: a statement to execute
+        param list[int | str] | tuple[int | str]: sequence of parameters to ingest into query
+
+        Examples:
+            query: SELECT * FROM <table_name> WHERE id IN (?, ?, ?) AND price >= ?;
+            params: (1, 2, 3, 450.69)
+
+            query: INSERT INTO <table_name> (id, name, description, price) VALUES (?, ?, ?, ?);
+            params: (1, 'Ryan Gosling', 'Actor', 0.0)
+            params: [(1, 'Ryan Gosling', 'Actor', 0.0), (2, 'Mark Wahlberg', 'No pain no gain', 150.0)]
+
+            query: UPDATE <table_name> SET price = ?, description = ? WHERE name = ?;
+            params: (999.999, 'Best actor', 'Ryan Gosling')
+
+            query: DELETE FROM <table_name> WHERE id = ? AND other < ?;
+            params: (404, 200)
+        """
 
         if self.base_connection_closed:
             self.conn._verify_con_open()
         else:
             self.conn._verify_cur_open()
+
         if params:
+            query = self._compile_statement(statement=query, parameters=params)
 
-            log_and_raise(ProgrammingError, "Parametered queries not supported. \
-                If this is an insert query, use executemany() with the data rows as the parameter")
-
-        else:
-            self._execute_sqream_statement(query)
+        self._execute_sqream_statement(query)
 
         self._fill_description()
         self.rows_fetched = 0
