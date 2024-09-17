@@ -6,8 +6,8 @@ from decimal import Decimal, getcontext
 import pytest
 import sys, os
 import pysqream
-sys.path.append(os.path.abspath(__file__).rsplit('tests/', 1)[0] + '/tests/')
-from base import TestBase, TestBaseWithoutBeforeAfter, Logger, connect_dbapi
+# sys.path.append(os.path.abspath(__file__).rsplit('tests/', 1)[0] + '/tests/')
+from test_base import TestBase, TestBaseWithoutBeforeAfter, Logger, connect_dbapi
 
 
 q = Queue()

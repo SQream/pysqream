@@ -1,10 +1,11 @@
+from os import PathLike
+from pathlib import Path
+
 import pytest
 import socket
-import sys
-import os
-sys.path.append(os.path.abspath(__file__).rsplit('tests/', 1)[0] + '/tests/')
+
 import pysqream
-from pytest_logger import Logger
+from tests.pytest_logger import Logger
 
 
 def connect_dbapi(ip, clustered=False, use_ssl=False, port=5000, picker_port=3108,
@@ -16,7 +17,12 @@ def connect_dbapi(ip, clustered=False, use_ssl=False, port=5000, picker_port=310
     return pysqream.connect(ip, port, database, username, password, clustered, use_ssl)
 
 
-class TestBase():
+class TestBase:
+
+    @pytest.fixture
+    def big_data_ddl_path(self) -> PathLike:
+        return Path("tests/big_data.ddl").absolute()
+
     @pytest.fixture(autouse=True)
     def Test_setup_teardown(self, ip, clustered, use_ssl, port, picker_port, database,
                             username, password):
@@ -30,7 +36,7 @@ class TestBase():
         Logger().info(f"Close Session to server {ip}")
 
 
-class TestBaseWithoutBeforeAfter():
+class TestBaseWithoutBeforeAfter:
 
     @pytest.fixture(autouse=True)
     def Test_setup_teardown(self, ip, clustered, use_ssl, port, picker_port,
