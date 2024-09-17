@@ -11,25 +11,25 @@ TEMP_TABLE = "test_array_fetch_temp"
 
 
 @pytest.fixture(name='cursor')
-def cursor_with_arrays_allowed(cursor):
+def cursor_with_arrays_allowed(sqream_cursor):
     """Redefined cursor fixture that enables arrays for this tests module"""
-    cursor.conn.allow_array = True
-    yield cursor
+    sqream_cursor.conn.allow_array = True
+    yield sqream_cursor
 
 
 @pytest.fixture(name='array_table')
-def generate_array_table(cursor, request):
+def generate_array_table(sqream_cursor, request):
     """Fixture that generate table, insert data and drop table"""
     _type, values = request.param
-    cursor.execute(f"CREATE OR REPLACE TABLE {TEMP_TABLE} (data {_type}[]);")
+    sqream_cursor.execute(f"CREATE OR REPLACE TABLE {TEMP_TABLE} (data {_type}[]);")
     insert_values = ', '.join([f"(ARRAY[{v}])" for v in values])
-    cursor.execute(f"INSERT INTO {TEMP_TABLE} VALUES {insert_values}")
+    sqream_cursor.execute(f"INSERT INTO {TEMP_TABLE} VALUES {insert_values}")
 
 
 @pytest.fixture(autouse=True)
-def autodrop_array_table(cursor):
+def autodrop_array_table(sqream_cursor):
     """Fixture that automatically drop database every test run in the module"""
-    cursor.execute(f"DROP TABLE IF EXISTS {TEMP_TABLE};")
+    sqream_cursor.execute(f"DROP TABLE IF EXISTS {TEMP_TABLE};")
 
 
 def str_to_decimal(value: str):
@@ -60,7 +60,7 @@ DATATYPES_DATA = [
 
     ["DATE", ["'1955-11-05', null, '9999-12-31'"]],
     ["DATETIME",
-     ["'1955-11-05 01:24:00.000', '9999-12-31 23:59:59.999', null"]],
+     ["'1955-11-05 01:24:00.000', '9999-12-31 23:59:59.999000', null"]],
 ]
 
 DATA = [
@@ -79,7 +79,7 @@ DATA = [
 
     [([date(1955, 11, 5), None, date(9999, 12, 31)],)],
     [([datetime(1955, 11, 5, 1, 24),
-        datetime(9999, 12, 31, 23, 59, 59, 999), None],)],
+        datetime(9999, 12, 31, 23, 59, 59, 999000), None],)],
 ]
 
 TEXT_VALUES = [
@@ -106,12 +106,11 @@ TEXT_INSERT_VALUES = [
 EMPTY_ARRAY_DATA = [([], ), (None, ), ([], ), ([], ), (None, ), ([], )]
 
 
-@pytest.mark.parametrize(
-    "array_table,data", zip(DATATYPES_DATA, DATA), indirect=['array_table'])
+@pytest.mark.parametrize("array_table,data", zip(DATATYPES_DATA, DATA), indirect=['array_table'])
 @pytest.mark.usefixtures("array_table")
-def test_fetch_array_with_fixed_size(cursor, data):
+def test_fetch_array_with_fixed_size(sqream_cursor, data):
     """Test simplest portions of each data type of array with fixed size"""
-    assert select(cursor, TEMP_TABLE) == data
+    assert select(sqream_cursor, TEMP_TABLE) == data
 
 
 @pytest.mark.parametrize("array_table,data", [
@@ -129,23 +128,23 @@ def test_fetch_array_with_fixed_size(cursor, data):
     ]
 ], indirect=['array_table'])
 @pytest.mark.usefixtures("array_table")
-def test_fetch_array_with_fixed_size_few_rows(cursor, data):
+def test_fetch_array_with_fixed_size_few_rows(sqream_cursor, data):
     """Test few rows of array with fixed size"""
-    assert select(cursor, TEMP_TABLE) == data
+    assert select(sqream_cursor, TEMP_TABLE) == data
 
 
-def test_fetch_array_with_fixed_size_few_columns(cursor):
+def test_fetch_array_with_fixed_size_few_columns(sqream_cursor):
     """Test few columns with few rows of array with fixed size"""
-    ensure_empty_table(cursor, TEMP_TABLE, "x1 INT[], x2 DOUBLE[]")
+    ensure_empty_table(sqream_cursor, TEMP_TABLE, "x1 INT[], x2 DOUBLE[]")
 
-    cursor.execute(f"""
+    sqream_cursor.execute(f"""
         INSERT INTO {TEMP_TABLE} VALUES
         (array[1, 5, null, 10], array[true, false, true, false, null]),
         (null, array[false, false, true]),
         (array[11, 25, 7], null),
         (array[356, 2, 10, 3], array[false, null, true, true])
     """)
-    assert select(cursor, TEMP_TABLE) == [
+    assert select(sqream_cursor, TEMP_TABLE) == [
         ([1, 5, None, 10], [True, False, True, False, None]),
         (None, [False, False, True]),
         ([11, 25, 7], None),
@@ -175,14 +174,14 @@ NUMERICS_GTE8 = [
 
 DATETIME_GTE8 = [
     [tuple_to_datetime(vals) for vals in
-        [(1955, 11, 5, 1, 24), None, (9999, 12, 31, 23, 59, 59, 999), None,
-         (5245, 8, 19, 7, 13, 16, 250), (2020, 5, 22, 15, 21, 51, 772),
+        [(1955, 11, 5, 1, 24), None, (9999, 12, 31, 23, 59, 59, 999000), None,
+         (5245, 8, 19, 7, 13, 16, 250000), (2020, 5, 22, 15, 21, 51, 772000),
          None, (1998, 1, 1)]],
     [tuple_to_datetime(vals) for vals in
-        [(3657, 6, 3, 15, 7, 38, 150), (6841, 3, 27, 17, 10, 45, 311),
-         None, None, (1945, 10, 4, 21, 3, 7, 315),
-         (2154, 9, 1, 9, 00, 30, 150), None, (1998, 1, 1),
-         (5000, 5, 5, 5, 5, 55, 555)]]
+        [(3657, 6, 3, 15, 7, 38, 150000), (6841, 3, 27, 17, 10, 45, 311000),
+         None, None, (1945, 10, 4, 21, 3, 7, 315000),
+         (2154, 9, 1, 9, 00, 30, 150000), None, (1998, 1, 1),
+         (5000, 5, 5, 5, 5, 55, 555000)]]
 ]
 
 
@@ -275,10 +274,10 @@ DATA_GTE8 = [
     zip(DATATYPES_DATA_GTE8, DATA_GTE8),
     indirect=['array_table'])
 @pytest.mark.usefixtures("array_table")
-def test_fetch_array_len_gte8_with_fixed_size(cursor, data):
+def test_fetch_array_len_gte8_with_fixed_size(sqream_cursor, data):
     """Test array with length greater and equal to 8 (different paddings)"""
-    cursor.execute(f"SELECT data FROM {TEMP_TABLE};")
-    result = cursor.fetchall()
+    sqream_cursor.execute(f"SELECT data FROM {TEMP_TABLE};")
+    result = sqream_cursor.fetchall()
     assert result == data
 
 
@@ -289,9 +288,9 @@ def test_fetch_array_len_gte8_with_fixed_size(cursor, data):
     ],
 ], indirect=['array_table'])
 @pytest.mark.usefixtures("array_table")
-def test_fetch_array_unfixed_size(cursor, data):
+def test_fetch_array_unfixed_size(sqream_cursor, data):
     """Test array with unfixed sise - TEXT"""
-    assert select(cursor, TEMP_TABLE) == data
+    assert select(sqream_cursor, TEMP_TABLE) == data
 
 
 @pytest.mark.parametrize("data_type", [
@@ -299,24 +298,24 @@ def test_fetch_array_unfixed_size(cursor, data):
     # "NUMERIC(38,38)", "NUMERIC(12,4)", does not support numeric in
     # multiple rows insert due to bug in SQREAM
     "DATE", "DATETIME", "TEXT"])
-def test_fetch_empty_array(cursor, data_type):
+def test_fetch_empty_array(sqream_cursor, data_type):
     """Test empty array works fine"""
-    ensure_empty_table(cursor, TEMP_TABLE, f"data {data_type}[]")
+    ensure_empty_table(sqream_cursor, TEMP_TABLE, f"data {data_type}[]")
 
-    cursor.execute(f"""
+    sqream_cursor.execute(f"""
         INSERT INTO {TEMP_TABLE} VALUES
         (array[]), (null), (array[]), (array[]), (null), (array[])
     """)
-    assert select(cursor, TEMP_TABLE) == EMPTY_ARRAY_DATA
+    assert select(sqream_cursor, TEMP_TABLE) == EMPTY_ARRAY_DATA
 
 
 @pytest.mark.parametrize("num", ["NUMERIC(38,38)", "NUMERIC(12,4)"])
-def test_fetch_empty_array_numeric_one_row(cursor, num):
+def test_fetch_empty_array_numeric_one_row(sqream_cursor, num):
     """Test empty array works fine for NUMERICs"""
-    ensure_empty_table(cursor, TEMP_TABLE, f"data {num}[]")
+    ensure_empty_table(sqream_cursor, TEMP_TABLE, f"data {num}[]")
 
     # Cannot insert many rows of NUMERIC because of a bug
     for txt in ["array[]", "null", "array[]", "array[]", "null", "array[]"]:
-        cursor.execute(f"INSERT INTO {TEMP_TABLE} VALUES ({txt});")
+        sqream_cursor.execute(f"INSERT INTO {TEMP_TABLE} VALUES ({txt});")
 
-    assert select(cursor, TEMP_TABLE) == EMPTY_ARRAY_DATA
+    assert select(sqream_cursor, TEMP_TABLE) == EMPTY_ARRAY_DATA
