@@ -21,7 +21,7 @@ import numpy as np  # numpy is currently in requirements of the package
 from pysqream.utils import DataError
 from pysqream.globals import ROWS_PER_FLUSH
 
-from .utils import ALL_TYPES, SIMPLE_VALUES, ensure_empty_table, select
+from tests.test_cursor.utils import ALL_TYPES, SIMPLE_VALUES, ensure_empty_table, select
 
 TEMP_TABLE = "test_array_network_insert_temp"
 
@@ -44,10 +44,10 @@ WRONG_TYPES_VALUES = [
 
 
 @pytest.fixture(name='cursor')
-def cursor_with_arrays_allowed(cursor):
+def cursor_with_arrays_allowed(sqream_cursor):
     """Redefined cursor fixture that enables arrays for this tests module"""
-    cursor.conn.allow_array = True
-    yield cursor
+    sqream_cursor.conn.allow_array = True
+    yield sqream_cursor
 
 
 @pytest.mark.parametrize("data_type, data", [

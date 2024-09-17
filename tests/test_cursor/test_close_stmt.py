@@ -15,14 +15,16 @@ from pysqream.utils import OperationalError, ProgrammingError
 class ConnectionMock:
     """Mock of pysqream.connection.Connection to prevent real connection"""
     # pylint: disable=too-few-public-methods; they are not need for Mocks
-    s = None
+    socket = None
+    client = Client
+    ping_loop = None
+    connection_id = None
     version = 'Mock1'
 
 
 def test_raise_on_error_from_sqream(monkeypatch):
     """JSON with error from SQREAM on closeStatement raises OperationalError"""
-    monkeypatch.setattr(
-        Client, "send_string", lambda *_: '{"error": "mock SQREAM error"}')
+    monkeypatch.setattr(Client, "send_string", lambda *_: '{"error": "mock SQREAM error"}')
     cur = Cursor(ConnectionMock(), [])
     cur.open_statement = True
     with pytest.raises(OperationalError):
