@@ -13,7 +13,7 @@ import json
 import logging
 import struct
 
-from typing import List, Any, Union
+from typing import List, Any, Union, NoReturn
 
 from pysqream.casting import (lengths_to_pairs,
                               sq_date_to_py_date,
@@ -36,7 +36,8 @@ from pysqream.utils import (NotSupportedError,
                             get_array_size,
                             false_generator,
                             ArraysAreDisabled,
-                            OperationalError)
+                            OperationalError,
+                            ParametrizedStatementError)
 
 
 def _is_null(nullable):
@@ -363,38 +364,92 @@ class Cursor:
                 self.parsed_rows.extend(zip(*self._parse_fetched_cols()))
 
     @staticmethod
-    def _compile_statement(statement: str, parameters: tuple[Any] | list[Any]):
-        if "insert" in statement.lower():
-            pass
+    def _verify_parametrized_statement(statement: str,
+                                       parameters: tuple[Any] | list[Any],
+                                       placeholder: str
+                                       ) -> None | NoReturn:
+        """Verify provided statement is acceptable
+
+        Check points:
+        1) Same length for parameters and placeholders amount
+        2) Special clause after select (`WHERE`, `SET`)
+        3) Same length for parameters and placeholders amount after special clause
+           This is valid:
+           `select * from table where i > ? and b < ?` with (1, 2)
+           This is NOT valid:
+           `select * from ? where i > ?` with (1, 2)
+        """
+        parameters_amount = len(parameters)
+        placeholder_amount = statement.count(placeholder)
+
+        if parameters_amount != placeholder_amount:
+            raise ParametrizedStatementError(f"Amount of parameters ({parameters_amount}) doesn't equal "
+                                             f"amount of placeholders ({placeholder_amount}) (`{placeholder}`) "
+                                             f"in statement `{statement}`")
+
+        statement = statement.lower()
+        # all placeholders have to be after clause word and must be equal amount of parameters
+        if statement.startswith("update"):
+            clause_index = statement.find("set")
+        elif statement.startswith("insert"):
+            clause_index = statement.find("values")
+        else:
+            # for select and delete
+            clause_index = statement.find("where")
+
+        if clause_index == -1:
+            raise ParametrizedStatementError(f"You passed parametrized statement (`{statement}`) without "
+                                             f"special clause (`where` or `set`)")
+
+        clause_statement = statement[clause_index:]
+        clause_placeholder_amount = clause_statement.count(placeholder)
+
+        if parameters_amount != clause_placeholder_amount:
+            raise ParametrizedStatementError(f"Amount of parameters ({parameters_amount}) doesn't equal "
+                                             f"amount of placeholders ({clause_placeholder_amount}) (`{placeholder}`) "
+                                             f"in the part of statement `...{clause_statement}`")
+
+    def _compile_statement(self, statement: str, parameters: tuple[Any] | list[Any], placeholder: str = "?"):
+
+        self._verify_parametrized_statement(statement=statement, parameters=parameters, placeholder=placeholder)
 
         for p in parameters:
             for i, symbol in enumerate(statement):
-                if symbol == "?":
-                    statement = statement[:i] + str(p) + statement[i + 1:]
+                if symbol == placeholder:
+                    # TODO: add array support + check ALL data types
+                    if isinstance(p, (int, float)):
+                        el = str(p)
+                    else:
+                        el = f"'{p}'"
+                    statement = statement[:i] + el + statement[i + 1:]
                     break
 
-        print(statement)
         return statement
 
-    def execute(self, query: str, params: list[Any] | tuple[Any] | None = None):
+    def execute(self, query: str, params: list[Any] | tuple[Any] | None = None, placeholder: str = "?"):
         """Execute a statement. If params was provided - compile statement first
         and replace all question marks on passed parameters.
 
         query str: a statement to execute
         param list[int | str] | tuple[int | str]: sequence of parameters to ingest into query
+        placeholder str: a symbol to be replaced with parameters, default is `?`. Also, possible: `%s`
 
         Examples:
             query: SELECT * FROM <table_name> WHERE id IN (?, ?, ?) AND price >= ?;
             params: (1, 2, 3, 450.69)
 
+            query: SELECT * FROM <table_name> WHERE id = %s AND price < %s;
+            params: (1, 200.00)
+
             query: INSERT INTO <table_name> (id, name, description, price) VALUES (?, ?, ?, ?);
             params: (1, 'Ryan Gosling', 'Actor', 0.0)
+            for next params it is better to use `executemany`
             params: [(1, 'Ryan Gosling', 'Actor', 0.0), (2, 'Mark Wahlberg', 'No pain no gain', 150.0)]
 
             query: UPDATE <table_name> SET price = ?, description = ? WHERE name = ?;
             params: (999.999, 'Best actor', 'Ryan Gosling')
 
-            query: DELETE FROM <table_name> WHERE id = ? AND other < ?;
+            query: DELETE FROM <table_name> WHERE id = ? AND other like ?;
             params: (404, 200)
         """
 
@@ -404,7 +459,10 @@ class Cursor:
             self.conn._verify_cur_open()
 
         if params:
-            query = self._compile_statement(statement=query, parameters=params)
+            query = self._compile_statement(statement=query, parameters=params, placeholder=placeholder)
+            print()
+            print(query)
+            print()
 
         self._execute_sqream_statement(query)
 

@@ -110,3 +110,6 @@ class NotSupportedError(DatabaseError):
 
 class ArraysAreDisabled(DatabaseError):
     pass
+
+class ParametrizedStatementError(DatabaseError):
+    """Exception for parametrized statements, for example when parameters amount greater than placeholders amount"""
