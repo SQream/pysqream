@@ -1,5 +1,6 @@
 from os import PathLike
 from pathlib import Path
+from random import *
 
 import pytest
 import socket
@@ -54,4 +55,47 @@ class TestBaseWithoutBeforeAfter:
             con = connect_dbapi(ip, clustered=clustered, use_ssl=use_ssl, port=port, picker_port=picker_port,
                           database=database, username=username, password=password)
             con.close()
+        yield
+
+
+class TestBaseParametrizedStatements:
+    """Draft test plan:
+    https://sqream.atlassian.net/l/cp/TF7xxqxr
+    """
+
+    TEMP_TABLE_NAME: str = "pst"
+    # Be aware of setting next constant greater than 10 because it will provide date and other stuff like `20010-01-10`
+    # instead of `2009-01-10`
+    TEMP_TABLE_START_ROWS_AMOUNT: int = 9
+    TEMP_TABLE_COLUMNS: str = ("i int", "b bool", "n numeric(15, 6)", "d date", "dt datetime", "t text",
+                               "iar int[]", "bar bool[]", "nar numeric(15, 6)[]", "dar date[]", "dtar datetime[]",
+                               "tar text[]")
+    RANDOM_NUMERIC = "{index}18496281.983903"
+    RANDOM_DATE = "200{index}-01-10"
+    RANDOM_DATETIME = "200{index}-01-10 12:00:00.{index}2345"
+    RANDOM_TEXT = "{index} text"
+
+    def generate_row(self, index: int) -> tuple[int, int, float, str, str, str, str, str, str, str, str, str]:
+        n = float(self.RANDOM_NUMERIC.format(index=index))
+        d = self.RANDOM_DATE.format(index=index)
+        dt = self.RANDOM_DATETIME.format(index=index)
+        t = self.RANDOM_TEXT.format(index=index)
+        iar = f"array[{index}, {index}, {index}]"
+        bar = "array[1, 0, 1]"
+        nar = f"array[{n}, {n}, {n}]"
+        dar = f"array['{d}', '{d}', '{d}']"
+        dtar = f"array['{dt}', '{dt}', '{dt}']"
+        tar = f"array['{t}', '{t}', '{t}']"
+        return index, 0, n, d, dt, t, iar, bar, nar, dar, dtar, tar
+
+    @pytest.fixture(autouse=True)
+    def create_temp_table_and_insert(self, sqream_cursor):
+        """This fixture creates `TEMP_TABLE_NAME` with `TEMP_TABLE_COLUMNS` and insert `TEMP_TABLE_START_ROWS_AMOUNT`
+        rows inside
+        """
+        sqream_cursor.execute(f"create or replace table {self.TEMP_TABLE_NAME} ({', '.join(self.TEMP_TABLE_COLUMNS)})")
+        for index in range(1, self.TEMP_TABLE_START_ROWS_AMOUNT + 1):
+            i, b, n, d, dt, t, iar, bar, nar, dar, dtar, tar = self.generate_row(index=index)
+            row = f"{i}, {b}, {n}, '{d}', '{dt}', '{t}', {iar}, {bar}, {nar}, {dar}, {dtar}, {tar}"
+            sqream_cursor.execute(f"insert into {self.TEMP_TABLE_NAME} values ({row})")
         yield
