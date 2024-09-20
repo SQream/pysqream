@@ -20,6 +20,7 @@ TEXT_ITEM_SIZE = 100
 DEFAULT_CHUNKSIZE = 0  # Dummy variable for some jsons
 FETCH_MANY_DEFAULT = 1  # default parameter for fetchmany()
 VARCHAR_ENCODING = 'ascii'
+PLACEHOLDERS = [r"\?", "%s"]  # possible placeholders for parametrized statements
 
 CYTHON = False # Cython IS NOT SUPPORTED
 clean_sqream_errors = False

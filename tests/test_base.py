@@ -1,6 +1,7 @@
+from decimal import Decimal
 from os import PathLike
 from pathlib import Path
-from random import *
+from datetime import date, datetime
 
 import pytest
 import socket
@@ -72,21 +73,25 @@ class TestBaseParametrizedStatements:
                                "tar text[]")
     RANDOM_NUMERIC = "{index}18496281.983903"
     RANDOM_DATE = "200{index}-01-10"
-    RANDOM_DATETIME = "200{index}-01-10 12:00:00.{index}2345"
+    RANDOM_DATETIME = "200{index}-01-10 12:00:00.{index}23000"
     RANDOM_TEXT = "{index} text"
+    DEFAULT_PLACEHOLDER = "?"
 
-    def generate_row(self, index: int) -> tuple[int, int, float, str, str, str, str, str, str, str, str, str]:
-        n = float(self.RANDOM_NUMERIC.format(index=index))
-        d = self.RANDOM_DATE.format(index=index)
-        dt = self.RANDOM_DATETIME.format(index=index)
+    def generate_row(self, index: int, array_length: int = 3) -> tuple[
+                int, bool, Decimal, date, datetime, str,
+                list[int], list[bool], list[Decimal], list[date], list[datetime], list[str]
+            ]:
+        n = Decimal(self.RANDOM_NUMERIC.format(index=index))
+        d = date.fromisoformat(self.RANDOM_DATE.format(index=index))
+        dt = datetime.strptime(self.RANDOM_DATETIME.format(index=index), "%Y-%m-%d %H:%M:%S.%f")
         t = self.RANDOM_TEXT.format(index=index)
-        iar = f"array[{index}, {index}, {index}]"
-        bar = "array[1, 0, 1]"
-        nar = f"array[{n}, {n}, {n}]"
-        dar = f"array['{d}', '{d}', '{d}']"
-        dtar = f"array['{dt}', '{dt}', '{dt}']"
-        tar = f"array['{t}', '{t}', '{t}']"
-        return index, 0, n, d, dt, t, iar, bar, nar, dar, dtar, tar
+        iar = [index] * array_length
+        bar = [True] * array_length
+        nar = [n] * array_length
+        dar = [d] * array_length
+        dtar = [dt] * array_length
+        tar = [t] * array_length
+        return index, False, n, d, dt, t, iar, bar, nar, dar, dtar, tar
 
     @pytest.fixture(autouse=True)
     def create_temp_table_and_insert(self, sqream_cursor):
@@ -95,7 +100,8 @@ class TestBaseParametrizedStatements:
         """
         sqream_cursor.execute(f"create or replace table {self.TEMP_TABLE_NAME} ({', '.join(self.TEMP_TABLE_COLUMNS)})")
         for index in range(1, self.TEMP_TABLE_START_ROWS_AMOUNT + 1):
-            i, b, n, d, dt, t, iar, bar, nar, dar, dtar, tar = self.generate_row(index=index)
-            row = f"{i}, {b}, {n}, '{d}', '{dt}', '{t}', {iar}, {bar}, {nar}, {dar}, {dtar}, {tar}"
-            sqream_cursor.execute(f"insert into {self.TEMP_TABLE_NAME} values ({row})")
+            placeholders = ", ".join([self.DEFAULT_PLACEHOLDER for _ in range(len(self.TEMP_TABLE_COLUMNS))])
+            params = self.generate_row(index=index)
+            sqream_cursor.execute(f"insert into {self.TEMP_TABLE_NAME} values ({placeholders})", params=params)
         yield
+        sqream_cursor.execute(f"truncate table {self.TEMP_TABLE_NAME}")

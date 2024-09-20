@@ -1,5 +1,19 @@
 ## Running the tests
-`python3 pysqream_tests.py`
+
+### Create virtual environment
+
+```commandline
+python3 -m venv venv
+```
+
+### Activate virtual environment
+
+```commandline
+. ./venv/bin/activate
+```
+
+### Run pytest
+`pytest -v`
 
 ## Checking test coverage
 Using `coverage` package:

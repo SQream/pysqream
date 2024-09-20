@@ -11,15 +11,17 @@ from __future__ import annotations
 import functools
 import json
 import logging
+import re
 import struct
 
-from typing import List, Any, Union, NoReturn
+from typing import List, Any, Union, NoReturn, Literal
 
 from pysqream.casting import (lengths_to_pairs,
                               sq_date_to_py_date,
                               sq_datetime_to_py_datetime,
                               sq_numeric_to_decimal,
-                              arr_lengths_to_pairs)
+                              arr_lengths_to_pairs,
+                              convert_parameters_sequence_to_sql_statement)
 from pysqream.column_buffer import ColumnBuffer
 from pysqream.globals import (BUFFER_SIZE,
                               ROWS_PER_FLUSH,
@@ -28,7 +30,8 @@ from pysqream.globals import (BUFFER_SIZE,
                               typecodes,
                               type_to_letter,
                               BYTES_PER_FLUSH_LIMIT,
-                              TEXT_ITEM_SIZE)
+                              TEXT_ITEM_SIZE,
+                              PLACEHOLDERS)
 from pysqream.logger import log_and_raise, logger, printdbg
 from pysqream.ping import _start_ping_loop, _end_ping_loop
 from pysqream.utils import (NotSupportedError,
@@ -364,6 +367,18 @@ class Cursor:
                 self.parsed_rows.extend(zip(*self._parse_fetched_cols()))
 
     @staticmethod
+    def detect_placeholder(statement: str) -> str:
+        pattern = '|'.join(PLACEHOLDERS)
+
+        found_placeholders = re.findall(pattern, statement)
+
+        if len(found_placeholders) == 0:
+            raise ParametrizedStatementError(f"No placeholders `{str(PLACEHOLDERS)}` in the statement `{statement}`")
+        elif len(set(found_placeholders)) > 1:
+            raise ParametrizedStatementError(f"Use only one type of possible placeholders `{str(PLACEHOLDERS)}`")
+        return found_placeholders[0]
+
+    @staticmethod
     def _verify_parametrized_statement(statement: str,
                                        parameters: tuple[Any] | list[Any],
                                        placeholder: str
@@ -371,9 +386,13 @@ class Cursor:
         """Verify provided statement is acceptable
 
         Check points:
-        1) Same length for parameters and placeholders amount
-        2) Special clause after select (`WHERE`, `SET`)
-        3) Same length for parameters and placeholders amount after special clause
+        1) There are NO placeholders put nearby each other like:
+           `select * from table where id = ??`
+           OR
+           `update table set i = ? where i in (?, ???, ?)`
+        2) Same length for parameters and placeholders amount
+        3) Special clause after select (`WHERE`, `SET`)
+        4) Same length for parameters and placeholders amount after special clause
            This is valid:
            `select * from table where i > ? and b < ?` with (1, 2)
            This is NOT valid:
@@ -381,6 +400,14 @@ class Cursor:
         """
         parameters_amount = len(parameters)
         placeholder_amount = statement.count(placeholder)
+        # `placeholder_pattern` - because you aren't able to put backslash `\` in f-string in python3.9 :(
+        placeholder_pattern = '\\' + placeholder if placeholder == '?' else placeholder
+        placeholder_duplication = re.compile(rf".+({placeholder_pattern}){{2,}}")
+
+        duplication = placeholder_duplication.match(statement)
+        if duplication:
+            raise ParametrizedStatementError(f"Placeholder `{placeholder}` duplication detected "
+                                             f"in statement: `{statement}`")
 
         if parameters_amount != placeholder_amount:
             raise ParametrizedStatementError(f"Amount of parameters ({parameters_amount}) doesn't equal "
@@ -409,30 +436,33 @@ class Cursor:
                                              f"amount of placeholders ({clause_placeholder_amount}) (`{placeholder}`) "
                                              f"in the part of statement `...{clause_statement}`")
 
-    def _compile_statement(self, statement: str, parameters: tuple[Any] | list[Any], placeholder: str = "?"):
+    def _compile_statement(self, statement: str, parameters: tuple[Any] | list[Any]) -> str:
+        placeholder = self.detect_placeholder(statement)
+        logger.info("Placeholder detected %s successfully", placeholder)
 
         self._verify_parametrized_statement(statement=statement, parameters=parameters, placeholder=placeholder)
+        logger.info("Statement %s validated successfully", statement)
 
-        for p in parameters:
-            for i, symbol in enumerate(statement):
-                if symbol == placeholder:
-                    # TODO: add array support + check ALL data types
-                    if isinstance(p, (int, float)):
-                        el = str(p)
-                    else:
-                        el = f"'{p}'"
-                    statement = statement[:i] + el + statement[i + 1:]
-                    break
+        prepared_parameters = convert_parameters_sequence_to_sql_statement(parameters=parameters)
+        logger.info("Parameters `%s` prepared successfully (from source ones: `%s`)", prepared_parameters, parameters)
+
+        # for prepared_parameter in prepared_parameters:
+        #     for i, symbol in enumerate(statement.split()):
+        #         if symbol == placeholder:
+        #             statement = statement[:i] + prepared_parameter + statement[i + 1:]
+        #             break
+
+        pattern = r"\?" if placeholder == "?" else placeholder
+        statement = re.sub(pattern, lambda match: prepared_parameters.pop(0), statement)
 
         return statement
 
-    def execute(self, query: str, params: list[Any] | tuple[Any] | None = None, placeholder: str = "?"):
+    def execute(self, query: str, params: list[Any] | tuple[Any] | None = None):
         """Execute a statement. If params was provided - compile statement first
         and replace all question marks on passed parameters.
 
-        query str: a statement to execute
+        query str: a statement to execute with placeholders
         param list[int | str] | tuple[int | str]: sequence of parameters to ingest into query
-        placeholder str: a symbol to be replaced with parameters, default is `?`. Also, possible: `%s`
 
         Examples:
             query: SELECT * FROM <table_name> WHERE id IN (?, ?, ?) AND price >= ?;
@@ -459,10 +489,7 @@ class Cursor:
             self.conn._verify_cur_open()
 
         if params:
-            query = self._compile_statement(statement=query, parameters=params, placeholder=placeholder)
-            print()
-            print(query)
-            print()
+            query = self._compile_statement(statement=query, parameters=params)
 
         self._execute_sqream_statement(query)
 
