@@ -1,3 +1,4 @@
+import os
 from decimal import Decimal
 from os import PathLike
 from pathlib import Path
@@ -26,7 +27,7 @@ class TestBase:
 
     @pytest.fixture
     def big_data_ddl_path(self) -> PathLike:
-        return Path("tests/big_data.ddl").absolute()
+        return (Path(__file__).parent / "big_data.ddl").absolute()
 
     @pytest.fixture(autouse=True)
     def Test_setup_teardown(self, ip, clustered, use_ssl, port, picker_port, database,
