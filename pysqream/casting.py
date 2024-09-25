@@ -156,9 +156,15 @@ def convert_parameters_sequence_to_sql_statement(parameters: list[Any] | tuple[A
                                                  array: bool = False
                                                  ) -> list[str] | str:
     """
-    update table set t = array[1, 2, 3] where i = 1 and name = 'Ryan'
-    params = ([1, 2, 3], 1, 'Ryan')
-    prepared_params = ["array[1, 2, 3]", '3', "'Ryan'"]
+    Convert list of parameters for parametrized statement to sqream types (including arrays - recursively)
+    :parameters: sequence of any data types
+    :array bool: if array return special prefix `array` before list elements
+    :return list of strings | str (in array case): prepared parameters
+
+    Example:
+    1) Statement: update table set array_column = ? where integer_column = ? and text_column = ?
+    2) parameters = ([1, 2, 3], 1, 'Ryan')
+    3) prepared_params = ["array[1, 2, 3]", '3', "'Ryan'"]
     """
 
     result = []

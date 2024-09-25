@@ -367,7 +367,18 @@ class Cursor:
                 self.parsed_rows.extend(zip(*self._parse_fetched_cols()))
 
     @staticmethod
-    def detect_placeholder(statement: str) -> str:
+    def _detect_placeholder(statement: str) -> str:
+        """Detects placeholder in given statement.
+
+        Examples:
+            Positive:
+            select * from table where c = ? and i < ? or n in (?, ?, ?) --> will detect [?, ?, ?, ?, ?]
+            insert into table (a, b, c) values (%s, %s, %s) --> will detect [%s, %s, %s]
+
+            Negative:
+            update table set x = %s where y > ? --> will detect [%s, ?] and raise an Exception
+            delete from table where z = 200 --> will not detect any placeholders and raise an Exception
+        """
         pattern = '|'.join(PLACEHOLDERS)
 
         found_placeholders = re.findall(pattern, statement)
@@ -391,8 +402,7 @@ class Cursor:
            OR
            `update table set i = ? where i in (?, ???, ?)`
         2) Same length for parameters and placeholders amount
-        3) Special clause after select (`WHERE`, `SET`)
-        4) Same length for parameters and placeholders amount after special clause
+        3) Same length for parameters and placeholders amount after special clause
            This is valid:
            `select * from table where i > ? and b < ?` with (1, 2)
            This is NOT valid:
@@ -437,23 +447,22 @@ class Cursor:
                                              f"in the part of statement `...{clause_statement}`")
 
     def _compile_statement(self, statement: str, parameters: tuple[Any] | list[Any]) -> str:
-        placeholder = self.detect_placeholder(statement)
+        # 1. Detects placeholder in statement
+        placeholder = self._detect_placeholder(statement)
         logger.info("Placeholder detected %s successfully", placeholder)
 
+        # 2. Verify given statement is ok
         self._verify_parametrized_statement(statement=statement, parameters=parameters, placeholder=placeholder)
         logger.info("Statement %s validated successfully", statement)
 
+        # 3. Prepare parameters for statement
         prepared_parameters = convert_parameters_sequence_to_sql_statement(parameters=parameters)
         logger.info("Parameters `%s` prepared successfully (from source ones: `%s`)", prepared_parameters, parameters)
 
-        # for prepared_parameter in prepared_parameters:
-        #     for i, symbol in enumerate(statement.split()):
-        #         if symbol == placeholder:
-        #             statement = statement[:i] + prepared_parameter + statement[i + 1:]
-        #             break
-
+        # 4. Compile statement
         pattern = r"\?" if placeholder == "?" else placeholder
         statement = re.sub(pattern, lambda match: prepared_parameters.pop(0), statement)
+        logger.info("Parameterized statement successfully compiled: `%s`", statement)
 
         return statement
 
