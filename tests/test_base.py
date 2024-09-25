@@ -10,6 +10,9 @@ import pysqream
 from tests.pytest_logger import Logger
 
 
+DEFAULT_ARRAY_ELEMENTS_AMOUNT = 3
+
+
 def connect_dbapi(ip, clustered=False, use_ssl=False, port=5000, picker_port=3108,
                   database='master', username='sqream', password='sqream'):
     if clustered:
@@ -77,7 +80,7 @@ class TestBaseParametrizedStatements:
     RANDOM_TEXT = "{index} text"
     DEFAULT_PLACEHOLDER = "?"
 
-    def generate_row(self, index: int, array_length: int = 3) -> tuple[
+    def generate_row(self, index: int, array_length: int = DEFAULT_ARRAY_ELEMENTS_AMOUNT) -> tuple[
                 int, bool, Decimal, date, datetime, str,
                 list[int], list[bool], list[Decimal], list[date], list[datetime], list[str]
             ]:
