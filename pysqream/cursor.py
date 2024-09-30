@@ -11,17 +11,15 @@ from __future__ import annotations
 import functools
 import json
 import logging
-import re
 import struct
 
-from typing import List, Any, Union, NoReturn, Literal
+from typing import List, Any, Union
 
 from pysqream.casting import (lengths_to_pairs,
                               sq_date_to_py_date,
                               sq_datetime_to_py_datetime,
                               sq_numeric_to_decimal,
-                              arr_lengths_to_pairs,
-                              convert_parameters_sequence_to_sql_statement)
+                              arr_lengths_to_pairs)
 from pysqream.column_buffer import ColumnBuffer
 from pysqream.globals import (BUFFER_SIZE,
                               ROWS_PER_FLUSH,
@@ -31,7 +29,7 @@ from pysqream.globals import (BUFFER_SIZE,
                               type_to_letter,
                               BYTES_PER_FLUSH_LIMIT,
                               TEXT_ITEM_SIZE,
-                              PLACEHOLDERS)
+                              CAN_SUPPORT_PARAMETERS)
 from pysqream.logger import log_and_raise, logger, printdbg
 from pysqream.ping import _start_ping_loop, _end_ping_loop
 from pysqream.utils import (NotSupportedError,
@@ -39,8 +37,7 @@ from pysqream.utils import (NotSupportedError,
                             get_array_size,
                             false_generator,
                             ArraysAreDisabled,
-                            OperationalError,
-                            ParametrizedStatementError)
+                            OperationalError)
 
 
 def _is_null(nullable):
@@ -82,17 +79,27 @@ class Cursor:
         self.rows_per_flush = 0
         self.lastrowid = None
         self.base_connection_closed = False
+        self.rows_fetched = None
+        self.rows_returned = None
+        self.cols = []
+        self.capacity = 0
 
     def get_statement_type(self):
-
         return self.statement_type
 
     def get_statement_id(self):
-
         return self.stmt_id
 
-    def _execute_sqream_statement(self, stmt):
-        self.latest_stmt = stmt
+    def _execute_sqream_statement(self, statement: str, params: list[Any] | tuple[Any] | None = None) -> None:
+        """High-level method overview:
+        1) statement preparation + reconnect + execute
+        2) queryTypeIn and queryTypeOut
+        3) if queryTypeIn isn't empty is means statement was parametrized
+        4) collect all information about all columns (such a col types, scales, row_size, etc.) and send it to server
+        5) if statement was `select` - perform lists for fetching and do 4 step for queryTypeOut
+        """
+
+        self.latest_stmt = statement
 
         if self.open_statement:
             self.close_stmt()
@@ -101,7 +108,9 @@ class Cursor:
         self.more_to_fetch = True
 
         self.stmt_id = json.loads(self.client.send_string('{"getStatementId" : "getStatementId"}'))["statementId"]
-        stmt_json = json.dumps({"prepareStatement": stmt, "chunkSize": DEFAULT_CHUNKSIZE})
+        stmt_json = json.dumps({"prepareStatement": statement,
+                                "chunkSize": DEFAULT_CHUNKSIZE,
+                                "canSupportParams": CAN_SUPPORT_PARAMETERS})
         res = self.client.send_string(stmt_json)
 
         self.client.validate_response(res, "statementPrepared")
@@ -114,57 +123,36 @@ class Cursor:
                 if self.conn.use_ssl else self.lb_params['port'])
 
             # Send reconnect and reconstruct messages
-            reconnect_str = '{{"service": "{}", "reconnectDatabase":"{}", "connectionId":{}, "listenerId":{},"username":"{}", "password":"{}"}}'.format(
-                self.conn.service, self.conn.database, self.conn.connection_id,
-                self.lb_params['listener_id'], self.conn.username, self.conn.password)
+            reconnect_str = (f'{{"service": "{self.conn.service}", '
+                             f'"reconnectDatabase":"{self.conn.database}", '
+                             f'"connectionId":{self.conn.connection_id}, '
+                             f'"listenerId":{self.lb_params["listener_id"]}, '
+                             f'"username":"{self.conn.username}", '
+                             f'"password":"{self.conn.password}"}}')
             self.client.send_string(reconnect_str)
             # Since summer 2024 sqreamd worker could be configured with non-gpu (cpu) instance
             # it raises exception here like `The query requires a GPU-Worker. Ensure the SQream Service has GPU . . .`
             # This exception should be validated here. Otherwise, it will be validated at the next call which provides
             # Unexpected behavior
-            self.client.validate_response(
-                self.client.send_string('{{"reconstructStatement": {}}}'.format(self.stmt_id)),
-                "statementReconstructed")
+            self.client.validate_response(self.client.send_string(f'{{"reconstructStatement": {self.stmt_id}}}'),
+                                          "statementReconstructed"
+                                          )
 
         # Reconnected/reconstructed if needed,  send  execute command
         self.client.validate_response(self.client.send_string('{"execute" : "execute"}'), 'executed')
 
         # Send queryType message/s
-        res = json.loads(self.client.send_string('{"queryTypeIn": "queryTypeIn"}'))
-        self.column_list = res.get('queryType', '')
+        query_type_in = json.loads(self.client.send_string('{"queryTypeIn": "queryTypeIn"}'))
+        self.column_list = parametrized_columns = query_type_in.get('queryType', [])
 
-        if not self.column_list:
-            res = json.loads(
-                self.client.send_string('{"queryTypeOut" : "queryTypeOut"}'))
-            self.column_list = res.get('queryTypeNamed', '')
-            if not self.column_list:
-                self.statement_type = 'DML'
-                self.close_stmt()
-                return
+        query_type_out = json.loads(self.client.send_string('{"queryTypeOut" : "queryTypeOut"}'))
 
-            self.statement_type = 'SELECT' if self.column_list else 'DML'
-            self.result_rows = []
-            self.unparsed_row_amount = 0
-            self.data_columns = []
-        else:
-            self.statement_type = 'INSERT'
+        if parametrized_columns:
+            # Check if arrays are allowed before executing the rest
+            if not self._validate_arrays_usage():
+                log_and_raise(ArraysAreDisabled, "Arrays are disabled in this connection.")
 
-        # Check if arrays are allowed before executing the rest
-        if not self._validate_arrays_usage():
-            log_and_raise(
-                ArraysAreDisabled, "Arrays are disabled in this connection.")
-
-        # {"isTrueVarChar":false,"nullable":true,"type":["ftInt",4,0]}
-        self.col_names, self.col_tvc, self.col_nul, self.col_type_tups = \
-            list(zip(*[(col.get("name", ""), col["isTrueVarChar"], col["nullable"], col["type"]) for col in self.column_list]))
-        self.col_names_map = {
-            name: idx
-            for idx, name in enumerate(self.col_names)
-        }
-
-        if self.statement_type == 'INSERT':
-            # variables should not be defined outside __init__
-            # TODO: get rid of definition of attributes outside __init__
+            self._generate_columns_data_for_parametrized_statement()
             self.col_types = []
             self.col_sizes = []
             self.col_scales = []
@@ -182,19 +170,59 @@ class Cursor:
                 self.col_sizes.append(type_tup[1 + offset] if type_tup[1 + offset] != 0 else TEXT_ITEM_SIZE)
                 self.col_scales.append(type_tup[2 + offset])
 
-            self.row_size = sum(self.col_sizes) + sum(
-                null for null in self.col_nul if null is True) + sum(tvc for tvc in self.col_tvc if tvc is True)
+            self.row_size = sum([sum(self.col_sizes),
+                                 sum(null for null in self.col_nul if null is True),
+                                 sum(tvc for tvc in self.col_tvc if tvc is True)
+                                 ])
 
-            self.rows_per_flush = int(ROWS_PER_FLUSH if self.row_size * ROWS_PER_FLUSH <= BYTES_PER_FLUSH_LIMIT else BYTES_PER_FLUSH_LIMIT / self.row_size)
+            if self.row_size * ROWS_PER_FLUSH <= BYTES_PER_FLUSH_LIMIT:
+                self.rows_per_flush = int(ROWS_PER_FLUSH)
+            else:
+                self.rows_per_flush = int(BYTES_PER_FLUSH_LIMIT / self.row_size)
+
             self.buffer.clear()
 
-        if self.statement_type == 'SELECT':
+            # to save `executemany` logic (we don't provide params in this method)
+            if params is not None:
+                # Send columns and parameters
+                row_len = len(self.column_list)
+                rows_or_cols = [params[i: i + row_len] for i in range(0, len(params), row_len)]
+                column_lengths = [len(row_or_col) for row_or_col in rows_or_cols]
+
+                if column_lengths.count(column_lengths[0]) != len(column_lengths):
+                    log_and_raise(ProgrammingError,
+                                  "Incosistent data sequences passed for inserting. "
+                                  "Please use rows/columns of consistent length")
+
+                self.capacity = len(rows_or_cols)
+                self.cols = list(zip(*rows_or_cols))
+
+                self._send_columns()
+
+            else:
+                # We DON'T close statement if it was `SELECT` query or `executemany` was used
+                # because `executemany` uses logic of this method and call close_stmt() by itself after it
+                return
+
+        self.column_list = columns_for_output = query_type_out.get('queryTypeNamed', [])
+        if columns_for_output:
+            # data in `queryTypeOut` means it was a `SELECT` query
+            self.statement_type = "SELECT"
+            self.result_rows = []
             self.parsed_rows = []
-            self.parsed_row_amount = 0
+            self.data_columns = []
+            self.unparsed_row_amount = self.parsed_row_amount = 0
+
+            self._generate_columns_data_for_parametrized_statement()
+
+        else:
+            self.statement_type = "DML"
+            self.close_stmt()
 
         if logger.isEnabledFor(logging.INFO):
-            logger.info \
-                (f'Executing statement over connection {self.conn.connection_id} with statement id {self.stmt_id}:\n{stmt}')
+            logger.info(f'Executing statement over connection {self.conn.connection_id} '
+                        f'with statement id {self.stmt_id}:\n{statement}')
+        return
 
     def _validate_arrays_usage(self) -> bool:
         """
@@ -235,7 +263,47 @@ class Cursor:
 
         return self.description
 
-    def _send_columns(self, cols=None, capacity=None):
+    def _generate_columns_data_for_parametrized_statement(self) -> None:
+        """To use fetch we need to fill all attributes in list below:
+        1) col_names - list of column names
+        2) col_tvc - list of `isTrueVarChar` values
+        3) col_nul - list of nullable column properties
+        4) col_type_tups - list with column types description (type, size, scale)
+        5) col_names_map - dictionary with col_name and index (from 0) for every column
+
+        Content could be received from `queryTypeIn` or `queryTypeOut` requests
+        For parametrized statements (`executemany` also) `queryTypeIn` always returns list of columns data look like:
+        { "isTrueVarChar": false, "nullable": true, "type": ["ftInt", 4, 0] }
+        """
+        self.col_names = [col.get("name", "") for col in self.column_list]
+        self.col_tvc = [col["isTrueVarChar"] for col in self.column_list]
+        self.col_nul = [col["nullable"] for col in self.column_list]
+        self.col_type_tups = [col["type"] for col in self.column_list]
+        self.col_names_map = {name: idx for idx, name in enumerate(self.col_names)}
+
+    def _send_columns(self) -> None:
+        """Used for parametrized statements.
+        After information about all columns was collected by `_execute_sqream_statement` and
+        `_generate_columns_data_for_parametrized_statement` methods
+
+        We need to send these data to server to make it inserts parameters via
+        slicing a chunk of columns and pass to _send_column_chunk()
+        """
+
+        start_idx = 0
+        while self.cols != [()]:
+            col_chunk = [col[start_idx:start_idx + self.rows_per_flush] for col in self.cols]
+            chunk_len = len(col_chunk[0])
+            if chunk_len == 0:
+                break
+            self._send_column_chunk(col_chunk, chunk_len)
+            start_idx += self.rows_per_flush
+            del col_chunk
+
+            if logger.isEnabledFor(logging.INFO):
+                logger.info(f'Sent {chunk_len} rows of data')
+
+    def _send_column_chunk(self, cols=None, capacity=None):
         """Perform network insert - "put" json, header, binarized columns. Used by executemany()"""
 
         cols = cols or self.cols
@@ -356,117 +424,17 @@ class Cursor:
         return self.extracted_cols
 
     def _fetch_and_parse(self, requested_row_amount, data_as='rows'):
-        ''' See if this amount of data is available or a fetch from sqream is required
-            -1 - fetch all available data. Used by fetchmany() '''
+        """See if this amount of data is available or a fetch from sqream is required
+        -1 - fetch all available data. Used by fetchmany()
+        """
 
         if data_as == 'rows':
-            while (requested_row_amount > len(self.parsed_rows)
-                   or requested_row_amount == -1) and self.more_to_fetch:
+            while (requested_row_amount > len(self.parsed_rows) or requested_row_amount == -1) and self.more_to_fetch:
                 self.more_to_fetch = bool(self._fetch())  # _fetch() updates self.unparsed_row_amount
 
                 self.parsed_rows.extend(zip(*self._parse_fetched_cols()))
 
-    @staticmethod
-    def _detect_placeholder(statement: str) -> str:
-        """Detects placeholder in given statement.
-
-        Examples:
-            Positive:
-            select * from table where c = ? and i < ? or n in (?, ?, ?) --> will detect [?, ?, ?, ?, ?]
-            insert into table (a, b, c) values (%s, %s, %s) --> will detect [%s, %s, %s]
-
-            Negative:
-            update table set x = %s where y > ? --> will detect [%s, ?] and raise an Exception
-            delete from table where z = 200 --> will not detect any placeholders and raise an Exception
-        """
-        pattern = '|'.join(PLACEHOLDERS)
-
-        found_placeholders = re.findall(pattern, statement)
-
-        if len(found_placeholders) == 0:
-            raise ParametrizedStatementError(f"No placeholders `{str(PLACEHOLDERS)}` in the statement `{statement}`")
-        elif len(set(found_placeholders)) > 1:
-            raise ParametrizedStatementError(f"Use only one type of possible placeholders `{str(PLACEHOLDERS)}`")
-        return found_placeholders[0]
-
-    @staticmethod
-    def _verify_parametrized_statement(statement: str,
-                                       parameters: tuple[Any] | list[Any],
-                                       placeholder: str
-                                       ) -> None | NoReturn:
-        """Verify provided statement is acceptable
-
-        Check points:
-        1) There are NO placeholders put nearby each other like:
-           `select * from table where id = ??`
-           OR
-           `update table set i = ? where i in (?, ???, ?)`
-        2) Same length for parameters and placeholders amount
-        3) Same length for parameters and placeholders amount after special clause
-           This is valid:
-           `select * from table where i > ? and b < ?` with (1, 2)
-           This is NOT valid:
-           `select * from ? where i > ?` with (1, 2)
-        """
-        parameters_amount = len(parameters)
-        placeholder_amount = statement.count(placeholder)
-        # `placeholder_pattern` - because you aren't able to put backslash `\` in f-string in python3.9 :(
-        placeholder_pattern = '\\' + placeholder if placeholder == '?' else placeholder
-        placeholder_duplication = re.compile(rf".+({placeholder_pattern}){{2,}}")
-
-        duplication = placeholder_duplication.match(statement)
-        if duplication:
-            raise ParametrizedStatementError(f"Placeholder `{placeholder}` duplication detected "
-                                             f"in statement: `{statement}`")
-
-        if parameters_amount != placeholder_amount:
-            raise ParametrizedStatementError(f"Amount of parameters ({parameters_amount}) doesn't equal "
-                                             f"amount of placeholders ({placeholder_amount}) (`{placeholder}`) "
-                                             f"in statement `{statement}`")
-
-        statement = statement.lower()
-        # all placeholders have to be after clause word and must be equal amount of parameters
-        if statement.startswith("update"):
-            clause_index = statement.find("set")
-        elif statement.startswith("insert"):
-            clause_index = statement.find("values")
-        else:
-            # for select and delete
-            clause_index = statement.find("where")
-
-        if clause_index == -1:
-            raise ParametrizedStatementError(f"You passed parametrized statement (`{statement}`) without "
-                                             f"special clause (`where` or `set`)")
-
-        clause_statement = statement[clause_index:]
-        clause_placeholder_amount = clause_statement.count(placeholder)
-
-        if parameters_amount != clause_placeholder_amount:
-            raise ParametrizedStatementError(f"Amount of parameters ({parameters_amount}) doesn't equal "
-                                             f"amount of placeholders ({clause_placeholder_amount}) (`{placeholder}`) "
-                                             f"in the part of statement `...{clause_statement}`")
-
-    def _compile_statement(self, statement: str, parameters: tuple[Any] | list[Any]) -> str:
-        # 1. Detects placeholder in statement
-        placeholder = self._detect_placeholder(statement)
-        logger.info("Placeholder detected %s successfully", placeholder)
-
-        # 2. Verify given statement is ok
-        self._verify_parametrized_statement(statement=statement, parameters=parameters, placeholder=placeholder)
-        logger.info("Statement %s validated successfully", statement)
-
-        # 3. Prepare parameters for statement
-        prepared_parameters = convert_parameters_sequence_to_sql_statement(parameters=parameters)
-        logger.info("Parameters `%s` prepared successfully (from source ones: `%s`)", prepared_parameters, parameters)
-
-        # 4. Compile statement
-        pattern = r"\?" if placeholder == "?" else placeholder
-        statement = re.sub(pattern, lambda match: prepared_parameters.pop(0), statement)
-        logger.info("Parameterized statement successfully compiled: `%s`", statement)
-
-        return statement
-
-    def execute(self, query: str, params: list[Any] | tuple[Any] | None = None):
+    def execute(self, statement: str, params: list[Any] | tuple[Any] | None = None):
         """Execute a statement. If params was provided - compile statement first
         and replace all question marks on passed parameters.
 
@@ -497,10 +465,7 @@ class Cursor:
         else:
             self.conn._verify_cur_open()
 
-        if params:
-            query = self._compile_statement(statement=query, parameters=params)
-
-        self._execute_sqream_statement(query)
+        self._execute_sqream_statement(statement, params=params)
 
         self._fill_description()
         self.rows_fetched = 0
@@ -508,9 +473,8 @@ class Cursor:
         return self
 
     def executemany(self, query, rows_or_cols=None, data_as='rows', amount=None):
-        ''' Execute a statement, including parametered data insert '''
+        """Execute a statement, including parametrized data insert"""
 
-        # self._verify_open()
         self.execute(query)
 
         if rows_or_cols is None:
@@ -538,19 +502,7 @@ class Cursor:
             self.cols = rows_or_cols
             self.capacity = len(self.cols)
 
-        # Slice a chunk of columns and pass to _send_columns()
-        start_idx = 0
-        while self.cols != [()]:
-            col_chunk = [col[start_idx:start_idx + self.rows_per_flush] for col in self.cols]
-            chunk_len = len(col_chunk[0])
-            if chunk_len == 0:
-                break
-            self._send_columns(col_chunk, chunk_len)
-            start_idx += self.rows_per_flush
-            del col_chunk
-
-            if logger.isEnabledFor(logging.INFO):
-                logger.info(f'Sent {chunk_len} rows of data')
+        self._send_columns()
 
         self.close_stmt()
 
