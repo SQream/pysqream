@@ -7,7 +7,8 @@ from __future__ import annotations
 from datetime import datetime, date
 from decimal import Decimal, getcontext
 from math import floor, ceil, pow
-from typing import Any
+
+import numpy as np
 
 
 def pad_dates(num):
@@ -150,36 +151,3 @@ def numpy_datetime_str_to_tup2(numpy_dt):
     dt = datetime.utcfromtimestamp(ts)
 
     return dt.year, dt.month, dt.day
-
-
-def convert_parameters_sequence_to_sql_statement(parameters: list[Any] | tuple[Any],
-                                                 array: bool = False
-                                                 ) -> list[str] | str:
-    """
-    Convert list of parameters for parametrized statement to sqream types (including arrays - recursively)
-    :parameters: sequence of any data types
-    :array bool: if array return special prefix `array` before list elements
-    :return list of strings | str (in array case): prepared parameters
-
-    Example:
-    1) Statement: update table set array_column = ? where integer_column = ? and text_column = ?
-    2) parameters = ([1, 2, 3], 1, 'Ryan')
-    3) prepared_params = ["array[1, 2, 3]", '3', "'Ryan'"]
-    """
-
-    result = []
-    for element in parameters:
-        if isinstance(element, (list, tuple)):
-            result.append(convert_parameters_sequence_to_sql_statement(element, array=True))
-        elif isinstance(element, datetime):
-            result.append(f"'{element.strftime('%F %T.%f')}'")
-        elif isinstance(element, date):
-            result.append(f"'{element.strftime('%F')}'")
-        elif isinstance(element, str):
-            result.append(f"'{element}'")
-        else:
-            result.append(str(element))
-
-    if array is True:
-        return f"array[{', '.join(result)}]"
-    return result
