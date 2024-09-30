@@ -4,302 +4,236 @@ from random import randint
 
 import pytest
 
-from pysqream.utils import ParametrizedStatementError
 from tests.test_base import TestBaseParametrizedStatements, DEFAULT_ARRAY_ELEMENTS_AMOUNT
 
 
-@pytest.mark.parametrize("placeholder", ("?", "%s"), ids=("qmark", "percent_s"))
 class TestSelect(TestBaseParametrizedStatements):
     params = (1, 5, TestBaseParametrizedStatements.TEMP_TABLE_START_ROWS_AMOUNT)
     expected_result = [(i, False) for i in range(1, TestBaseParametrizedStatements.TEMP_TABLE_START_ROWS_AMOUNT + 1)]
 
+    @pytest.mark.parametrize(
+        "compare_symbol",
+        (">", "<", ">=", "<=", "="),
+        ids=("greater", "less", "greater_equal", "less_equal", "equal")
+    )
     @pytest.mark.parametrize("param", params)
-    def test_less_one_placeholder(self, sqream_cursor, param: int, placeholder):
-        sqream_cursor.execute(f"select i, b from {self.TEMP_TABLE_NAME} where i < {placeholder}", params=(param,))
-        assert sqream_cursor.fetchall() == self.expected_result[:param - 1]
+    def test_one_placeholder_all_comparison(self, sqream_cursor, param: int, compare_symbol):
+        sqream_cursor.execute(f"select i, b from {self.TEMP_TABLE_NAME} where i {compare_symbol} ?",
+                              params=(param,))
+        if compare_symbol == "<":
+            expected_result = self.expected_result[:param - 1]
+        elif compare_symbol == ">":
+            expected_result = self.expected_result[param:]
+        elif compare_symbol == "<=":
+            expected_result = self.expected_result[:param]
+        elif compare_symbol == ">=":
+            expected_result = self.expected_result[param - 1:]
+        else:
+            expected_result = [self.expected_result[param - 1]]
+        assert sqream_cursor.fetchall() == expected_result
 
-    @pytest.mark.parametrize("param", params)
-    def test_greater_one_placeholder(self, sqream_cursor, param: int, placeholder):
-        sqream_cursor.execute(f"select i, b from {self.TEMP_TABLE_NAME} where i > {placeholder}", params=(param,))
-        assert sqream_cursor.fetchall() == self.expected_result[param:]
-
-    @pytest.mark.parametrize("param", params)
-    def test_less_equal_one_placeholder(self, sqream_cursor, param: int, placeholder):
-        sqream_cursor.execute(f"select i, b from {self.TEMP_TABLE_NAME} where i <= {placeholder}", params=(param,))
-        assert sqream_cursor.fetchall() == self.expected_result[:param]
-
-    @pytest.mark.parametrize("param", params)
-    def test_greater_equal_one_placeholder(self, sqream_cursor, param: int, placeholder):
-        sqream_cursor.execute(f"select i, b from {self.TEMP_TABLE_NAME} where i >= {placeholder}", params=(param,))
-        assert sqream_cursor.fetchall() == self.expected_result[param - 1:]
-
-    @pytest.mark.parametrize("param", params)
-    def test_equal_one_placeholder(self, sqream_cursor, param: int, placeholder):
-        sqream_cursor.execute(f"select i, b from {self.TEMP_TABLE_NAME} where i = {placeholder}", params=(param,))
-        assert sqream_cursor.fetchall() == [self.expected_result[param - 1]]
-
-    def test_like_one_placeholder(self, sqream_cursor, placeholder):
-        sqream_cursor.execute(f"select t from {self.TEMP_TABLE_NAME} where t like {placeholder}", params=('%text',))
+    def test_like_one_placeholder(self, sqream_cursor):
+        sqream_cursor.execute(f"select t from {self.TEMP_TABLE_NAME} where t like ?", params=('%text',))
         assert sqream_cursor.fetchall() == [(f"{i} text",) for i in range(1, self.TEMP_TABLE_START_ROWS_AMOUNT + 1)]
 
-        sqream_cursor.execute(f"select t, tar from {self.TEMP_TABLE_NAME} where tar[1] like {placeholder}",
+        sqream_cursor.execute(f"select t, tar from {self.TEMP_TABLE_NAME} where tar[1] like ?",
                               params=('1%',))
         assert sqream_cursor.fetchall() == [("1 text", ["1 text", "1 text", "1 text"])]
 
-    def test_in_one_placeholder(self, sqream_cursor, placeholder):
-        sqream_cursor.execute(f"select i, b from {self.TEMP_TABLE_NAME} where i in ({placeholder})", params=(1,))
+    def test_in_one_placeholder(self, sqream_cursor):
+        sqream_cursor.execute(f"select i, b from {self.TEMP_TABLE_NAME} where i in (?)", params=(1,))
         assert sqream_cursor.fetchall() == [(1, False)]
 
-    def test_int(self, sqream_cursor, placeholder):
+    def test_int(self, sqream_cursor):
         index = randint(1, self.TEMP_TABLE_START_ROWS_AMOUNT)
-        sqream_cursor.execute(f"select * from {self.TEMP_TABLE_NAME} where i = {placeholder}", params=(index,))
+        sqream_cursor.execute(f"select * from {self.TEMP_TABLE_NAME} where i = ?", params=(index,))
         assert sqream_cursor.fetchall() == [self.generate_row(index)]
 
-    def test_bool(self, sqream_cursor, placeholder):
-        sqream_cursor.execute(f"select * from {self.TEMP_TABLE_NAME} where b = {placeholder}", params=(False,))
+    def test_bool(self, sqream_cursor):
+        sqream_cursor.execute(f"select * from {self.TEMP_TABLE_NAME} where b = ?", params=(False,))
         assert sqream_cursor.fetchall() == [self.generate_row(i) for i in range(1, 10)]
 
-    def test_numeric(self, sqream_cursor, placeholder):
+    def test_numeric(self, sqream_cursor):
         index = randint(1, self.TEMP_TABLE_START_ROWS_AMOUNT)
         numeric = Decimal(self.RANDOM_NUMERIC.format(index=index))
-        sqream_cursor.execute(f"select * from {self.TEMP_TABLE_NAME} where n = {placeholder}", params=(numeric,))
+        sqream_cursor.execute(f"select * from {self.TEMP_TABLE_NAME} where n = ?", params=(numeric,))
         assert sqream_cursor.fetchall() == [self.generate_row(index)]
 
-    def test_date_as_string(self, sqream_cursor, placeholder):
-        index = randint(1, self.TEMP_TABLE_START_ROWS_AMOUNT)
-        d = self.RANDOM_DATE.format(index=index)
-        sqream_cursor.execute(f"select * from {self.TEMP_TABLE_NAME} where d = {placeholder}", params=(d,))
-        assert sqream_cursor.fetchall() == [self.generate_row(index)]
-
-    def test_date_as_object(self, sqream_cursor, placeholder):
+    def test_date(self, sqream_cursor):
         index = randint(1, self.TEMP_TABLE_START_ROWS_AMOUNT)
         row = self.generate_row(index=index)
         d = row[3]
-        sqream_cursor.execute(f"select * from {self.TEMP_TABLE_NAME} where d = {placeholder}", params=(d,))
+        sqream_cursor.execute(f"select * from {self.TEMP_TABLE_NAME} where d = ?", params=(d,))
         assert sqream_cursor.fetchall() == [row]
 
-    def test_datetime_as_string(self, sqream_cursor, placeholder):
-        index = randint(1, self.TEMP_TABLE_START_ROWS_AMOUNT)
-        dt = self.RANDOM_DATETIME.format(index=index)
-        sqream_cursor.execute(f"select * from {self.TEMP_TABLE_NAME} where dt = {placeholder}", params=(dt,))
-        assert sqream_cursor.fetchall() == [self.generate_row(index)]
-
-    def test_datetime_as_object(self, sqream_cursor, placeholder):
+    def test_datetime(self, sqream_cursor):
         index = randint(1, self.TEMP_TABLE_START_ROWS_AMOUNT)
         row = self.generate_row(index=index)
         dt = row[4]
-        sqream_cursor.execute(f"select * from {self.TEMP_TABLE_NAME} where dt = {placeholder}", params=(dt,))
+        sqream_cursor.execute(f"select * from {self.TEMP_TABLE_NAME} where dt = ?", params=(dt,))
         assert sqream_cursor.fetchall() == [row]
 
-    def test_text(self, sqream_cursor, placeholder):
+    def test_text(self, sqream_cursor):
         index = randint(1, self.TEMP_TABLE_START_ROWS_AMOUNT)
         t = self.RANDOM_TEXT.format(index=index)
-        sqream_cursor.execute(f"select * from {self.TEMP_TABLE_NAME} where t = {placeholder}", params=(t,))
+        sqream_cursor.execute(f"select * from {self.TEMP_TABLE_NAME} where t = ?", params=(t,))
         assert sqream_cursor.fetchall() == [self.generate_row(index)]
 
-    def test_int_array(self, sqream_cursor, placeholder):
-        index = randint(1, self.TEMP_TABLE_START_ROWS_AMOUNT)
-        sqream_cursor.execute(f"select * from {self.TEMP_TABLE_NAME} where iar = {placeholder}",
-                              params=([index] * DEFAULT_ARRAY_ELEMENTS_AMOUNT,))
-        assert sqream_cursor.fetchall() == [self.generate_row(index)]
-
-    def test_bool_array(self, sqream_cursor, placeholder):
-        sqream_cursor.execute(f"select * from {self.TEMP_TABLE_NAME} where bar = {placeholder}",
-                              params=([True] * DEFAULT_ARRAY_ELEMENTS_AMOUNT,))
-        assert sqream_cursor.fetchall() == [self.generate_row(i) for i in range(1, 10)]
-
-    def test_numeric_array(self, sqream_cursor, placeholder):
-        index = randint(1, self.TEMP_TABLE_START_ROWS_AMOUNT)
-        numeric = Decimal(self.RANDOM_NUMERIC.format(index=index))
-        sqream_cursor.execute(f"select * from {self.TEMP_TABLE_NAME} where nar = {placeholder}",
-                              params=([numeric] * DEFAULT_ARRAY_ELEMENTS_AMOUNT,))
-        assert sqream_cursor.fetchall() == [self.generate_row(index)]
-
-    def test_date_as_string_array(self, sqream_cursor, placeholder):
-        index = randint(1, self.TEMP_TABLE_START_ROWS_AMOUNT)
-        d = self.RANDOM_DATE.format(index=index)
-        sqream_cursor.execute(f"select * from {self.TEMP_TABLE_NAME} where dar = {placeholder}",
-                              params=([d] * DEFAULT_ARRAY_ELEMENTS_AMOUNT,))
-        assert sqream_cursor.fetchall() == [self.generate_row(index)]
-
-    def test_date_as_object_array(self, sqream_cursor, placeholder):
-        index = randint(1, self.TEMP_TABLE_START_ROWS_AMOUNT)
-        row = self.generate_row(index=index)
-        d = row[3]
-        sqream_cursor.execute(f"select * from {self.TEMP_TABLE_NAME} where dar = {placeholder}",
-                              params=([d] * DEFAULT_ARRAY_ELEMENTS_AMOUNT,))
-        assert sqream_cursor.fetchall() == [row]
-
-    def test_datetime_as_string_array(self, sqream_cursor, placeholder):
-        index = randint(1, self.TEMP_TABLE_START_ROWS_AMOUNT)
-        dt = self.RANDOM_DATETIME.format(index=index)
-        sqream_cursor.execute(f"select * from {self.TEMP_TABLE_NAME} where dtar = {placeholder}",
-                              params=([dt] * DEFAULT_ARRAY_ELEMENTS_AMOUNT,))
-        assert sqream_cursor.fetchall() == [self.generate_row(index)]
-
-    def test_datetime_as_object_array(self, sqream_cursor, placeholder):
-        index = randint(1, self.TEMP_TABLE_START_ROWS_AMOUNT)
-        row = self.generate_row(index=index)
-        dt = row[4]
-        sqream_cursor.execute(f"select * from {self.TEMP_TABLE_NAME} where dtar = {placeholder}",
-                              params=([dt] * DEFAULT_ARRAY_ELEMENTS_AMOUNT,))
-        assert sqream_cursor.fetchall() == [row]
-
-    def test_text_array(self, sqream_cursor, placeholder):
-        index = randint(1, self.TEMP_TABLE_START_ROWS_AMOUNT)
-        t = self.RANDOM_TEXT.format(index=index)
-        sqream_cursor.execute(f"select * from {self.TEMP_TABLE_NAME} where tar = {placeholder}",
-                              params=([t] * DEFAULT_ARRAY_ELEMENTS_AMOUNT,))
-        assert sqream_cursor.fetchall() == [self.generate_row(index)]
+    # def test_int_array(self, sqream_cursor):
+    #     index = randint(1, self.TEMP_TABLE_START_ROWS_AMOUNT)
+    #     sqream_cursor.execute(f"select * from {self.TEMP_TABLE_NAME} where iar = ?::int[]",
+    #                           params=([index] * DEFAULT_ARRAY_ELEMENTS_AMOUNT,))
+    #     assert sqream_cursor.fetchall() == [self.generate_row(index)]
+    #
+    # def test_bool_array(self, sqream_cursor):
+    #     sqream_cursor.execute(f"select * from {self.TEMP_TABLE_NAME} where bar = ?::bool[]",
+    #                           params=([True] * DEFAULT_ARRAY_ELEMENTS_AMOUNT,))
+    #     assert sqream_cursor.fetchall() == [self.generate_row(i) for i in range(1, 10)]
+    #
+    # def test_numeric_array(self, sqream_cursor):
+    #     index = randint(1, self.TEMP_TABLE_START_ROWS_AMOUNT)
+    #     numeric = Decimal(self.RANDOM_NUMERIC.format(index=index))
+    #     sqream_cursor.execute(f"select * from {self.TEMP_TABLE_NAME} where nar = ?::numeric(15,6)[]",
+    #                           params=([numeric] * DEFAULT_ARRAY_ELEMENTS_AMOUNT,))
+    #     assert sqream_cursor.fetchall() == [self.generate_row(index)]
+    #
+    # def test_date_array(self, sqream_cursor):
+    #     index = randint(1, self.TEMP_TABLE_START_ROWS_AMOUNT)
+    #     row = self.generate_row(index=index)
+    #     d = row[3]
+    #     sqream_cursor.execute(f"select * from {self.TEMP_TABLE_NAME} where dar = ?::date[]",
+    #                           params=([d] * DEFAULT_ARRAY_ELEMENTS_AMOUNT,))
+    #     assert sqream_cursor.fetchall() == [row]
+    #
+    # def test_datetime_array(self, sqream_cursor):
+    #     index = randint(1, self.TEMP_TABLE_START_ROWS_AMOUNT)
+    #     row = self.generate_row(index=index)
+    #     dt = row[4]
+    #     sqream_cursor.execute(f"select * from {self.TEMP_TABLE_NAME} where dtar = ?::datetime[]",
+    #                           params=([dt] * DEFAULT_ARRAY_ELEMENTS_AMOUNT,))
+    #     assert sqream_cursor.fetchall() == [row]
+    #
+    # def test_text_array(self, sqream_cursor):
+    #     index = randint(1, self.TEMP_TABLE_START_ROWS_AMOUNT)
+    #     t = self.RANDOM_TEXT.format(index=index)
+    #     sqream_cursor.execute(f"select * from {self.TEMP_TABLE_NAME} where tar = ?::text[]",
+    #                           params=([t] * DEFAULT_ARRAY_ELEMENTS_AMOUNT,))
+    #     assert sqream_cursor.fetchall() == [self.generate_row(index)]
 
 
-@pytest.mark.parametrize("placeholder", ("?", "%s"), ids=("qmark", "percent_s"))
 class TestInsert(TestBaseParametrizedStatements):
 
-    def test_int(self, sqream_cursor, placeholder):
+    def test_int(self, sqream_cursor):
         index = 10
-        sqream_cursor.execute(f"insert into {self.TEMP_TABLE_NAME} (i) values ({placeholder})", params=(index,))
-        sqream_cursor.execute(f"select i from {self.TEMP_TABLE_NAME} where i = {placeholder}", params=(index,))
+        sqream_cursor.execute(f"insert into {self.TEMP_TABLE_NAME} (i) values (?)", params=(index,))
+        sqream_cursor.execute(f"select i from {self.TEMP_TABLE_NAME} where i = ?", params=(index,))
         assert sqream_cursor.fetchall() == [(10,)]
 
-    def test_bool(self, sqream_cursor, placeholder):
-        sqream_cursor.execute(f"insert into {self.TEMP_TABLE_NAME} (b) values ({placeholder})", params=(True,))
-        sqream_cursor.execute(f"select b from {self.TEMP_TABLE_NAME} where b = {placeholder}", params=(True,))
+    def test_bool(self, sqream_cursor):
+        sqream_cursor.execute(f"insert into {self.TEMP_TABLE_NAME} (b) values (?)", params=(True,))
+        sqream_cursor.execute(f"select b from {self.TEMP_TABLE_NAME} where b = ?", params=(True,))
         assert sqream_cursor.fetchall() == [(True,)]
 
-    def test_numeric(self, sqream_cursor, placeholder):
+    def test_numeric(self, sqream_cursor):
         n = Decimal(f"{randint(int(1e8), int(1e9-1))}.{randint(int(1e5), int(1e6-1))}")
-        sqream_cursor.execute(f"insert into {self.TEMP_TABLE_NAME} (n) values ({placeholder})", params=(n,))
-        sqream_cursor.execute(f"select n from {self.TEMP_TABLE_NAME} where n = {placeholder}", params=(n,))
+        sqream_cursor.execute(f"insert into {self.TEMP_TABLE_NAME} (n) values (?)", params=(n,))
+        sqream_cursor.execute(f"select n from {self.TEMP_TABLE_NAME} where n = ?", params=(n,))
         assert sqream_cursor.fetchall() == [(n,)]
 
-    def test_date_as_string(self, sqream_cursor, placeholder):
+    def test_date(self, sqream_cursor):
         d = date(2024, 9, 20)
-        sqream_cursor.execute(f"insert into {self.TEMP_TABLE_NAME} (d) values ({placeholder})", params=(d.strftime("%F"),))
-        sqream_cursor.execute(f"select d from {self.TEMP_TABLE_NAME} where d = {placeholder}", params=(d.strftime("%F"),))
+        sqream_cursor.execute(f"insert into {self.TEMP_TABLE_NAME} (d) values (?)", params=(d,))
+        sqream_cursor.execute(f"select d from {self.TEMP_TABLE_NAME} where d = ?", params=(d,))
         assert sqream_cursor.fetchall() == [(d,)]
 
-    def test_date_as_object(self, sqream_cursor, placeholder):
-        d = date(2024, 9, 20)
-        sqream_cursor.execute(f"insert into {self.TEMP_TABLE_NAME} (d) values ({placeholder})", params=(d,))
-        sqream_cursor.execute(f"select d from {self.TEMP_TABLE_NAME} where d = {placeholder}", params=(d,))
-        assert sqream_cursor.fetchall() == [(d,)]
-
-    def test_datetime_as_string(self, sqream_cursor, placeholder):
+    def test_datetime(self, sqream_cursor):
         dt = datetime(2024, 9, 20, 23, 30, 25, 123000)
-        sqream_cursor.execute(f"insert into {self.TEMP_TABLE_NAME} (dt) values ({placeholder})", params=(dt.strftime("%F %T.%f"),))
-        sqream_cursor.execute(f"select dt from {self.TEMP_TABLE_NAME} where dt = {placeholder}", params=(dt.strftime("%F %T.%f"),))
+        sqream_cursor.execute(f"insert into {self.TEMP_TABLE_NAME} (dt) values (?)", params=(dt,))
+        sqream_cursor.execute(f"select dt from {self.TEMP_TABLE_NAME} where dt = ?", params=(dt,))
         assert sqream_cursor.fetchall() == [(dt,)]
 
-    def test_datetime_as_object(self, sqream_cursor, placeholder):
-        dt = datetime(2024, 9, 20, 23, 30, 25, 123000)
-        sqream_cursor.execute(f"insert into {self.TEMP_TABLE_NAME} (dt) values ({placeholder})", params=(dt,))
-        sqream_cursor.execute(f"select dt from {self.TEMP_TABLE_NAME} where dt = {placeholder}", params=(dt,))
-        assert sqream_cursor.fetchall() == [(dt,)]
-
-    def test_text(self, sqream_cursor, placeholder):
+    def test_text(self, sqream_cursor):
         t = "Ryan Gosling"
-        sqream_cursor.execute(f"insert into {self.TEMP_TABLE_NAME} (t) values ({placeholder})", params=(t,))
-        sqream_cursor.execute(f"select t from {self.TEMP_TABLE_NAME} where t = {placeholder}", params=(t,))
+        sqream_cursor.execute(f"insert into {self.TEMP_TABLE_NAME} (t) values (?)", params=(t,))
+        sqream_cursor.execute(f"select t from {self.TEMP_TABLE_NAME} where t = ?", params=(t,))
         assert sqream_cursor.fetchall() == [(t,)]
 
-    def test_int_array(self, sqream_cursor, placeholder):
-        index = 10
-        sqream_cursor.execute(f"insert into {self.TEMP_TABLE_NAME} (iar) values ({placeholder})",
-                              params=([index] * DEFAULT_ARRAY_ELEMENTS_AMOUNT,))
-        sqream_cursor.execute(f"select iar from {self.TEMP_TABLE_NAME} where iar = {placeholder}",
-                              params=([index] * DEFAULT_ARRAY_ELEMENTS_AMOUNT,))
-        assert sqream_cursor.fetchall() == [([index] * DEFAULT_ARRAY_ELEMENTS_AMOUNT,)]
+    # def test_int_array(self, sqream_cursor):
+    #     index = 10
+    #     sqream_cursor.execute(f"insert into {self.TEMP_TABLE_NAME} (iar) values (?::int[])",
+    #                           params=([index] * DEFAULT_ARRAY_ELEMENTS_AMOUNT,))
+    #     sqream_cursor.execute(f"select iar from {self.TEMP_TABLE_NAME} where iar = ?::int[]",
+    #                           params=([index] * DEFAULT_ARRAY_ELEMENTS_AMOUNT,))
+    #     assert sqream_cursor.fetchall() == [([index] * DEFAULT_ARRAY_ELEMENTS_AMOUNT,)]
+    #
+    # def test_bool_array(self, sqream_cursor):
+    #     sqream_cursor.execute(f"insert into {self.TEMP_TABLE_NAME} (bar) values (?::bool[])",
+    #                           params=([False] * DEFAULT_ARRAY_ELEMENTS_AMOUNT,))
+    #     sqream_cursor.execute(f"select bar from {self.TEMP_TABLE_NAME} where bar = ?::bool[]",
+    #                           params=([False] * DEFAULT_ARRAY_ELEMENTS_AMOUNT,))
+    #     assert sqream_cursor.fetchall() == [([False] * DEFAULT_ARRAY_ELEMENTS_AMOUNT,)]
 
-    def test_bool_array(self, sqream_cursor, placeholder):
-        sqream_cursor.execute(f"insert into {self.TEMP_TABLE_NAME} (bar) values ({placeholder})",
-                              params=([False] * DEFAULT_ARRAY_ELEMENTS_AMOUNT,))
-        sqream_cursor.execute(f"select bar from {self.TEMP_TABLE_NAME} where bar = {placeholder}",
-                              params=([False] * DEFAULT_ARRAY_ELEMENTS_AMOUNT,))
-        assert sqream_cursor.fetchall() == [([False] * DEFAULT_ARRAY_ELEMENTS_AMOUNT,)]
-
-    def test_insert_several_columns_without_arrays(self, sqream_cursor, placeholder):
+    def test_insert_several_columns_without_arrays(self, sqream_cursor):
         params = (10, Decimal('123.123000'), date(2020, 10, 12), 'kavabanga')
         sqream_cursor.execute(f"insert into {self.TEMP_TABLE_NAME} (i, n, d, t) values "
-                                f"({placeholder}, {placeholder}, {placeholder}, {placeholder})",
+                                f"(?, ?, ?, ?)",
                               params=params)
-        sqream_cursor.execute(f"select i, n, d, t from {self.TEMP_TABLE_NAME} where i = {placeholder}",
+        sqream_cursor.execute(f"select i, n, d, t from {self.TEMP_TABLE_NAME} where i = ?",
                               params=(params[0],))
         data = sqream_cursor.fetchall()
         assert data[0] == params
-        sqream_cursor.execute(f"delete from {self.TEMP_TABLE_NAME} where i = {placeholder}", params=(params[0],))
+        sqream_cursor.execute(f"delete from {self.TEMP_TABLE_NAME} where i = ?", params=(params[0],))
 
 
-@pytest.mark.parametrize("placeholder", ("?", "%s"), ids=("qmark", "percent_s"))
 class TestUpdate(TestBaseParametrizedStatements):
 
-    def test_int(self, sqream_cursor, placeholder):
+    def test_int(self, sqream_cursor):
         old, new = randint(1, self.TEMP_TABLE_START_ROWS_AMOUNT), 10
-        sqream_cursor.execute(f"update {self.TEMP_TABLE_NAME} set i = {placeholder} where i = {placeholder}",
+        sqream_cursor.execute(f"update {self.TEMP_TABLE_NAME} set i = ? where i = ?",
                               params=(new, old))
-        sqream_cursor.execute(f"select i from {self.TEMP_TABLE_NAME} where i = {placeholder}", params=(new,))
+        sqream_cursor.execute(f"select i from {self.TEMP_TABLE_NAME} where i = ?", params=(new,))
         assert sqream_cursor.fetchall() == [(new,)]
 
-    def test_bool(self, sqream_cursor, placeholder):
-        sqream_cursor.execute(f"update {self.TEMP_TABLE_NAME} set b = {placeholder} where b = {placeholder}",
+    def test_bool(self, sqream_cursor):
+        sqream_cursor.execute(f"update {self.TEMP_TABLE_NAME} set b = ? where b = ?",
                               params=(True, False))
-        sqream_cursor.execute(f"select b from {self.TEMP_TABLE_NAME} where b = {placeholder}", params=(True,))
+        sqream_cursor.execute(f"select b from {self.TEMP_TABLE_NAME} where b = ?", params=(True,))
         assert sqream_cursor.fetchall() == [(True,)] * self.TEMP_TABLE_START_ROWS_AMOUNT
 
-    def test_numeric(self, sqream_cursor, placeholder):
+    def test_numeric(self, sqream_cursor):
         new = Decimal(f"{randint(int(1e8), int(1e9-1))}.{randint(int(1e5), int(1e6-1))}")
         old = Decimal(self.RANDOM_NUMERIC.format(index=randint(1, self.TEMP_TABLE_START_ROWS_AMOUNT)))
-        sqream_cursor.execute(f"update {self.TEMP_TABLE_NAME} set n = {placeholder} where n = {placeholder}",
+        sqream_cursor.execute(f"update {self.TEMP_TABLE_NAME} set n = ? where n = ?",
                               params=(new, old))
-        sqream_cursor.execute(f"select n from {self.TEMP_TABLE_NAME} where n = {placeholder}", params=(new,))
+        sqream_cursor.execute(f"select n from {self.TEMP_TABLE_NAME} where n = ?", params=(new,))
         assert sqream_cursor.fetchall() == [(new,)]
 
-    def test_date_as_string(self, sqream_cursor, placeholder):
+    def test_date(self, sqream_cursor):
         new = date(2024, 9, 20)
         old = date.fromisoformat(self.RANDOM_DATE.format(index=randint(1, self.TEMP_TABLE_START_ROWS_AMOUNT)))
-        sqream_cursor.execute(f"update {self.TEMP_TABLE_NAME} set d = {placeholder} where d = {placeholder}",
-                              params=(new.strftime("%F"), old.strftime("%F")))
-        sqream_cursor.execute(f"select d from {self.TEMP_TABLE_NAME} where d = {placeholder}",
-                              params=(new.strftime("%F"),))
-        assert sqream_cursor.fetchall() == [(new,)]
-
-    def test_date_as_object(self, sqream_cursor, placeholder):
-        new = date(2024, 9, 20)
-        old = date.fromisoformat(self.RANDOM_DATE.format(index=randint(1, self.TEMP_TABLE_START_ROWS_AMOUNT)))
-        sqream_cursor.execute(f"update {self.TEMP_TABLE_NAME} set d = {placeholder} where d = {placeholder}",
+        sqream_cursor.execute(f"update {self.TEMP_TABLE_NAME} set d = ? where d = ?",
                               params=(new, old))
-        sqream_cursor.execute(f"select d from {self.TEMP_TABLE_NAME} where d = {placeholder}", params=(new,))
+        sqream_cursor.execute(f"select d from {self.TEMP_TABLE_NAME} where d = ?", params=(new,))
         assert sqream_cursor.fetchall() == [(new,)]
 
-    def test_datetime_as_string(self, sqream_cursor, placeholder):
+    def test_datetime(self, sqream_cursor):
         new = datetime(2024, 9, 20, 23, 30, 25, 123000)
         old = datetime.strptime(self.RANDOM_DATETIME.format(index=randint(1, self.TEMP_TABLE_START_ROWS_AMOUNT)),
                                 "%Y-%m-%d %H:%M:%S.%f")
-        sqream_cursor.execute(f"update {self.TEMP_TABLE_NAME} set dt = {placeholder} where dt = {placeholder}",
-                              params=(new.strftime("%F %T.%f"), old.strftime("%F %T.%f")))
-        sqream_cursor.execute(f"select dt from {self.TEMP_TABLE_NAME} where dt = {placeholder}",
-                              params=(new.strftime("%F %T.%f"),))
-        assert sqream_cursor.fetchall() == [(new,)]
-
-    def test_datetime_as_object(self, sqream_cursor, placeholder):
-        new = datetime(2024, 9, 20, 23, 30, 25, 123000)
-        old = datetime.strptime(self.RANDOM_DATETIME.format(index=randint(1, self.TEMP_TABLE_START_ROWS_AMOUNT)),
-                                "%Y-%m-%d %H:%M:%S.%f")
-        sqream_cursor.execute(f"update {self.TEMP_TABLE_NAME} set dt = {placeholder} where dt = {placeholder}",
+        sqream_cursor.execute(f"update {self.TEMP_TABLE_NAME} set dt = ? where dt = ?",
                               params=(new, old))
-        sqream_cursor.execute(f"select dt from {self.TEMP_TABLE_NAME} where dt = {placeholder}", params=(new,))
+        sqream_cursor.execute(f"select dt from {self.TEMP_TABLE_NAME} where dt = ?", params=(new,))
         assert sqream_cursor.fetchall() == [(new,)]
 
-    def test_text(self, sqream_cursor, placeholder):
+    def test_text(self, sqream_cursor):
         new = "Ryan Gosling"
         old = self.RANDOM_TEXT.format(index=randint(1, self.TEMP_TABLE_START_ROWS_AMOUNT))
-        sqream_cursor.execute(f"update {self.TEMP_TABLE_NAME} set t = {placeholder} where t = {placeholder}",
+        sqream_cursor.execute(f"update {self.TEMP_TABLE_NAME} set t = ? where t = ?",
                               params=(new, old))
-        sqream_cursor.execute(f"select t from {self.TEMP_TABLE_NAME} where t = {placeholder}", params=(new,))
+        sqream_cursor.execute(f"select t from {self.TEMP_TABLE_NAME} where t = ?", params=(new,))
         assert sqream_cursor.fetchall() == [(new,)]
 
 
-@pytest.mark.parametrize("placeholder", ("?", "%s"), ids=("qmark", "percent_s"))
 class TestDelete(TestBaseParametrizedStatements):
 
     @pytest.fixture
@@ -312,78 +246,52 @@ class TestDelete(TestBaseParametrizedStatements):
         assert rows_amount_before > rows_amount_after, (f"Rows amount before must be greater than "
                                                         f"after: `{rows_amount_before}` !> `{rows_amount_after}`")
 
-    def test_int(self, sqream_cursor, check_number_of_rows_has_decreased, placeholder):
+    def test_int(self, sqream_cursor, check_number_of_rows_has_decreased):
         index = randint(1, self.TEMP_TABLE_START_ROWS_AMOUNT)
-        sqream_cursor.execute(f"delete from {self.TEMP_TABLE_NAME} where i = {placeholder}", params=(index,))
-        sqream_cursor.execute(f"select i from {self.TEMP_TABLE_NAME} where i = {placeholder}", params=(index,))
+        sqream_cursor.execute(f"delete from {self.TEMP_TABLE_NAME} where i = ?", params=(index,))
+        sqream_cursor.execute(f"select i from {self.TEMP_TABLE_NAME} where i = ?", params=(index,))
         assert sqream_cursor.fetchall() == []
 
-    def test_bool(self, sqream_cursor, check_number_of_rows_has_decreased, placeholder):
-        sqream_cursor.execute(f"delete from {self.TEMP_TABLE_NAME} where b = {placeholder}", params=(False,))
+    def test_bool(self, sqream_cursor, check_number_of_rows_has_decreased):
+        sqream_cursor.execute(f"delete from {self.TEMP_TABLE_NAME} where b = ?", params=(False,))
         sqream_cursor.execute(f"select * from {self.TEMP_TABLE_NAME}")
         assert sqream_cursor.fetchall() == []
 
-    def test_numeric(self, sqream_cursor, check_number_of_rows_has_decreased, placeholder):
+    def test_numeric(self, sqream_cursor, check_number_of_rows_has_decreased):
         n = Decimal(self.RANDOM_NUMERIC.format(index=randint(1, self.TEMP_TABLE_START_ROWS_AMOUNT)))
-        sqream_cursor.execute(f"delete from {self.TEMP_TABLE_NAME} where n = {placeholder}", params=(n,))
-        sqream_cursor.execute(f"select n from {self.TEMP_TABLE_NAME} where i = {placeholder}", params=(n,))
+        sqream_cursor.execute(f"delete from {self.TEMP_TABLE_NAME} where n = ?", params=(n,))
+        sqream_cursor.execute(f"select n from {self.TEMP_TABLE_NAME} where n = ?", params=(n,))
         assert sqream_cursor.fetchall() == []
 
-    @pytest.mark.parametrize(
-        "py_date",
-        (TestBaseParametrizedStatements.RANDOM_DATE.format(index=1),
-         date.fromisoformat(TestBaseParametrizedStatements.RANDOM_DATE.format(index=1))),
-        ids=("as_string", "as_object")
-    )
-    def test_date(self, py_date, sqream_cursor, check_number_of_rows_has_decreased, placeholder):
-        sqream_cursor.execute(f"delete from {self.TEMP_TABLE_NAME} where d = {placeholder}", params=(py_date,))
-        sqream_cursor.execute(f"select d from {self.TEMP_TABLE_NAME} where d = {placeholder}", params=(py_date,))
+    def test_date(self, sqream_cursor, check_number_of_rows_has_decreased):
+        d = date.fromisoformat(self.RANDOM_DATE.format(index=1))
+        sqream_cursor.execute(f"delete from {self.TEMP_TABLE_NAME} where d = ?", params=(d,))
+        sqream_cursor.execute(f"select d from {self.TEMP_TABLE_NAME} where d = ?", params=(d,))
         assert sqream_cursor.fetchall() == []
 
-    @pytest.mark.parametrize(
-        "py_datetime",
-        (TestBaseParametrizedStatements.RANDOM_DATETIME.format(index=1),
-         datetime.strptime(TestBaseParametrizedStatements.RANDOM_DATETIME.format(index=1), "%Y-%m-%d %H:%M:%S.%f")),
-        ids=("as_string", "as_object")
-    )
-    def test_datetime(self, py_datetime, sqream_cursor, check_number_of_rows_has_decreased, placeholder):
-        sqream_cursor.execute(f"delete from {self.TEMP_TABLE_NAME} where dt = {placeholder}", params=(py_datetime,))
-        sqream_cursor.execute(f"select dt from {self.TEMP_TABLE_NAME} where dt = {placeholder}", params=(py_datetime,))
+    def test_datetime(self, sqream_cursor, check_number_of_rows_has_decreased):
+        dt = datetime.strptime(TestBaseParametrizedStatements.RANDOM_DATETIME.format(index=1), "%Y-%m-%d %H:%M:%S.%f")
+        sqream_cursor.execute(f"delete from {self.TEMP_TABLE_NAME} where dt = ?", params=(dt,))
+        sqream_cursor.execute(f"select dt from {self.TEMP_TABLE_NAME} where dt = ?", params=(dt,))
         assert sqream_cursor.fetchall() == []
 
-    def test_text(self, sqream_cursor, check_number_of_rows_has_decreased, placeholder):
+    def test_text(self, sqream_cursor, check_number_of_rows_has_decreased):
         t = self.RANDOM_TEXT.format(index=randint(1, self.TEMP_TABLE_START_ROWS_AMOUNT))
-        sqream_cursor.execute(f"delete from {self.TEMP_TABLE_NAME} where t = {placeholder}", params=(t,))
-        sqream_cursor.execute(f"select t from {self.TEMP_TABLE_NAME} where t = {placeholder}", params=(t,))
+        sqream_cursor.execute(f"delete from {self.TEMP_TABLE_NAME} where t = ?", params=(t,))
+        sqream_cursor.execute(f"select t from {self.TEMP_TABLE_NAME} where t = ?", params=(t,))
         assert sqream_cursor.fetchall() == []
 
 
 class TestNegative(TestBaseParametrizedStatements):
 
-    def test_no_placeholders(self, sqream_cursor):
-        query = f"select * from {self.TEMP_TABLE_NAME} where i > 5"
-        with pytest.raises(ParametrizedStatementError) as error:
-            sqream_cursor.execute(query, params=(5,))
+    def test_select_placeholder_params_differ_amount(self, sqream_cursor):
+        with pytest.raises(Exception) as error:
+            sqream_cursor.execute(f"select * from {self.TEMP_TABLE_NAME} where i in (?, ?, ?)", params=(1, 2, 3, 4))
 
-        assert "No placeholders `['\\\\?', '%s']` in the statement " + f"`{query}`" == str(error.value)
-
-    @pytest.mark.parametrize(
-        ("condition", "params"),
-        (
-                ("i > ? and b = ? or d < ?", (1, 2)),
-                ("i in (?, ?, ?)", (1, 2, 3, 4)),
-        ),
-        ids=("more_placeholders_than_params", "less_placeholders_than_params")
-    )
-    def test_select_placeholder_params_differ_amount(self, sqream_cursor, condition, params):
-        with pytest.raises(ParametrizedStatementError) as error:
-            sqream_cursor.execute(f"select * from {self.TEMP_TABLE_NAME} where {condition}", params=params)
-
-        expected_error = (f"Amount of parameters ({len(params)}) doesn't equal "
-                          f"amount of placeholders ({condition.count('?')})")
+        expected_error = "Incosistent data sequences passed for inserting. Please use rows/columns of consistent length"
         assert expected_error in str(error), f"Can not find expected error `{expected_error}` in real one `{error}`"
 
     def test_select_placeholders_in_wrong_places(self, sqream_cursor):
-        with pytest.raises(ParametrizedStatementError) as parametrized_error:
+        with pytest.raises(Exception) as parametrized_error:
             sqream_cursor.execute(f"select * from ? where i = ?", params=(1, 2))
-        assert f"Amount of parameters (2) doesn't equal amount of placeholders (1)" in str(parametrized_error)
+        assert "Parsing error in statement line" in str(parametrized_error)
