@@ -325,7 +325,7 @@ class TestNegative(TestBase):
         try:
             cur.execute('select * from test where xint > ?', str(params))
         except Exception as e:
-            if "Parametered queries not supported" not in repr(e):
+            if "Error packing columns. Check that all types match the respective column types" not in repr(e):
                 raise Exception('bad error message')
 
         logger.info("Negative tests - running execute on a closed cursor")

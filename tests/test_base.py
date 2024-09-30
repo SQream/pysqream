@@ -1,4 +1,3 @@
-import os
 from decimal import Decimal
 from os import PathLike
 from pathlib import Path
@@ -11,6 +10,7 @@ import pysqream
 from tests.pytest_logger import Logger
 
 
+logger = Logger()
 DEFAULT_ARRAY_ELEMENTS_AMOUNT = 3
 
 
@@ -18,7 +18,7 @@ def connect_dbapi(ip, clustered=False, use_ssl=False, port=5000, picker_port=310
                   database='master', username='sqream', password='sqream'):
     if clustered:
         port = picker_port
-    Logger().info(f"Connect to server {ip}:{port}/database={database};username={username};password={password.replace(password, '*' * len(password))};"
+    logger.info(f"Connect to server {ip}:{port}/database={database};username={username};password={password.replace(password, '*' * len(password))};"
                   f"clustered={clustered};use_ssl={use_ssl}")
     return pysqream.connect(ip, port, database, username, password, clustered, use_ssl)
 
@@ -33,13 +33,13 @@ class TestBase:
     def Test_setup_teardown(self, ip, clustered, use_ssl, port, picker_port, database,
                             username, password):
         ip = ip if ip else socket.gethostbyname(socket.gethostname())
-        Logger().info("Before Scenario")
+        logger.info("Before Scenario")
         self.con = connect_dbapi(ip, clustered=clustered, use_ssl=use_ssl, port=port, picker_port=picker_port,
                                  database=database, username=username, password=password)
         yield
-        Logger().info("After Scenario")
+        logger.info("After Scenario")
         self.con.close()
-        Logger().info(f"Close Session to server {ip}")
+        logger.info(f"Close Session to server {ip}")
 
 
 class TestBaseWithoutBeforeAfter:
@@ -108,4 +108,4 @@ class TestBaseParametrizedStatements:
             params = self.generate_row(index=index)
             sqream_cursor.execute(f"insert into {self.TEMP_TABLE_NAME} values ({placeholders})", params=params)
         yield
-        sqream_cursor.execute(f"truncate table {self.TEMP_TABLE_NAME}")
+        sqream_cursor.execute(f"drop table {self.TEMP_TABLE_NAME}")
