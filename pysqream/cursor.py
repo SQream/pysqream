@@ -187,9 +187,20 @@ class Cursor:
 
             self.buffer.clear()
 
+            if data_as == 'alchemy_flat_list':
+                # Unflatten SQLalchemy data list
+                row_len = len(self.column_list)
+                rows_or_cols = [params[i: i + row_len] for i in range(0, len(params), row_len)]
+                data_as = 'rows'
+            else:
+                rows_or_cols = params
+
+            if 'numpy' in repr(type(params[0])):
+                data_as = 'numpy'
+
             # Send columns and parameters
-            row_len = len(self.column_list)
-            rows_or_cols = [params[i: i + row_len] for i in range(0, len(params), row_len)]
+            # row_len = len(self.column_list)
+            # rows_or_cols = [params[i: i + row_len] for i in range(0, len(params), row_len)]
             column_lengths = [len(row_or_col) for row_or_col in rows_or_cols]
 
             if column_lengths.count(column_lengths[0]) != len(column_lengths):
@@ -438,33 +449,35 @@ class Cursor:
 
     def execute(self,
                 statement: str,
-                params: list[Any] | tuple[Any] | None = None,
+                params: list[tuple[Any]] | tuple[[tuple[Any]]] | None = None,
                 data_as: str = 'rows',
                 amount: int | None = None
                 ):
         """Execute a statement. If params was provided - compile statement first
         and replace all question marks on passed parameters.
 
-        query str: a statement to execute with placeholders
-        param list[int | str] | tuple[int | str]: sequence of parameters to ingest into query
+        :param statement: str a statement to execute with placeholders
+        :param params: list[tuple[Any]] | tuple[tuple[Any]]: sequence of parameters to ingest into query
+        :param data_as: string type of passed params. Possible values (`alchemy_flat_list`, `numpy`, `rows` - default)
+        :param amount: int - amount of values of given params to insert
 
         Examples:
             query: SELECT * FROM <table_name> WHERE id IN (?, ?, ?) AND price >= ?;
-            params: (1, 2, 3, 450.69)
+            params: [(1, 2, 3, 450.69),]
 
             query: SELECT * FROM <table_name> WHERE id = %s AND price < %s;
-            params: (1, 200.00)
+            params: [(1, 200.00),]
 
             query: INSERT INTO <table_name> (id, name, description, price) VALUES (?, ?, ?, ?);
-            params: (1, 'Ryan Gosling', 'Actor', 0.0)
+            params: [(1, 'Ryan Gosling', 'Actor', 0.0),]
             for next params it is better to use `executemany`
             params: [(1, 'Ryan Gosling', 'Actor', 0.0), (2, 'Mark Wahlberg', 'No pain no gain', 150.0)]
 
             query: UPDATE <table_name> SET price = ?, description = ? WHERE name = ?;
-            params: (999.999, 'Best actor', 'Ryan Gosling')
+            params: [(999.999, 'Best actor', 'Ryan Gosling'),]
 
             query: DELETE FROM <table_name> WHERE id = ? AND other like ?;
-            params: (404, 200)
+            params: [(404, 200),]
         """
 
         if self.base_connection_closed:
@@ -480,7 +493,9 @@ class Cursor:
         return self
 
     def executemany2(self, query, rows_or_cols=None, data_as='rows', amount=None):
-        """Execute a statement, including parameterized data insert"""
+        """Execute a statement, including parameterized data insert
+
+        """
 
         self.execute(query)
 
@@ -513,9 +528,21 @@ class Cursor:
 
         return self
 
-    def executemany(self, query, rows_or_cols=None, data_as='rows', amount=None):
-        """Execute a statement, including parameterized data insert"""
-        return self.execute(query, params=rows_or_cols, data_as=data_as, amount=amount)
+    def executemany(self,
+                    statement: str,
+                    rows_or_cols: list[tuple[Any]] | tuple[[tuple[Any]]] | None = None,
+                    data_as : str = 'rows',
+                    amount: int | None = None
+                    ) -> Cursor:
+        """Execute a statement, preferably used for insertion
+
+        :param statement: str a statement to execute with placeholders
+        :param rows_or_cols: list[tuple[Any]] | tuple[tuple[Any]]: sequence of parameters to ingest into query
+        :param data_as: string type of passed params. Possible values (`alchemy_flat_list`, `numpy`, `rows` - default)
+        :param amount: int - amount of values of given params to insert
+        """
+
+        return self.execute(statement, params=rows_or_cols, data_as=data_as, amount=amount)
 
     def fetchmany(self, size=None, data_as='rows', fetchone=False):
         ''' Fetch an amount of result rows '''

@@ -106,6 +106,6 @@ class TestBaseParameterizedStatements:
         for index in range(1, self.TEMP_TABLE_START_ROWS_AMOUNT + 1):
             placeholders = ", ".join([self.DEFAULT_PLACEHOLDER for _ in range(len(self.TEMP_TABLE_COLUMNS))])
             params = self.generate_row(index=index)
-            sqream_cursor.execute(f"insert into {self.TEMP_TABLE_NAME} values ({placeholders})", params=params)
+            sqream_cursor.execute(f"insert into {self.TEMP_TABLE_NAME} values ({placeholders})", params=[params])
         yield
         sqream_cursor.execute(f"drop table {self.TEMP_TABLE_NAME}")
