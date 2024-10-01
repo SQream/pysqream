@@ -1,9 +1,9 @@
 """Global test configurations and fixtures"""
 import pytest
 
-import pysqream
+from pysqream.pysqream import connect
 
-from base import Logger
+from tests.test_base import Logger
 
 
 DEFAULT_IP = "192.168.0.35"
@@ -18,22 +18,14 @@ logger = Logger()
 
 
 def pytest_addoption(parser):
-    parser.addoption(
-        "--ip", action="store", help="SQream Server ip", default=DEFAULT_IP)
-    parser.addoption(
-        "--port", action="store", help="SQream Server port", default=DEFAULT_SQREAM_PORT)
-    parser.addoption(
-        "--picker_port", action="store", help="SQream Server picker port", default=DEFAULT_PICKER_PORT)
-    parser.addoption(
-        "--database", action="store", help="SQream Server database", default=DEFAULT_DATABASE)
-    parser.addoption(
-        "--username", action="store", help="SQream Server username", default=DEFAULT_USERNAME)
-    parser.addoption(
-        "--password", action="store", help="SQream Server password", default=DEFAULT_PASSWORD)
-    parser.addoption(
-        "--clustered", action="store", help="SQream Server clustered", default=DEFAULT_CLUSTERED)
-    parser.addoption(
-        "--use_ssl", action="store", help="SQream Server use_ssl", default=DEFAULT_USR_SSL)
+    parser.addoption("--ip", action="store", help="SQream Server ip", default=DEFAULT_IP)
+    parser.addoption("--port", action="store", help="SQream Server port", default=DEFAULT_SQREAM_PORT)
+    parser.addoption("--picker_port", action="store", help="SQream Server picker port", default=DEFAULT_PICKER_PORT)
+    parser.addoption("--database", action="store", help="SQream Server database", default=DEFAULT_DATABASE)
+    parser.addoption("--username", action="store", help="SQream Server username", default=DEFAULT_USERNAME)
+    parser.addoption("--password", action="store", help="SQream Server password", default=DEFAULT_PASSWORD)
+    parser.addoption("--clustered", action="store", help="SQream Server clustered", default=DEFAULT_CLUSTERED)
+    parser.addoption("--use_ssl", action="store", help="SQream Server use_ssl", default=DEFAULT_USR_SSL)
 
 
 def pytest_generate_tests(metafunc):
@@ -110,13 +102,18 @@ def sqream_use_ssl(pytestconfig):
 @pytest.fixture(name='conn')
 def sqream_connection(ip, port):  # pylint: disable=invalid-name
     """Fixture that create connection at each direct fixture call"""
-    conn = pysqream.connect(
-        ip, port, 'master', 'sqream', 'sqream', False, False)
-    yield conn
-    conn.close()
+    connection = connect(host=ip,
+                         port=port,
+                         database='master',
+                         username='sqream',
+                         password='sqream',
+                         clustered=False,
+                         use_ssl=False)
+    yield connection
+    connection.close()
 
 
-@pytest.fixture(name='cursor')
+@pytest.fixture()
 def sqream_cursor(conn):
     """Fixture that create cursor at each direct fixture call"""
 

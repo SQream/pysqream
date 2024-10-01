@@ -10,15 +10,14 @@ from typing import Any, List, Union, Tuple
 
 import numpy as np
 
-from .casting import date_to_int, datetime_to_long, decimal_to_sq_numeric
-from .globals import WIN, ROWS_PER_FLUSH, VARCHAR_ENCODING, \
-    type_to_letter, ARROW, buf_maps, PYTYPES, typecodes
-from .utils import DataError, ProgrammingError
-from .logger import log_and_raise, logger, printdbg
+from pysqream.casting import date_to_int, datetime_to_long, decimal_to_sq_numeric
+from pysqream.globals import WIN, ROWS_PER_FLUSH, VARCHAR_ENCODING, type_to_letter, ARROW, buf_maps, PYTYPES, typecodes
+from pysqream.utils import DataError, ProgrammingError
+from pysqream.logger import log_and_raise, logger, printdbg
 
 
 class ColumnBuffer:
-    ''' Buffer holding packed columns to be sent to SQream '''
+    """Buffer holding packed columns to be sent to SQream"""
 
     def __init__(self, *_, **__):
         ...
@@ -28,8 +27,7 @@ class ColumnBuffer:
             [buf_map.close() for buf_map in buf_maps[0]]
 
     def pack_columns(self, cols, capacity, col_types, col_sizes, col_nul, col_tvc, col_scales):
-        ''' Packs the buffer starting a given index with the column.
-            Returns number of bytes packed '''
+        """Packs the buffer starting a given index with the column. Returns number of bytes packed"""
 
         pool_params = list(zip(cols, range(len(col_types)), col_types,
                           col_sizes, col_nul, col_tvc, col_scales))

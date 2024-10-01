@@ -2,9 +2,13 @@
 Support functions for converting py values to sqream compatible values
 and vice versa
 """
+from __future__ import annotations
+
 from datetime import datetime, date
 from decimal import Decimal, getcontext
 from math import floor, ceil, pow
+
+import numpy as np
 
 
 def pad_dates(num):

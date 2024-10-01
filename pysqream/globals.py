@@ -5,12 +5,12 @@ from datetime import datetime, date
 from decimal import Decimal
 import numpy as np
 
-from .utils import get_ram_windows, get_ram_linux
+from pysqream.utils import get_ram_windows, get_ram_linux
 
 __version__ = '5.1.0'
 buf_maps, buf_views = [], []
 WIN = sys.platform in ('win32', 'cygwin')
-MAC = sys.platform in ('darwin')
+MAC = sys.platform in ('darwin',)
 PROTOCOL_VERSION = 8
 SUPPORTED_PROTOCOLS = 6, 7, 8
 BUFFER_SIZE = 100 * int(1e6)  # For setting auto-flushing on netrwork insert
@@ -20,6 +20,7 @@ TEXT_ITEM_SIZE = 100
 DEFAULT_CHUNKSIZE = 0  # Dummy variable for some jsons
 FETCH_MANY_DEFAULT = 1  # default parameter for fetchmany()
 VARCHAR_ENCODING = 'ascii'
+CAN_SUPPORT_PARAMETERS = True
 
 CYTHON = False # Cython IS NOT SUPPORTED
 clean_sqream_errors = False

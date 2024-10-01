@@ -1,16 +1,18 @@
+import sys
 from datetime import datetime, date
+from decimal import Decimal, getcontext
 from numpy.random import randint, uniform
 from queue import Queue
 from time import sleep
-from decimal import Decimal, getcontext
-import pytest
-import sys, os
+
 import pysqream
-sys.path.append(os.path.abspath(__file__).rsplit('tests/', 1)[0] + '/tests/')
-from base import TestBase, TestBaseWithoutBeforeAfter, Logger, connect_dbapi
+import pytest
+
+from tests.test_base import TestBase, TestBaseWithoutBeforeAfter, Logger, connect_dbapi
 
 
 q = Queue()
+logger = Logger()
 varchar_length = 10
 nvarchar_length = 10
 precision = 38
@@ -69,11 +71,11 @@ class TestPositive(TestBase):
     def test_positive(self):
 
         cur = self.con.cursor()
-        Logger().info('positive tests')
+        logger.info('positive tests')
         for col_type in col_types:
             trimmed_col_type = col_type.split('(')[0]
 
-            Logger().info(f'Inserted values test for column type {col_type}')
+            logger.info(f'Inserted values test for column type {col_type}')
             cur.execute(f"create or replace table test (t_{trimmed_col_type} {col_type})")
             for val in pos_test_vals[trimmed_col_type]:
                 cur.execute('truncate table test')
@@ -89,7 +91,7 @@ class TestPositive(TestBase):
                         (val != res and trimmed_col_type == 'real' and val != 0 and abs(res - val) <= 0.1)
                 )
 
-            Logger().info(f'Null test for column type: {col_type}')
+            logger.info(f'Null test for column type: {col_type}')
             cur.execute("create or replace table test (t_{} {})".format(trimmed_col_type, col_type))
             cur.executemany('insert into test values (?)', [(None,)])
             res = cur.execute('select * from test').fetchall()[0][0]
@@ -100,7 +102,7 @@ class TestPositive(TestBase):
     def test_nulls(self):
 
         cur = self.con.cursor()
-        Logger().info("Case statement with nulls")
+        logger.info("Case statement with nulls")
         cur.execute("create or replace table test (xint int)")
         cur.executemany('insert into test values (?)', [(5,), (None,), (6,), (7,), (None,), (8,), (None,)])
         cur.executemany("select case when xint is null then 1 else 0 end from test")
@@ -113,7 +115,7 @@ class TestPositive(TestBase):
     def test_bool(self):
 
         cur = self.con.cursor()
-        Logger().info("Testing select true/false")
+        logger.info("Testing select true/false")
         cur.execute("select false")
         res = cur.fetchall()[0][0]
         assert res == 0
@@ -126,7 +128,7 @@ class TestPositive(TestBase):
     def test_when_running(self):
 
         cur = self.con.cursor()
-        Logger().info("Running a statement when there is an open statement")
+        logger.info("Running a statement when there is an open statement")
         cur.execute("select 1")
         sleep(10)
         res = cur.execute("select 1").fetchall()[0][0]
@@ -140,7 +142,7 @@ class TestNegative(TestBase):
     def test_negative(self):
 
         cur = self.con.cursor()
-        Logger().info('Negative tests')
+        logger.info('Negative tests')
         for col_type in col_types:
             if col_type == 'bool':
                 continue
@@ -156,7 +158,7 @@ class TestNegative(TestBase):
     def test_incosistent_sizes(self):
 
         cur = self.con.cursor()
-        Logger().info("Inconsistent sizes test")
+        logger.info("Inconsistent sizes test")
         cur.execute("create or replace table test (xint int, yint int)")
         with pytest.raises(Exception) as e:
             cur.executemany('insert into test values (?, ?)', [(5,), (6, 9), (7, 8)])
@@ -167,7 +169,7 @@ class TestNegative(TestBase):
     def test_varchar_conversion(self):
 
         cur = self.con.cursor()
-        Logger().info("Varchar - Conversion of a varchar to a smaller length")
+        logger.info("Varchar - Conversion of a varchar to a smaller length")
         cur.execute("create or replace table test (test varchar(10))")
         with pytest.raises(Exception) as e:
             cur.executemany("insert into test values ('aa12345678910')")
@@ -177,7 +179,7 @@ class TestNegative(TestBase):
     def test_nvarchar_conversion(self):
 
         cur = self.con.cursor()
-        Logger().info("Nvarchar - Conversion of a varchar to a smaller length")
+        logger.info("Nvarchar - Conversion of a varchar to a smaller length")
         cur.execute("create or replace table test (test nvarchar(10))")
         with pytest.raises(Exception) as e:
             cur.executemany("insert into test values ('aa12345678910')")
@@ -187,7 +189,7 @@ class TestNegative(TestBase):
     def test_incorrect_fetchmany(self):
 
         cur = self.con.cursor()
-        Logger().info("Incorrect usage of fetchmany - fetch without a statement")
+        logger.info("Incorrect usage of fetchmany - fetch without a statement")
         cur.execute("create or replace table test (xint int)")
         with pytest.raises(Exception) as e:
             cur.fetchmany(2)
@@ -197,7 +199,7 @@ class TestNegative(TestBase):
     def test_incorrect_fetchall(self):
 
         cur = self.con.cursor()
-        Logger().info("Incorrect usage of fetchall")
+        logger.info("Incorrect usage of fetchall")
         cur.execute("create or replace table test (xint int)")
         cur.executemany("select * from test")
         with pytest.raises(Exception) as e:
@@ -208,7 +210,7 @@ class TestNegative(TestBase):
     def test_incorrect_fetchone(self):
 
         cur = self.con.cursor()
-        Logger().info("Incorrect usage of fetchone")
+        logger.info("Incorrect usage of fetchone")
         cur.execute("create or replace table test (xint int)")
         cur.executemany("select * from test")
         with pytest.raises(Exception) as e:
@@ -219,16 +221,17 @@ class TestNegative(TestBase):
     def test_multi_statement(self):
 
         cur = self.con.cursor()
-        Logger().info("Multi statements test")
+        logger.info("Multi statements test")
         with pytest.raises(Exception) as e:
             cur.execute("select 1; select 1;")
         cur.close()
         assert "expected one statement, got" in str(e.value)
 
-    def test_parametered_query(self):
+    @pytest.mark.skip(reason="Moved to special test package")
+    def test_parameterized_query(self):
 
         cur = self.con.cursor()
-        Logger().info("Parametered query tests")
+        logger.info("Parametered query tests")
         params = 6
         cur.execute("create or replace table test (xint int)")
         cur.executemany('insert into test values (?)', [(5,), (6,), (7,)])
@@ -240,7 +243,7 @@ class TestNegative(TestBase):
     def test_execute_closed_cursor(self):
 
         cur = self.con.cursor()
-        Logger().info("running execute on a closed cursor")
+        logger.info("running execute on a closed cursor")
         cur.close()
         try:
             cur.execute("select 1")
