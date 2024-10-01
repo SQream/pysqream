@@ -63,7 +63,7 @@ class TestBaseWithoutBeforeAfter:
         yield
 
 
-class TestBaseParametrizedStatements:
+class TestBaseParameterizedStatements:
     """Draft test plan:
     https://sqream.atlassian.net/l/cp/TF7xxqxr
     """

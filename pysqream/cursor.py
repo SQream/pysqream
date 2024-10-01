@@ -90,11 +90,16 @@ class Cursor:
     def get_statement_id(self):
         return self.stmt_id
 
-    def _execute_sqream_statement(self, statement: str, params: list[Any] | tuple[Any] | None = None) -> None:
+    def _execute_sqream_statement(self,
+                                  statement: str,
+                                  params: list[Any] | tuple[Any] | None = None,
+                                  data_as: str = "rows",
+                                  amount: int | None = None
+                                  ) -> None:
         """High-level method overview:
         1) statement preparation + reconnect + execute
         2) queryTypeIn and queryTypeOut
-        3) if queryTypeIn isn't empty is means statement was parametrized
+        3) if queryTypeIn isn't empty is means statement was parameterized
         4) collect all information about all columns (such a col types, scales, row_size, etc.) and send it to server
         5) if statement was `select` - perform lists for fetching and do 4 step for queryTypeOut
         """
@@ -143,16 +148,16 @@ class Cursor:
 
         # Send queryType message/s
         query_type_in = json.loads(self.client.send_string('{"queryTypeIn": "queryTypeIn"}'))
-        self.column_list = parametrized_columns = query_type_in.get('queryType', [])
+        self.column_list = parameterized_columns = query_type_in.get('queryType', [])
 
         query_type_out = json.loads(self.client.send_string('{"queryTypeOut" : "queryTypeOut"}'))
 
-        if parametrized_columns:
+        if parameterized_columns:
             # Check if arrays are allowed before executing the rest
             if not self._validate_arrays_usage():
                 log_and_raise(ArraysAreDisabled, "Arrays are disabled in this connection.")
 
-            self._generate_columns_data_for_parametrized_statement()
+            self._generate_columns_data_for_parameterized_statement()
             self.col_types = []
             self.col_sizes = []
             self.col_scales = []
@@ -182,27 +187,24 @@ class Cursor:
 
             self.buffer.clear()
 
-            # to save `executemany` logic (we don't provide params in this method)
-            if params is not None:
-                # Send columns and parameters
-                row_len = len(self.column_list)
-                rows_or_cols = [params[i: i + row_len] for i in range(0, len(params), row_len)]
-                column_lengths = [len(row_or_col) for row_or_col in rows_or_cols]
+            # Send columns and parameters
+            row_len = len(self.column_list)
+            rows_or_cols = [params[i: i + row_len] for i in range(0, len(params), row_len)]
+            column_lengths = [len(row_or_col) for row_or_col in rows_or_cols]
 
-                if column_lengths.count(column_lengths[0]) != len(column_lengths):
-                    log_and_raise(ProgrammingError,
-                                  "Incosistent data sequences passed for inserting. "
-                                  "Please use rows/columns of consistent length")
+            if column_lengths.count(column_lengths[0]) != len(column_lengths):
+                log_and_raise(ProgrammingError,
+                              "Incosistent data sequences passed for inserting. "
+                              "Please use rows/columns of consistent length")
 
-                self.capacity = len(rows_or_cols)
+            if data_as == 'rows':
+                self.capacity = amount or len(rows_or_cols)
                 self.cols = list(zip(*rows_or_cols))
-
-                self._send_columns()
-
             else:
-                # We DON'T close statement if it was `SELECT` query or `executemany` was used
-                # because `executemany` uses logic of this method and call close_stmt() by itself after it
-                return
+                self.cols = rows_or_cols
+                self.capacity = len(self.cols)
+
+            self._send_columns()
 
         self.column_list = columns_for_output = query_type_out.get('queryTypeNamed', [])
         if columns_for_output:
@@ -213,7 +215,7 @@ class Cursor:
             self.data_columns = []
             self.unparsed_row_amount = self.parsed_row_amount = 0
 
-            self._generate_columns_data_for_parametrized_statement()
+            self._generate_columns_data_for_parameterized_statement()
 
         else:
             self.statement_type = "DML"
@@ -263,7 +265,7 @@ class Cursor:
 
         return self.description
 
-    def _generate_columns_data_for_parametrized_statement(self) -> None:
+    def _generate_columns_data_for_parameterized_statement(self) -> None:
         """To use fetch we need to fill all attributes in list below:
         1) col_names - list of column names
         2) col_tvc - list of `isTrueVarChar` values
@@ -272,7 +274,7 @@ class Cursor:
         5) col_names_map - dictionary with col_name and index (from 0) for every column
 
         Content could be received from `queryTypeIn` or `queryTypeOut` requests
-        For parametrized statements (`executemany` also) `queryTypeIn` always returns list of columns data look like:
+        For parameterized statements (`executemany` also) `queryTypeIn` always returns list of columns data look like:
         { "isTrueVarChar": false, "nullable": true, "type": ["ftInt", 4, 0] }
         """
         self.col_names = [col.get("name", "") for col in self.column_list]
@@ -282,9 +284,9 @@ class Cursor:
         self.col_names_map = {name: idx for idx, name in enumerate(self.col_names)}
 
     def _send_columns(self) -> None:
-        """Used for parametrized statements.
+        """Used for parameterized statements.
         After information about all columns was collected by `_execute_sqream_statement` and
-        `_generate_columns_data_for_parametrized_statement` methods
+        `_generate_columns_data_for_parameterized_statement` methods
 
         We need to send these data to server to make it inserts parameters via
         slicing a chunk of columns and pass to _send_column_chunk()
@@ -434,7 +436,12 @@ class Cursor:
 
                 self.parsed_rows.extend(zip(*self._parse_fetched_cols()))
 
-    def execute(self, statement: str, params: list[Any] | tuple[Any] | None = None):
+    def execute(self,
+                statement: str,
+                params: list[Any] | tuple[Any] | None = None,
+                data_as: str = 'rows',
+                amount: int | None = None
+                ):
         """Execute a statement. If params was provided - compile statement first
         and replace all question marks on passed parameters.
 
@@ -465,15 +472,15 @@ class Cursor:
         else:
             self.conn._verify_cur_open()
 
-        self._execute_sqream_statement(statement, params=params)
+        self._execute_sqream_statement(statement, params=params, data_as=data_as, amount=amount)
 
         self._fill_description()
         self.rows_fetched = 0
         self.rows_returned = 0
         return self
 
-    def executemany(self, query, rows_or_cols=None, data_as='rows', amount=None):
-        """Execute a statement, including parametrized data insert"""
+    def executemany2(self, query, rows_or_cols=None, data_as='rows', amount=None):
+        """Execute a statement, including parameterized data insert"""
 
         self.execute(query)
 
@@ -504,9 +511,11 @@ class Cursor:
 
         self._send_columns()
 
-        self.close_stmt()
-
         return self
+
+    def executemany(self, query, rows_or_cols=None, data_as='rows', amount=None):
+        """Execute a statement, including parameterized data insert"""
+        return self.execute(query, params=rows_or_cols, data_as=data_as, amount=amount)
 
     def fetchmany(self, size=None, data_as='rows', fetchone=False):
         ''' Fetch an amount of result rows '''
