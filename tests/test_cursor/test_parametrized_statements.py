@@ -204,12 +204,6 @@ class TestUpdate(TestBaseParameterizedStatements):
         sqream_cursor.execute(f"select i from {self.TEMP_TABLE_NAME} where i = ?", params=[(new,)])
         assert sqream_cursor.fetchall() == ([(new,)] if new else [])
 
-    def test_cast(self, sqream_cursor):
-        old, new = randint(1, self.TEMP_TABLE_START_ROWS_AMOUNT), 10
-        sqream_cursor.execute(f"update {self.TEMP_TABLE_NAME} set i = ? where i = ?::int", params=[(new, old)])
-        sqream_cursor.execute(f"select i from {self.TEMP_TABLE_NAME} where i = ?", params=[(new,)])
-        assert sqream_cursor.fetchall() == [(new,)]
-
     @pytest.mark.parametrize("new", ( True, None))
     def test_bool(self, sqream_cursor, new):
         sqream_cursor.execute(f"update {self.TEMP_TABLE_NAME} set b = ? where b = ?", params=[(new, False)])
@@ -283,6 +277,12 @@ class TestUpdate(TestBaseParameterizedStatements):
         sqream_cursor.execute(f"update {self.TEMP_TABLE_NAME} set r = ? where r = ?", params=[(new, 1.1)])
         sqream_cursor.execute(f"select r from {self.TEMP_TABLE_NAME} where r = ?", params=[(new,)])
         assert sqream_cursor.fetchall() ==  ([(10.0,)] if new else [])
+
+    def test_cast(self, sqream_cursor):
+        old, new = randint(1, self.TEMP_TABLE_START_ROWS_AMOUNT), 10
+        sqream_cursor.execute(f"update {self.TEMP_TABLE_NAME} set i = ? where i = ?::int", params=[(new, old)])
+        sqream_cursor.execute(f"select i from {self.TEMP_TABLE_NAME} where i = ?", params=[(new,)])
+        assert sqream_cursor.fetchall() == [(new,)]
 
 
 class TestDelete(TestBaseParameterizedStatements):
