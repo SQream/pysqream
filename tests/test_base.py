@@ -107,13 +107,12 @@ class TestBaseParameterizedStatements:
     @pytest.fixture(autouse=True)
     def create_temp_table_and_insert(self, sqream_cursor):
         """This fixture creates `TEMP_TABLE_NAME` with `TEMP_TABLE_COLUMNS` and insert `TEMP_TABLE_START_ROWS_AMOUNT`
-         rows with no null value and insert `TEMP_TABLE_START_ROWS_AMOUNT` rows with some mull values
+        rows inside
         """
         sqream_cursor.execute(f"create or replace table {self.TEMP_TABLE_NAME} ({', '.join(self.TEMP_TABLE_COLUMNS)})")
         for index in range(1, self.TEMP_TABLE_START_ROWS_AMOUNT + 1):
             placeholders = ", ".join([self.DEFAULT_PLACEHOLDER for _ in range(len(self.TEMP_TABLE_COLUMNS))])
             params = self.generate_row(index=index)
             sqream_cursor.execute(f"insert into {self.TEMP_TABLE_NAME} values ({placeholders})", params=[params])
-
         yield
         sqream_cursor.execute(f"drop table {self.TEMP_TABLE_NAME}")
