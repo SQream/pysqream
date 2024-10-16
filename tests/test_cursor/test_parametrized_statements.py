@@ -33,7 +33,6 @@ class TestSelect(TestBaseParameterizedStatements):
             expected_result = [self.expected_result[param - 1]]
         assert sqream_cursor.fetchall() == expected_result
 
-
     def test_like_one_placeholder(self, sqream_cursor):
         sqream_cursor.execute(f"select t from {self.TEMP_TABLE_NAME} where t like ?", params=[('%text',)])
         assert sqream_cursor.fetchall() == [(f"{i} text",) for i in range(1, self.TEMP_TABLE_START_ROWS_AMOUNT + 1)]
