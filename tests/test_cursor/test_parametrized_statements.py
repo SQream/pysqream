@@ -44,6 +44,10 @@ class TestSelect(TestBaseParameterizedStatements):
         sqream_cursor.execute(f"select i, b from {self.TEMP_TABLE_NAME} where i in (?)", params=[(1,)])
         assert sqream_cursor.fetchall() == [(1, False)]
 
+    def test_no_result(self, sqream_cursor):
+        sqream_cursor.execute(f"select * from {self.TEMP_TABLE_NAME} where i = ?", params=[(10,)])
+        assert sqream_cursor.fetchall() == []
+
     def test_int(self, sqream_cursor):
         index = randint(1, self.TEMP_TABLE_START_ROWS_AMOUNT)
         sqream_cursor.execute(f"select * from {self.TEMP_TABLE_NAME} where i = ?", params=[(index,)])
@@ -77,6 +81,12 @@ class TestSelect(TestBaseParameterizedStatements):
         index = randint(1, self.TEMP_TABLE_START_ROWS_AMOUNT)
         t = self.RANDOM_TEXT.format(index=index)
         sqream_cursor.execute(f"select * from {self.TEMP_TABLE_NAME} where t = ?", params=[(t,)])
+        assert sqream_cursor.fetchall() == [self.generate_row(index)]
+
+    def test_cast(self, sqream_cursor):
+        index = randint(1, self.TEMP_TABLE_START_ROWS_AMOUNT)
+        t = self.RANDOM_TEXT.format(index=index)
+        sqream_cursor.execute(f"select * from {self.TEMP_TABLE_NAME} where t = ?::text", params=[(t,)])
         assert sqream_cursor.fetchall() == [self.generate_row(index)]
 
     def test_int_array(self, sqream_cursor):
@@ -119,6 +129,12 @@ class TestSelect(TestBaseParameterizedStatements):
         sqream_cursor.execute(f"select * from {self.TEMP_TABLE_NAME} where tar = ?::text[]",
                               params=[([t] * DEFAULT_ARRAY_ELEMENTS_AMOUNT,)])
         assert sqream_cursor.fetchall() == [self.generate_row(index)]
+
+    def test_null(self, sqream_cursor):
+        sqream_cursor.execute("create or replace table t(x int)")
+        sqream_cursor.execute("insert into t values(NULL)")
+        sqream_cursor.execute(f"select * from t where x = ?", params=[(None,)])
+        assert sqream_cursor.fetchall() == []
 
 
 class TestInsert(TestBaseParameterizedStatements):
@@ -181,44 +197,94 @@ class TestInsert(TestBaseParameterizedStatements):
 
 class TestUpdate(TestBaseParameterizedStatements):
 
-    def test_int(self, sqream_cursor):
-        old, new = randint(1, self.TEMP_TABLE_START_ROWS_AMOUNT), 10
+    @pytest.mark.parametrize("new", (10, None))
+    def test_int(self, sqream_cursor, new):
+        old = randint(1, self.TEMP_TABLE_START_ROWS_AMOUNT)
         sqream_cursor.execute(f"update {self.TEMP_TABLE_NAME} set i = ? where i = ?", params=[(new, old)])
         sqream_cursor.execute(f"select i from {self.TEMP_TABLE_NAME} where i = ?", params=[(new,)])
-        assert sqream_cursor.fetchall() == [(new,)]
+        assert sqream_cursor.fetchall() == ([(new,)] if new else [])
 
-    def test_bool(self, sqream_cursor):
-        sqream_cursor.execute(f"update {self.TEMP_TABLE_NAME} set b = ? where b = ?", params=[(True, False)])
-        sqream_cursor.execute(f"select b from {self.TEMP_TABLE_NAME} where b = ?", params=[(True,)])
-        assert sqream_cursor.fetchall() == [(True,)] * self.TEMP_TABLE_START_ROWS_AMOUNT
+    @pytest.mark.parametrize("new", (True, None))
+    def test_bool(self, sqream_cursor, new):
+        sqream_cursor.execute(f"update {self.TEMP_TABLE_NAME} set b = ? where b = ?", params=[(new, False)])
+        sqream_cursor.execute(f"select b from {self.TEMP_TABLE_NAME} where b = ?", params=[(new,)])
+        assert sqream_cursor.fetchall() == ([(new,)] * self.TEMP_TABLE_START_ROWS_AMOUNT if new else [])
 
-    def test_numeric(self, sqream_cursor):
-        new = Decimal(f"{randint(int(1e8), int(1e9-1))}.{randint(int(1e5), int(1e6-1))}")
+    @pytest.mark.parametrize("new", (Decimal(f"{randint(int(1e8), int(1e9-1))}.{randint(int(1e5), int(1e6-1))}"), None))
+    def test_numeric(self, sqream_cursor, new):
         old = Decimal(self.RANDOM_NUMERIC.format(index=randint(1, self.TEMP_TABLE_START_ROWS_AMOUNT)))
         sqream_cursor.execute(f"update {self.TEMP_TABLE_NAME} set n = ? where n = ?",params=[(new, old)])
         sqream_cursor.execute(f"select n from {self.TEMP_TABLE_NAME} where n = ?", params=[(new,)])
-        assert sqream_cursor.fetchall() == [(new,)]
+        assert sqream_cursor.fetchall() == ([(new,)] if new else [])
 
-    def test_date(self, sqream_cursor):
-        new = date(2024, 9, 20)
+    @pytest.mark.parametrize("new", (date(2024, 9, 20), None))
+    def test_date(self, sqream_cursor, new):
         old = date.fromisoformat(self.RANDOM_DATE.format(index=randint(1, self.TEMP_TABLE_START_ROWS_AMOUNT)))
         sqream_cursor.execute(f"update {self.TEMP_TABLE_NAME} set d = ? where d = ?", params=[(new, old)])
         sqream_cursor.execute(f"select d from {self.TEMP_TABLE_NAME} where d = ?", params=[(new,)])
-        assert sqream_cursor.fetchall() == [(new,)]
+        assert sqream_cursor.fetchall() == ([(new,)] if new else [])
 
-    def test_datetime(self, sqream_cursor):
-        new = datetime(2024, 9, 20, 23, 30, 25, 123000)
+    @pytest.mark.parametrize("new", (datetime(2024, 9, 20, 23, 30, 25, 123000), None))
+    def test_datetime(self, sqream_cursor, new):
         old = datetime.strptime(self.RANDOM_DATETIME.format(index=randint(1, self.TEMP_TABLE_START_ROWS_AMOUNT)),
                                 "%Y-%m-%d %H:%M:%S.%f")
         sqream_cursor.execute(f"update {self.TEMP_TABLE_NAME} set dt = ? where dt = ?", params=[(new, old)])
         sqream_cursor.execute(f"select dt from {self.TEMP_TABLE_NAME} where dt = ?", params=[(new,)])
-        assert sqream_cursor.fetchall() == [(new,)]
+        assert sqream_cursor.fetchall() == ([(new,)] if new else [])
 
-    def test_text(self, sqream_cursor):
-        new = "Ryan Gosling"
+    @pytest.mark.parametrize("new", ("Ryan Gosling", None))
+    def test_text(self, sqream_cursor, new):
         old = self.RANDOM_TEXT.format(index=randint(1, self.TEMP_TABLE_START_ROWS_AMOUNT))
         sqream_cursor.execute(f"update {self.TEMP_TABLE_NAME} set t = ? where t = ?", params=[(new, old)])
         sqream_cursor.execute(f"select t from {self.TEMP_TABLE_NAME} where t = ?", params=[(new,)])
+        assert sqream_cursor.fetchall() == ([(new,)] if new else [])
+
+    @pytest.mark.parametrize("new", (10, None))
+    def test_tinyint(self, sqream_cursor, new):
+        old = randint(1, self.TEMP_TABLE_START_ROWS_AMOUNT)
+        sqream_cursor.execute(f"update {self.TEMP_TABLE_NAME} set ti = ? where ti = ?", params=[(new, old)])
+        sqream_cursor.execute(f"select ti from {self.TEMP_TABLE_NAME} where ti = ?", params=[(new,)])
+        assert sqream_cursor.fetchall() == ([(new,)] if new else [])
+
+    @pytest.mark.parametrize("new", (10, None))
+    def test_smallint(self, sqream_cursor, new):
+        old, new = randint(1, self.TEMP_TABLE_START_ROWS_AMOUNT), 10
+        sqream_cursor.execute(f"update {self.TEMP_TABLE_NAME} set si = ? where si = ?", params=[(new, old)])
+        sqream_cursor.execute(f"select si from {self.TEMP_TABLE_NAME} where si = ?", params=[(new,)])
+        assert sqream_cursor.fetchall() == ([(new,)] if new else [])
+
+    @pytest.mark.parametrize("new", (10, None))
+    def test_bigint(self, sqream_cursor, new):
+        old, new = randint(1, self.TEMP_TABLE_START_ROWS_AMOUNT), 10
+        sqream_cursor.execute(f"update {self.TEMP_TABLE_NAME} set bi = ? where bi = ?", params=[(new, old)])
+        sqream_cursor.execute(f"select bi from {self.TEMP_TABLE_NAME} where bi = ?", params=[(new,)])
+        assert sqream_cursor.fetchall() == ([(new,)] if new else [])
+
+    @pytest.mark.parametrize("new", (10.1, None))
+    def test_float(self, sqream_cursor, new):
+        old = float(self.RANDOM_FLOAT.format(index=randint(1, self.TEMP_TABLE_START_ROWS_AMOUNT)))
+        sqream_cursor.execute(f"update {self.TEMP_TABLE_NAME} set f = ? where f = ?", params=[(new, old)])
+        sqream_cursor.execute(f"select f from {self.TEMP_TABLE_NAME} where f = ?", params=[(new,)])
+        assert sqream_cursor.fetchall() == ([(new,)] if new else [])
+
+    @pytest.mark.parametrize("new", (10.1, None))
+    def test_double(self, sqream_cursor, new):
+        old = float(self.RANDOM_DOUBLE.format(index=randint(1, self.TEMP_TABLE_START_ROWS_AMOUNT)))
+        sqream_cursor.execute(f"update {self.TEMP_TABLE_NAME} set db = ? where db = ?", params=[(new, old)])
+        sqream_cursor.execute(f"select db from {self.TEMP_TABLE_NAME} where db = ?", params=[(new,)])
+        assert sqream_cursor.fetchall() == ([(new,)] if new else [])
+
+    @pytest.mark.parametrize("new", (10, None))
+    def test_real(self, sqream_cursor, new):
+        old = float(self.RANDOM_REAL.format(index=randint(1, self.TEMP_TABLE_START_ROWS_AMOUNT)))
+        sqream_cursor.execute(f"update {self.TEMP_TABLE_NAME} set r = ? where r = ?", params=[(new, old)])
+        sqream_cursor.execute(f"select r from {self.TEMP_TABLE_NAME} where r = ?", params=[(new,)])
+        assert sqream_cursor.fetchall() ==  ([(10.0,)] if new else [])
+
+    def test_cast(self, sqream_cursor):
+        old, new = randint(1, self.TEMP_TABLE_START_ROWS_AMOUNT), 10
+        sqream_cursor.execute(f"update {self.TEMP_TABLE_NAME} set i = ? where i = ?::int", params=[(new, old)])
+        sqream_cursor.execute(f"select i from {self.TEMP_TABLE_NAME} where i = ?", params=[(new,)])
         assert sqream_cursor.fetchall() == [(new,)]
 
 
@@ -269,6 +335,113 @@ class TestDelete(TestBaseParameterizedStatements):
         sqream_cursor.execute(f"select t from {self.TEMP_TABLE_NAME} where t = ?", params=[(t,)])
         assert sqream_cursor.fetchall() == []
 
+    def test_tinyint(self, sqream_cursor, check_number_of_rows_has_decreased):
+        index = randint(1, self.TEMP_TABLE_START_ROWS_AMOUNT)
+        sqream_cursor.execute(f"delete from {self.TEMP_TABLE_NAME} where ti = ?", params=[(index,)])
+        sqream_cursor.execute(f"select ti from {self.TEMP_TABLE_NAME} where ti = ?", params=[(index,)])
+        assert sqream_cursor.fetchall() == []
+
+    def test_smallint(self, sqream_cursor, check_number_of_rows_has_decreased):
+        index = randint(1, self.TEMP_TABLE_START_ROWS_AMOUNT)
+        sqream_cursor.execute(f"delete from {self.TEMP_TABLE_NAME} where si = ?", params=[(index,)])
+        sqream_cursor.execute(f"select si from {self.TEMP_TABLE_NAME} where si = ?", params=[(index,)])
+        assert sqream_cursor.fetchall() == []
+
+    def test_bigint(self, sqream_cursor, check_number_of_rows_has_decreased):
+        index = randint(1, self.TEMP_TABLE_START_ROWS_AMOUNT)
+        sqream_cursor.execute(f"delete from {self.TEMP_TABLE_NAME} where bi = ?", params=[(index,)])
+        sqream_cursor.execute(f"select bi from {self.TEMP_TABLE_NAME} where bi = ?", params=[(index,)])
+        assert sqream_cursor.fetchall() == []
+
+    def test_float(self, sqream_cursor, check_number_of_rows_has_decreased):
+        index = float(self.RANDOM_FLOAT.format(index=randint(1, self.TEMP_TABLE_START_ROWS_AMOUNT)))
+        sqream_cursor.execute(f"delete from {self.TEMP_TABLE_NAME} where f = ?", params=[(index,)])
+        sqream_cursor.execute(f"select f from {self.TEMP_TABLE_NAME} where f = ?", params=[(index,)])
+        assert sqream_cursor.fetchall() == []
+
+    def test_double(self, sqream_cursor, check_number_of_rows_has_decreased):
+        index = float(self.RANDOM_DOUBLE.format(index=randint(1, self.TEMP_TABLE_START_ROWS_AMOUNT)))
+        sqream_cursor.execute(f"delete from {self.TEMP_TABLE_NAME} where db = ?", params=[(index,)])
+        sqream_cursor.execute(f"select db from {self.TEMP_TABLE_NAME} where db = ?", params=[(index,)])
+        assert sqream_cursor.fetchall() == []
+
+    def test_real(self, sqream_cursor, check_number_of_rows_has_decreased):
+        index = float(self.RANDOM_REAL.format(index=randint(1, self.TEMP_TABLE_START_ROWS_AMOUNT)))
+        sqream_cursor.execute(f"delete from {self.TEMP_TABLE_NAME} where r = ?", params=[(index,)])
+        sqream_cursor.execute(f"select r from {self.TEMP_TABLE_NAME} where r = ?", params=[(index,)])
+        assert sqream_cursor.fetchall() == []
+
+    def test_int_null(self, sqream_cursor):
+        sqream_cursor.execute(f"delete from {self.TEMP_TABLE_NAME} where i = ?", params=[(None,)])
+        sqream_cursor.execute(f"select i from {self.TEMP_TABLE_NAME} where i = ?", params=[(None,)])
+        assert sqream_cursor.fetchall() == []
+
+    def test_bool_null(self, sqream_cursor):
+        sqream_cursor.execute(f"delete from {self.TEMP_TABLE_NAME} where b = ?", params=[(None,)])
+        sqream_cursor.execute(f"select * from {self.TEMP_TABLE_NAME}")
+        assert sqream_cursor.fetchall() == []
+
+    def test_numeric_null(self, sqream_cursor):
+        sqream_cursor.execute(f"delete from {self.TEMP_TABLE_NAME} where n = ?", params=[(None,)])
+        sqream_cursor.execute(f"select n from {self.TEMP_TABLE_NAME} where n = ?", params=[(None,)])
+        assert sqream_cursor.fetchall() == []
+
+    def test_date_null(self, sqream_cursor):
+        sqream_cursor.execute(f"delete from {self.TEMP_TABLE_NAME} where d = ?", params=[(None,)])
+        sqream_cursor.execute(f"select d from {self.TEMP_TABLE_NAME} where d = ?", params=[(None,)])
+        assert sqream_cursor.fetchall() == []
+
+    def test_datetime_null(self, sqream_cursor):
+        sqream_cursor.execute(f"delete from {self.TEMP_TABLE_NAME} where dt = ?", params=[(None,)])
+        sqream_cursor.execute(f"select dt from {self.TEMP_TABLE_NAME} where dt = ?", params=[(None,)])
+        assert sqream_cursor.fetchall() == []
+
+    def test_text_null(self, sqream_cursor):
+        sqream_cursor.execute(f"delete from {self.TEMP_TABLE_NAME} where t = ?", params=[(None,)])
+        sqream_cursor.execute(f"select t from {self.TEMP_TABLE_NAME} where t = ?", params=[(None,)])
+        assert sqream_cursor.fetchall() == []
+
+    def test_tinyint_null(self, sqream_cursor):
+        sqream_cursor.execute(f"delete from {self.TEMP_TABLE_NAME} where ti = ?", params=[(None,)])
+        sqream_cursor.execute(f"select ti from {self.TEMP_TABLE_NAME} where ti = ?", params=[(None,)])
+        assert sqream_cursor.fetchall() == []
+
+    def test_smallint_null(self, sqream_cursor):
+        sqream_cursor.execute(f"delete from {self.TEMP_TABLE_NAME} where si = ?", params=[(None,)])
+        sqream_cursor.execute(f"select si from {self.TEMP_TABLE_NAME} where si = ?", params=[(None,)])
+        assert sqream_cursor.fetchall() == []
+
+    def test_bigint_null(self, sqream_cursor):
+        sqream_cursor.execute(f"delete from {self.TEMP_TABLE_NAME} where bi = ?", params=[(None,)])
+        sqream_cursor.execute(f"select bi from {self.TEMP_TABLE_NAME} where bi = ?", params=[(None,)])
+        assert sqream_cursor.fetchall() == []
+
+    def test_float_null(self, sqream_cursor):
+        sqream_cursor.execute(f"delete from {self.TEMP_TABLE_NAME} where f = ?", params=[(None,)])
+        sqream_cursor.execute(f"select f from {self.TEMP_TABLE_NAME} where f = ?", params=[(None,)])
+        assert sqream_cursor.fetchall() == []
+
+    def test_double_null(self, sqream_cursor):
+        sqream_cursor.execute(f"delete from {self.TEMP_TABLE_NAME} where db = ?", params=[(None,)])
+        sqream_cursor.execute(f"select db from {self.TEMP_TABLE_NAME} where db = ?", params=[(None,)])
+        assert sqream_cursor.fetchall() == []
+
+    def test_real_null(self, sqream_cursor):
+        sqream_cursor.execute(f"delete from {self.TEMP_TABLE_NAME} where db = ?", params=[(None,)])
+        sqream_cursor.execute(f"select db from {self.TEMP_TABLE_NAME} where db = ?", params=[(None,)])
+        assert sqream_cursor.fetchall() == []
+
+    def test_cast(self, sqream_cursor):
+        index = randint(1, self.TEMP_TABLE_START_ROWS_AMOUNT)
+        sqream_cursor.execute(f"delete from {self.TEMP_TABLE_NAME} where i = ?::int", params=[(index,)])
+        sqream_cursor.execute(f"select i from {self.TEMP_TABLE_NAME} where i = ?", params=[(index,)])
+        assert sqream_cursor.fetchall() == []
+
+    def test_multiple_params(self, sqream_cursor):
+        sqream_cursor.execute(f"delete from {self.TEMP_TABLE_NAME} where i = ? or i = ?", params=[(1, 2)])
+        sqream_cursor.execute(f"select i from {self.TEMP_TABLE_NAME} where i = ? or i = ?", params=[(1, 2)])
+        assert sqream_cursor.fetchall() == []
+
 
 class TestNegative(TestBaseParameterizedStatements):
 
@@ -276,3 +449,9 @@ class TestNegative(TestBaseParameterizedStatements):
         with pytest.raises(Exception) as parameterized_error:
             sqream_cursor.execute(f"select * from ? where i = ?", params=[(1, 2)])
         assert "Parsing error in statement line" in str(parameterized_error)
+
+    def test_select_placeholders_in_wrong_places(self, sqream_cursor):
+        with pytest.raises(Exception) as parameterized_error:
+            sqream_cursor.execute(f"SELECT * FROM {self.TEMP_TABLE_NAME} WHERE (? IS NULL AND i IS NULL) OR i = ?;", params=[(1, 2)])
+        assert "Unsupported parametrized query" in str(parameterized_error)
+

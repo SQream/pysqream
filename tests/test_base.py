@@ -74,8 +74,11 @@ class TestBaseParameterizedStatements:
     TEMP_TABLE_START_ROWS_AMOUNT: int = 9
     TEMP_TABLE_COLUMNS: str = ("i int", "b bool", "n numeric(15, 6)", "d date", "dt datetime", "t text",
                                "iar int[]", "bar bool[]", "nar numeric(15, 6)[]", "dar date[]", "dtar datetime[]",
-                               "tar text[]")
+                               "tar text[]", "ti tinyint", "si smallint", "bi bigint", "f float", "db double", "r real")
     RANDOM_NUMERIC = "{index}18496281.983903"
+    RANDOM_FLOAT = "{index}.699999809265137"
+    RANDOM_DOUBLE = "{index}.{index}"
+    RANDOM_REAL = "{index}.6999998092651367"
     RANDOM_DATE = "200{index}-01-10"
     RANDOM_DATETIME = "200{index}-01-10 12:00:00.{index}23000"
     RANDOM_TEXT = "{index} text"
@@ -83,7 +86,8 @@ class TestBaseParameterizedStatements:
 
     def generate_row(self, index: int, array_length: int = DEFAULT_ARRAY_ELEMENTS_AMOUNT) -> tuple[
                 int, bool, Decimal, date, datetime, str,
-                list[int], list[bool], list[Decimal], list[date], list[datetime], list[str]
+                list[int], list[bool], list[Decimal], list[date], list[datetime], list[str],
+                int, int, int, float, float, float
             ]:
         n = Decimal(self.RANDOM_NUMERIC.format(index=index))
         d = date.fromisoformat(self.RANDOM_DATE.format(index=index))
@@ -95,7 +99,12 @@ class TestBaseParameterizedStatements:
         dar = [d] * array_length
         dtar = [dt] * array_length
         tar = [t] * array_length
-        return index, False, n, d, dt, t, iar, bar, nar, dar, dtar, tar
+        f = float(self.RANDOM_FLOAT.format(index=index))
+        db = float(self.RANDOM_DOUBLE.format(index=index))
+        r = float(self.RANDOM_REAL.format(index=index))
+
+        return index, False, n, d, dt, t, iar, bar, nar, dar, dtar, tar, index, index, index, f, db, r
+
 
     @pytest.fixture(autouse=True)
     def create_temp_table_and_insert(self, sqream_cursor):
