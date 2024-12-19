@@ -6,7 +6,7 @@ from struct import pack, unpack
 from threading import Lock
 
 from .globals import PROTOCOL_VERSION, SUPPORTED_PROTOCOLS, clean_sqream_errors
-from .logger import printdbg, log_and_raise
+from .logger import printdbg, log_and_raise, logger
 
 
 class SQSocket:
@@ -154,6 +154,7 @@ class Client:
         # Generating the message header, and sending both over the socket
         printdbg(f'string sent: {json_cmd}')
         self.socket.send(self.generate_message_header(len(json_cmd)) + json_cmd.encode('utf8'))
-
+        logger.debug("after send string to sqream")
+        log_and_raise
         if get_response:
             return self.get_response(is_text_msg)

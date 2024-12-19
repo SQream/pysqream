@@ -117,7 +117,7 @@ class Cursor:
                                 "chunkSize": DEFAULT_CHUNKSIZE,
                                 "canSupportParams": CAN_SUPPORT_PARAMETERS})
         res = self.client.send_string(stmt_json)
-
+        logger.debug("after send string to sqream")
         self.client.validate_response(res, "statementPrepared")
         self.lb_params = json.loads(res)
         if self.lb_params.get('reconnect'):  # Reconnect exists and issued, otherwise False / None
@@ -481,12 +481,14 @@ class Cursor:
         """
 
         if self.base_connection_closed:
+            logger.debug(f"base_connection_closed: {self.base_connection_closed}")
             self.conn._verify_con_open()
+
         else:
             self.conn._verify_cur_open()
-
+        logger.debug("after verify open")
         self._execute_sqream_statement(statement, params=params, data_as=data_as, amount=amount)
-
+        logger.debug("after executing statement")
         self._fill_description()
         self.rows_fetched = 0
         self.rows_returned = 0
